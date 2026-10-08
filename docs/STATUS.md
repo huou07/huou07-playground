@@ -6,7 +6,6 @@ Build huou07 playground as a private, single-user Linux workspace on the existin
 ## Repository
 - Remote: `https://github.com/huou07/huou07-playground`
 - Default branch: `main`
-- Last pushed implementation commit: `af83d6c0c5a6dd506f4c9214f12ebeeafd750cbf`
 - Initial commit inspected: `524ff98a82a44c4897a0bf8996a00cc16e2e5c6d`
 - Existing license: GPL-3.0 text; confirm project licensing before distribution.
 
@@ -20,7 +19,7 @@ The reference calls for a compact, custom personal dashboard. The portal starts 
 - Built the first responsive dashboard slice and Linux read-only metrics endpoint. The supplied turtle is local-only pending license confirmation.
 
 ## Verification
-Verified: `make check` passes (4 standard-library tests); the actual Linux probe also confirms CPU frequency and temperature fields are read without privileged access; the health and static routes return successfully; a temporary probe ran the metrics collector on the actual Linux host and validated the Linux metrics payload; Gitleaks found no staged secret findings; Playwright inspected desktop (1600×900), phone portrait (390×844), and landscape (844×390) layouts. The browser console was clear after fixes. Theme persistence and mobile menu keyboard dismissal passed.
+Verified: `make check` passes (4 standard-library tests); actual Linux probes confirm CPU frequency, temperature, core counts, memory, storage, swap/ZRAM and network data are read without privileged access. Playwright inspected desktop (1600×900), phone portrait (390×844), and landscape (844×390) layouts, including live metrics from a temporary loopback preview on the target reached over SSH. The preview process and temporary files were removed and the port closed. The browser console was clear after fixes. Theme persistence and mobile menu keyboard dismissal passed. Gitleaks found no staged or committed secret findings.
 
 ## Deployment state
 Not deployed. Existing service inventory and network bindings need a more complete private review before choosing a bind address, proxy integration, or installation method. Preserve the existing private remote-access path as recovery access.
@@ -32,4 +31,4 @@ Not deployed. Existing service inventory and network bindings need a more comple
 - Deploy and verify on actual hardware only after the configuration plan and rollback path are concrete. Real remote-client VPN handshake and credential-dependent AI tests require owner-side access/setup.
 
 ## Next useful action
-Commit and push the verified CPU telemetry update, then finish the private container, firewall, process, and access-path review before designing any installation changes.
+Inspect the existing container definitions and process ownership privately, then document port and firewall constraints before designing an installation path.

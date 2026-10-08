@@ -140,7 +140,7 @@ def linux_metrics() -> dict:
         "swap": {"devices": swaps, "used": swap_used, "total": swap_total, "percent": round(swap_used * 100 / swap_total) if swap_total else None},
         "zram": {"devices": zram, "used": sum(x["used"] or 0 for x in zram), "total": sum(x["total"] or 0 for x in zram)},
         "network": {"interfaces": [{"name": name, "received_total": v[0], "sent_total": v[1]} for name, v in net.items()], "download_bytes_per_second": rx_rate, "upload_bytes_per_second": tx_rate},
-        "system": {"os": platform.platform(), "kernel": platform.release(), "uptime_seconds": max(0, time.time() - float(read_text("/proc/uptime", "0").split()[0]))},
+        "system": {"os": platform.platform(), "kernel": platform.release(), "uptime_seconds": max(0, float(read_text("/proc/uptime", "0").split()[0]))},
         "gpu": {"available": False, "reason": "No supported GPU telemetry adapter is configured."},
         "power": {"available": False, "reason": "CPU package power is unavailable until turbostat is installed and safely configured."},
     }

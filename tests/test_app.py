@@ -1,5 +1,6 @@
 import json
 import os
+import platform
 import sys
 import threading
 import unittest
@@ -44,6 +45,10 @@ class DashboardApiTests(unittest.TestCase):
             self.assertIn("zram", metrics)
             self.assertIn("network", metrics)
             self.assertGreater(metrics["storage"]["total"], 0)
+            self.assertGreater(metrics["cpu"]["logical_cores"], 0)
+            if platform.system() == "Linux":
+                host_uptime = float(Path("/proc/uptime").read_text().split()[0])
+                self.assertLess(abs(metrics["system"]["uptime_seconds"] - host_uptime), 5)
         else:
             self.assertTrue(metrics["reason"])
 
