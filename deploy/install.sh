@@ -10,7 +10,7 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer as root (for example: sudo ./deploy/install.sh)." >&2
   exit 1
 fi
-if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ]; then
+if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ] || [ ! -f "$SOURCE/deploy/state.py" ]; then
   echo "Run the installer from a complete huou07-playground checkout." >&2
   exit 1
 fi
@@ -64,6 +64,8 @@ trap on_error EXIT HUP INT TERM
 
 install -d -o root -g root -m 0755 "$release"
 cp -R "$SOURCE/web" "$release/web"
+install -d -o root -g root -m 0755 "$release/deploy"
+install -o root -g root -m 0644 "$SOURCE/deploy/state.py" "$release/deploy/state.py"
 if [ ! -f "$release/web/static/branding.png" ]; then
   for branding in "$ROOT"/releases/*/web/static/branding.png; do
     if [ -f "$branding" ]; then

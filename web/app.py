@@ -276,32 +276,36 @@ def app_health(url: str, method: str) -> str:
         return "unavailable"
 
 
+def validate_app_entries(config: object) -> list[dict]:
+    entries = config.get("apps") if isinstance(config, dict) else None
+    if not isinstance(entries, list) or len(entries) > 20:
+        raise ValueError
+    apps = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError
+        name = entry.get("name")
+        url = entry.get("url")
+        description = entry.get("description", "")
+        category = entry.get("category", "Application")
+        health_url = entry.get("health_url")
+        health_method = entry.get("health_method", "GET")
+        if not isinstance(name, str) or not name.strip() or len(name) > 60 or not valid_app_url(url):
+            raise ValueError
+        if not isinstance(description, str) or len(description) > 160 or not isinstance(category, str) or len(category) > 40:
+            raise ValueError
+        if health_url is not None and not valid_app_url(health_url):
+            raise ValueError
+        if health_method not in {"GET", "HEAD"}:
+            raise ValueError
+        apps.append({"name": name.strip(), "url": url, "description": description, "category": category, "health_url": health_url, "health_method": health_method})
+    return apps
+
+
 def app_registry() -> dict:
     path = Path(os.environ.get("APPS_FILE", "/etc/huou07-playground/apps.json"))
     try:
-        config = json.loads(path.read_text())
-        entries = config.get("apps") if isinstance(config, dict) else None
-        if not isinstance(entries, list) or len(entries) > 20:
-            raise ValueError
-        apps = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                raise ValueError
-            name = entry.get("name")
-            url = entry.get("url")
-            description = entry.get("description", "")
-            category = entry.get("category", "Application")
-            health_url = entry.get("health_url")
-            health_method = entry.get("health_method", "GET")
-            if not isinstance(name, str) or not name.strip() or len(name) > 60 or not valid_app_url(url):
-                raise ValueError
-            if not isinstance(description, str) or len(description) > 160 or not isinstance(category, str) or len(category) > 40:
-                raise ValueError
-            if health_url is not None and not valid_app_url(health_url):
-                raise ValueError
-            if health_method not in {"GET", "HEAD"}:
-                raise ValueError
-            apps.append({"name": name.strip(), "url": url, "description": description, "category": category, "health_url": health_url, "health_method": health_method})
+        apps = validate_app_entries(json.loads(path.read_text()))
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError):
         return {"available": False, "reason": "Application configuration is unavailable or invalid.", "apps": []}
 
