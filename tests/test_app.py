@@ -66,7 +66,7 @@ class DashboardApiTests(unittest.TestCase):
         with patch("web.app.shutil.which", return_value=None):
             self.assertIn("not installed", app.cpu_package_power()["reason"])
         app._power_sample = None
-        denied = app.subprocess.CompletedProcess([], 1, stdout="", stderr="Permission denied")
+        denied = app.subprocess.CompletedProcess([], 0, stdout="PkgWatt\n-\n", stderr="turbostat: Failed to access /dev/cpu/0/msr.")
         with patch("web.app.shutil.which", return_value="/usr/bin/turbostat"), patch("web.app.subprocess.run", return_value=denied):
             result = app.cpu_package_power()
         self.assertFalse(result["available"])

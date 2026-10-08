@@ -62,7 +62,7 @@ def cpu_package_power() -> dict:
                         watts = round(parsed, 1)
             if watts is not None:
                 result = {"available": True, "watts": watts, "measurement": "CPU package power"}
-            elif sample.returncode != 0 and ("permission" in sample.stderr.lower() or "denied" in sample.stderr.lower()):
+            elif any(term in sample.stderr.lower() for term in ("permission", "denied", "failed to access /dev/cpu/")):
                 result = {"available": False, "reason": "turbostat cannot read the required CPU power counters with the current service permissions."}
             else:
                 result = {"available": False, "reason": "This CPU or kernel does not expose package power through turbostat."}
