@@ -95,6 +95,36 @@ def gpu_metrics() -> dict:
         return {"available": False, "reason": "nvidia-smi did not return a valid GPU sample."}
 
 
+def storage_devices(sys_block: Path = Path("/sys/block")) -> list[dict]:
+    """Describe physical block devices without reading identifiers or SMART data."""
+    devices = []
+    try:
+        entries = sorted(sys_block.iterdir(), key=lambda item: item.name)
+    except OSError:
+        return devices
+    for entry in entries:
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,32}", entry.name) or not (entry / "device").exists():
+            continue
+        try:
+            sectors = int((entry / "size").read_text().strip())
+            if sectors < 0:
+                continue
+        except (OSError, ValueError):
+            sectors = None
+        try:
+            rotational = (entry / "queue/rotational").read_text().strip()
+            kind = "HDD" if rotational == "1" else "SSD" if rotational == "0" else "Unknown"
+        except OSError:
+            kind = "Unknown"
+        model = ""
+        try:
+            model = " ".join((entry / "device/model").read_text().split())[:100]
+        except OSError:
+            pass
+        devices.append({"name": entry.name, "model": model or "Unknown model", "kind": kind, "size": sectors * 512 if sectors is not None else None})
+    return devices
+
+
 def linux_metrics() -> dict:
     global _prev_cpu, _prev_net
     if platform.system() != "Linux":
@@ -208,6 +238,7 @@ def linux_metrics() -> dict:
         "cpu": {"usage_percent": cpu_pct, "logical_cores": os.cpu_count(), "physical_cores": len(core_pairs) or None, "frequency_mhz": round(sum(frequencies) / len(frequencies)) if frequencies else None, "temperature_c": cpu_temperature, "model": model, "load": list(load) if load else None},
         "memory": {"used": ram_used, "total": total, "available": available, "percent": round(ram_used * 100 / total) if total else None},
         "storage": {"used": disk.used, "total": disk.total, "percent": round(disk.used * 100 / disk.total) if disk.total else None, "mount": "/"},
+        "storage_devices": storage_devices(),
         "swap": {"devices": swaps, "used": swap_used, "total": swap_total, "percent": round(swap_used * 100 / swap_total) if swap_total else None},
         "zram": {"devices": zram, "used": sum(x["used"] or 0 for x in zram), "total": sum(x["total"] or 0 for x in zram)},
         "network": {"interfaces": [{"name": name, "received_total": v[0], "sent_total": v[1]} for name, v in net.items()], "download_bytes_per_second": rx_rate, "upload_bytes_per_second": tx_rate},

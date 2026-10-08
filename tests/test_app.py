@@ -42,6 +42,8 @@ class DashboardApiTests(unittest.TestCase):
             self.assertIn("cpu", metrics)
             self.assertIn("memory", metrics)
             self.assertIn("storage", metrics)
+            self.assertIn("storage_devices", metrics)
+            self.assertIsInstance(metrics["storage_devices"], list)
             self.assertIn("swap", metrics)
             self.assertIn("zram", metrics)
             self.assertIn("network", metrics)
@@ -52,6 +54,22 @@ class DashboardApiTests(unittest.TestCase):
                 self.assertLess(abs(metrics["system"]["uptime_seconds"] - host_uptime), 5)
         else:
             self.assertTrue(metrics["reason"])
+
+    def test_storage_devices_report_physical_device_without_identifiers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            disk = root / "nvme0n1"
+            (disk / "device").mkdir(parents=True)
+            (disk / "queue").mkdir()
+            (disk / "size").write_text("200")
+            (disk / "queue/rotational").write_text("0")
+            (disk / "device/model").write_text("Example NVMe\nDrive")
+            virtual = root / "loop0"
+            virtual.mkdir()
+            (virtual / "size").write_text("100")
+            devices = app.storage_devices(root)
+        self.assertEqual(devices, [{"name": "nvme0n1", "model": "Example NVMe Drive", "kind": "SSD", "size": 200 * 512}])
+        self.assertNotIn("serial", devices[0])
 
     def test_nvidia_gpu_metrics_parse_utilization_vram_and_temperature(self):
         result = app.subprocess.CompletedProcess([], 0, stdout="NVIDIA GeForce RTX 4090, 38, 4096, 8192, 55\n", stderr="")

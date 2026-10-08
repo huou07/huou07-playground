@@ -5,7 +5,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 ## Current implementation
 
 - Compact responsive dashboard with dark default and persisted light theme.
-- Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs.
+- Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, detected physical drive model/type/capacity, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs. Drive health is not queried; serial identifiers are not collected.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps.
 - The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. SSH tunneling remains the only browser access method.
 - NVIDIA GPU utilization, VRAM and temperature use `nvidia-smi` when available; other adapters and missing driver utilities show an honest `N/A` state. CPU package watts use a separate restricted systemd collector when supported; the dashboard account reads only its recent sanitized sample and never receives MSR access or root privileges.
