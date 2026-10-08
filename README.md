@@ -32,6 +32,7 @@ On the server, edit `/etc/huou07-playground/apps.json` to add links. The install
       "url": "http://127.0.0.1:3000/",
       "description": "A short note",
       "category": "Tools",
+      "management_url": "http://127.0.0.1:3000/admin",
       "health_url": "http://127.0.0.1:3000/health",
       "health_method": "GET"
     }
@@ -39,7 +40,7 @@ On the server, edit `/etc/huou07-playground/apps.json` to add links. The install
 }
 ```
 
-Only `name` and `url` are required. URLs must use HTTP or HTTPS. The app link opens in your browser, so its URL must be reachable from that device. For a loopback-only app, add its port to your SSH tunnel and use the forwarded `127.0.0.1` URL. Optional health checks run from the server using GET or HEAD, do not follow redirects, and have a one-second timeout; the probe URL stays server-side and is not returned to the browser. Entries without a health URL display as “Not monitored.” `/api/apps` returns up to 20 validated entries and does not provide app credentials or control actions.
+Only `name` and `url` are required. URLs must use HTTP or HTTPS. The app link opens in your browser, so its URL must be reachable from that device. For a loopback-only app, add its port to your SSH tunnel and use the forwarded `127.0.0.1` URL. Optional `management_url` adds a separate Manage link to the app's own admin page. Optional health checks run from the server using GET or HEAD, do not follow redirects, and have a one-second timeout; the probe URL stays server-side and is not returned to the browser. Entries without a health URL display as “Not monitored.” `/api/apps` returns up to 20 validated entries and does not provide app credentials or control actions.
 
 ## Install on Debian with systemd
 

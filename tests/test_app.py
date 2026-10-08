@@ -89,18 +89,29 @@ class DashboardApiTests(unittest.TestCase):
     def test_app_registry_checks_configured_health_and_hides_probe_url(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "apps.json"
-            path.write_text(json.dumps({"apps": [{"name": "Status", "url": "https://status.example.invalid", "category": "Tools", "description": "Private app", "health_url": f"{self.base}/api/health"}]}))
+            path.write_text(json.dumps({"apps": [{"name": "Status", "url": "https://status.example.invalid", "category": "Tools", "description": "Private app", "management_url": "https://admin.example.invalid", "health_url": f"{self.base}/api/health"}]}))
             with patch.dict(os.environ, {"APPS_FILE": str(path)}):
                 with urlopen(f"{self.base}/api/apps") as response:
                     data = json.load(response)
             self.assertTrue(data["available"])
             self.assertEqual(data["apps"][0]["status"], "available")
+            self.assertEqual(data["apps"][0]["management_url"], "https://admin.example.invalid")
             self.assertNotIn("health_url", data["apps"][0])
 
     def test_app_registry_rejects_script_urls(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "apps.json"
             path.write_text(json.dumps({"apps": [{"name": "Unsafe", "url": "javascript:alert(1)"}]}))
+            with patch.dict(os.environ, {"APPS_FILE": str(path)}):
+                with urlopen(f"{self.base}/api/apps") as response:
+                    data = json.load(response)
+            self.assertFalse(data["available"])
+            self.assertEqual(data["apps"], [])
+
+    def test_app_registry_rejects_script_management_urls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "apps.json"
+            path.write_text(json.dumps({"apps": [{"name": "Unsafe", "url": "https://example.invalid", "management_url": "javascript:alert(1)"}]}))
             with patch.dict(os.environ, {"APPS_FILE": str(path)}):
                 with urlopen(f"{self.base}/api/apps") as response:
                     data = json.load(response)

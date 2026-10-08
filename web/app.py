@@ -290,15 +290,18 @@ def validate_app_entries(config: object) -> list[dict]:
         category = entry.get("category", "Application")
         health_url = entry.get("health_url")
         health_method = entry.get("health_method", "GET")
+        management_url = entry.get("management_url")
         if not isinstance(name, str) or not name.strip() or len(name) > 60 or not valid_app_url(url):
             raise ValueError
         if not isinstance(description, str) or len(description) > 160 or not isinstance(category, str) or len(category) > 40:
             raise ValueError
         if health_url is not None and not valid_app_url(health_url):
             raise ValueError
+        if management_url is not None and not valid_app_url(management_url):
+            raise ValueError
         if health_method not in {"GET", "HEAD"}:
             raise ValueError
-        apps.append({"name": name.strip(), "url": url, "description": description, "category": category, "health_url": health_url, "health_method": health_method})
+        apps.append({"name": name.strip(), "url": url, "description": description, "category": category, "health_url": health_url, "health_method": health_method, "management_url": management_url})
     return apps
 
 
@@ -313,7 +316,7 @@ def app_registry() -> dict:
         checks = [pool.submit(app_health, item["health_url"], item["health_method"]) if item["health_url"] else None for item in apps]
         result = []
         for item, check in zip(apps, checks):
-            result.append({"name": item["name"], "url": item["url"], "description": item["description"], "category": item["category"], "status": check.result() if check else "unmonitored"})
+            result.append({"name": item["name"], "url": item["url"], "description": item["description"], "category": item["category"], "management_url": item["management_url"], "status": check.result() if check else "unmonitored"})
     return {"available": True, "sampled_at": time.time(), "total": len(result), "apps": result}
 
 
