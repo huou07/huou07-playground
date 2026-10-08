@@ -64,6 +64,14 @@ trap on_error EXIT HUP INT TERM
 
 install -d -o root -g root -m 0755 "$release"
 cp -R "$SOURCE/web" "$release/web"
+if [ ! -f "$release/web/static/branding.png" ]; then
+  for branding in "$ROOT"/releases/*/web/static/branding.png; do
+    if [ -f "$branding" ]; then
+      cp "$branding" "$release/web/static/branding.png"
+      break
+    fi
+  done
+fi
 chown -R root:root "$release"
 find "$release" -type d -exec chmod 0755 {} +
 find "$release" -type f -exec chmod 0644 {} +

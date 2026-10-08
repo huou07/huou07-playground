@@ -61,7 +61,7 @@ The backport version floor avoids older releases affected by known security issu
 
 ## Local branding
 
-The supplied turtle artwork is kept as a local-only file at `assets/turtle-local.png` and is excluded from Git until its redistribution rights are confirmed. For a local preview, copy it to `web/static/branding.png`; that runtime asset is also ignored by Git. Public builds use a neutral fallback mark.
+The supplied turtle artwork is kept as a local-only file at `assets/turtle-local.png` and is excluded from Git until its redistribution rights are confirmed. Copy it to `web/static/branding.png` before deployment to use it; the installer carries an existing private copy forward across upgrades. The runtime asset is ignored by Git, and clean/public builds use a neutral fallback mark.
 
 ## Server discovery
 
