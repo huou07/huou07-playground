@@ -23,7 +23,7 @@ The reference calls for a compact, custom personal dashboard. The portal starts 
 Verified: `make check` passes (5 standard-library tests); actual Linux probes confirm CPU frequency, temperature, core counts, memory, storage, swap/ZRAM and network data are read without privileged access. Playwright inspected desktop (1600×900), phone portrait (390×844), and landscape (844×390) layouts, including live hardware, systemd and process data from the target. Process search, sorting, mobile representation, and no-horizontal-overflow were verified. The browser console was clear after fixes. Theme persistence and mobile menu keyboard dismissal passed. A stale-sample probe confirmed CPU, network and process rates return to unavailable after a long polling gap. The installed systemd unit passed `systemd-analyze verify`; health, metrics, process and service APIs all responded. The listener is loopback-only, the service account cannot write `/etc`, the app code or `/root`, and it has no sudo permission. The existing VPN service and active firewall remained active. Installed API response medians were 3.3 ms for metrics, 23.9 ms for process data and 41.6 ms for service listing in a five-sample check. Gitleaks found no staged or committed secret findings.
 
 ## Deployment state
-Installed and running as a loopback-only systemd service on the target. Private remote use is available through an SSH tunnel; direct browser access over the VPN still needs an access-control design and verification. The existing remote-access service remains active as recovery access. The deployment source commit will be recorded after this verified unit is pushed.
+Installed and running as a loopback-only systemd service on the target from source commit `e32a90dafb546a042969036aaac89318221a7113`. Private remote use is available through an SSH tunnel; direct browser access over the VPN still needs an access-control design and verification. The existing remote-access service remains active as recovery access. The local turtle image is installed from the user's local file and is not part of the public repository.
 
 ## Remaining work
 - Continue implementation in small verified units and scan staged files/history for secrets before each push.
@@ -32,4 +32,4 @@ Installed and running as a loopback-only systemd service on the target. Private 
 - Add authenticated private-network browser access after reviewing the existing VPN policy and a rollback path. Real remote-client VPN handshake and credential-dependent AI tests require owner-side access/setup.
 
 ## Next useful action
-Record the deployed source commit, then continue with a private-network access design that does not expose management surfaces publicly.
+Continue with a private-network access design that does not expose management surfaces publicly.
