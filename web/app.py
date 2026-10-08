@@ -10,8 +10,12 @@ import re
 import subprocess
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
@@ -244,6 +248,71 @@ def cockpit_status() -> dict:
     return {"available": result.returncode == 0, "reason": "Cockpit is not installed or its socket is stopped."}
 
 
+def valid_app_url(value: object) -> bool:
+    if not isinstance(value, str) or len(value) > 2048 or any(ord(char) < 32 for char in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+        return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and not any(char.isspace() for char in parsed.hostname) and (port is None or 1 <= port <= 65535) and parsed.username is None and parsed.password is None
+    except ValueError:
+        return False
+
+
+def app_health(url: str, method: str) -> str:
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str) -> None:
+            return None
+
+    opener = build_opener(ProxyHandler({}), NoRedirect())
+    try:
+        request = Request(url, method=method, headers={"User-Agent": "huou07-playground/0.1"})
+        response = opener.open(request, timeout=1)
+        try:
+            return "available" if 200 <= response.status < 400 else "unavailable"
+        finally:
+            response.close()
+    except (OSError, HTTPError, URLError, ValueError):
+        return "unavailable"
+
+
+def app_registry() -> dict:
+    path = Path(os.environ.get("APPS_FILE", "/etc/huou07-playground/apps.json"))
+    try:
+        config = json.loads(path.read_text())
+        entries = config.get("apps") if isinstance(config, dict) else None
+        if not isinstance(entries, list) or len(entries) > 20:
+            raise ValueError
+        apps = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError
+            name = entry.get("name")
+            url = entry.get("url")
+            description = entry.get("description", "")
+            category = entry.get("category", "Application")
+            health_url = entry.get("health_url")
+            health_method = entry.get("health_method", "GET")
+            if not isinstance(name, str) or not name.strip() or len(name) > 60 or not valid_app_url(url):
+                raise ValueError
+            if not isinstance(description, str) or len(description) > 160 or not isinstance(category, str) or len(category) > 40:
+                raise ValueError
+            if health_url is not None and not valid_app_url(health_url):
+                raise ValueError
+            if health_method not in {"GET", "HEAD"}:
+                raise ValueError
+            apps.append({"name": name.strip(), "url": url, "description": description, "category": category, "health_url": health_url, "health_method": health_method})
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError):
+        return {"available": False, "reason": "Application configuration is unavailable or invalid.", "apps": []}
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        checks = [pool.submit(app_health, item["health_url"], item["health_method"]) if item["health_url"] else None for item in apps]
+        result = []
+        for item, check in zip(apps, checks):
+            result.append({"name": item["name"], "url": item["url"], "description": item["description"], "category": item["category"], "status": check.result() if check else "unmonitored"})
+    return {"available": True, "sampled_at": time.time(), "total": len(result), "apps": result}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "Huou07Playground/0.1"
 
@@ -262,6 +331,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/cockpit":
             self.send_json(200, cockpit_status())
+            return
+        if self.path == "/api/apps":
+            self.send_json(200, app_registry())
             return
         path = "/index.html" if self.path == "/" else self.path
         target = (STATIC / path.lstrip("/")).resolve()

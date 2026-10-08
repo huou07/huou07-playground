@@ -37,6 +37,10 @@ else
 fi
 
 install -d -o root -g root -m 0755 "$ROOT/releases"
+install -d -o root -g "$ACCOUNT" -m 0750 /etc/huou07-playground
+if [ ! -e /etc/huou07-playground/apps.json ]; then
+  install -o root -g "$ACCOUNT" -m 0640 "$SOURCE/config/apps.example.json" /etc/huou07-playground/apps.json
+fi
 release="$ROOT/releases/$(date -u +%Y%m%d%H%M%S)-$$"
 previous=$(readlink "$ROOT/current" 2>/dev/null || true)
 rollback() {

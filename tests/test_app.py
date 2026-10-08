@@ -3,6 +3,7 @@ import os
 import platform
 import sys
 import threading
+import tempfile
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -84,6 +85,27 @@ class DashboardApiTests(unittest.TestCase):
                 status = json.load(response)
             self.assertFalse(status["available"])
             self.assertTrue(status["reason"])
+
+    def test_app_registry_checks_configured_health_and_hides_probe_url(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "apps.json"
+            path.write_text(json.dumps({"apps": [{"name": "Status", "url": "https://status.example.invalid", "category": "Tools", "description": "Private app", "health_url": f"{self.base}/api/health"}]}))
+            with patch.dict(os.environ, {"APPS_FILE": str(path)}):
+                with urlopen(f"{self.base}/api/apps") as response:
+                    data = json.load(response)
+            self.assertTrue(data["available"])
+            self.assertEqual(data["apps"][0]["status"], "available")
+            self.assertNotIn("health_url", data["apps"][0])
+
+    def test_app_registry_rejects_script_urls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "apps.json"
+            path.write_text(json.dumps({"apps": [{"name": "Unsafe", "url": "javascript:alert(1)"}]}))
+            with patch.dict(os.environ, {"APPS_FILE": str(path)}):
+                with urlopen(f"{self.base}/api/apps") as response:
+                    data = json.load(response)
+            self.assertFalse(data["available"])
+            self.assertEqual(data["apps"], [])
 
     def test_static_page_has_security_headers_and_no_path_escape(self):
         with urlopen(f"{self.base}/") as response:

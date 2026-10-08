@@ -9,6 +9,7 @@ Group=huou07-playground
 WorkingDirectory=/opt/huou07-playground/current/web
 Environment=HOST=127.0.0.1
 Environment=PORT=8765
+Environment=APPS_FILE=/etc/huou07-playground/apps.json
 ExecStart=/usr/bin/python3 /opt/huou07-playground/current/web/app.py
 Restart=on-failure
 RestartSec=2s

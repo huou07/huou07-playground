@@ -8,7 +8,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps.
 - GPU and CPU package power report `N/A` until a supported telemetry adapter is available.
-- Service and process views are read-only. Authentication, service control/log access, browser terminal, VPN, app registry, and AI tool integration are not implemented yet. Bind the server to loopback until private-network access controls are in place.
+- Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be listed in a root-owned server registry with optional bounded health checks. Direct browser access stays disabled; use SSH tunnels.
 
 ## Run locally
 
@@ -19,6 +19,27 @@ make run
 ```
 
 Open `http://127.0.0.1:8765`. `PORT` can be changed for local development; `HOST` accepts loopback addresses only. The listener cannot be exposed to a LAN or WAN until authentication and private-network access controls exist. The API is read-only: `/api/health` is a liveness check, `/api/metrics` returns hardware/network data, `/api/services` returns systemd states, and `/api/processes` returns a bounded process list without command arguments.
+
+### Application registry
+
+On the server, edit `/etc/huou07-playground/apps.json` to add links. The installer seeds this file from [`config/apps.example.json`](config/apps.example.json) once and preserves it on upgrades. Keep this file root-owned and out of Git; do not put credentials or tokens in it. Example:
+
+```json
+{
+  "apps": [
+    {
+      "name": "Example app",
+      "url": "http://127.0.0.1:3000/",
+      "description": "A short note",
+      "category": "Tools",
+      "health_url": "http://127.0.0.1:3000/health",
+      "health_method": "GET"
+    }
+  ]
+}
+```
+
+Only `name` and `url` are required. URLs must use HTTP or HTTPS. The app link opens in your browser, so its URL must be reachable from that device. For a loopback-only app, add its port to your SSH tunnel and use the forwarded `127.0.0.1` URL. Optional health checks run from the server using GET or HEAD, do not follow redirects, and have a one-second timeout; the probe URL stays server-side and is not returned to the browser. Entries without a health URL display as “Not monitored.” `/api/apps` returns up to 20 validated entries and does not provide app credentials or control actions.
 
 ## Install on Debian with systemd
 
