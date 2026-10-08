@@ -47,6 +47,8 @@ Only `name` and `url` are required. URLs must use HTTP or HTTPS. The app link op
 
 From a trusted checkout on the server, run `sudo ./deploy/install.sh`. It installs the web files under `/opt/huou07-playground`, creates a dedicated unprivileged service account, and starts a loopback-only systemd unit. It does not change firewall, VPN, proxy, or SSH settings. The installer keeps prior releases so the symlink can be switched back if an upgrade fails. To remove the app and its releases, run `sudo ./deploy/uninstall.sh`; the dedicated account is retained.
 
+On a host with rootless Podman configured, run `sh deploy/check-rootless-sandbox.sh` as the unprivileged Podman owner to verify the digest-pinned workspace boundary before integrating a containerized agent.
+
 ### Back up and restore private state
 
 Before uninstalling or making a risky change, run `sudo python3 /opt/huou07-playground/current/deploy/state.py backup`. The archive is written with mode `0600` under `/var/backups/huou07-playground/`, outside the repository. It contains the app registry and, when present, the private turtle image. To restore one, run `sudo python3 /opt/huou07-playground/current/deploy/state.py restore /var/backups/huou07-playground/<archive>.tar.gz`. The restore validates the archive and registry before writing them atomically. Keep a copy of the archive on trusted storage separate from the server; this command does not upload backups. Future integrations must add their own state to this procedure before they are considered backed up.
