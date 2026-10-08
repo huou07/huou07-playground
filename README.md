@@ -59,6 +59,10 @@ ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 <your-ssh-alias>
 
 Then open `http://127.0.0.1:8765` on that computer. This is a private access method over SSH; direct LAN/VPN browser access is not enabled yet. Keep the SSH tunnel running while using the dashboard.
 
+### Codex CLI on the server
+
+Codex CLI 0.161.0 is installed for the SSH owner. Open Cockpit's terminal, change into a project directory, and run `codex --sandbox workspace-write --ask-for-approval on-request`. On first launch, sign in with ChatGPT yourself; huou07 playground does not handle provider credentials. The official [Codex sandbox documentation](https://learn.chatgpt.com/docs/agent-approvals-security) describes the workspace mode. On this host, a negative check found that the standard workspace profile blocked writes outside the project but still allowed reading a home-directory canary, so this profile is not suitable for untrusted agents or as the final host-secret boundary.
+
 ## Optional CPU package power telemetry
 
 The dashboard uses `turbostat`'s `PkgWatt` summary when supported. On Debian, `turbostat` is provided by [`linux-cpupower`](https://packages.debian.org/trixie/linux-cpupower). Install it with `sudo apt install linux-cpupower`, then install or upgrade huou07 playground. The installer sets up a separate fixed-purpose systemd sampler with read-only MSR device access and a 15-second timer; it writes only a sanitized sample that the dashboard can read. Unsupported CPUs or unavailable counters remain `N/A`. The web service gets no MSR access, root, or sudo permission. This measures CPU package power, not whole-system wall power.
