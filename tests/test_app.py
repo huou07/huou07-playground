@@ -74,6 +74,17 @@ class DashboardApiTests(unittest.TestCase):
         else:
             self.assertTrue(services["reason"])
 
+    def test_cockpit_status_endpoint_is_read_only_and_reports_socket_state(self):
+        with patch("web.app.platform.system", return_value="Linux"), patch("web.app.subprocess.run", return_value=app.subprocess.CompletedProcess([], 0)) as run:
+            with urlopen(f"{self.base}/api/cockpit") as response:
+                self.assertEqual(json.load(response)["available"], True)
+            self.assertEqual(run.call_args.args[0], ["systemctl", "is-active", "--quiet", "cockpit.socket"])
+        with patch("web.app.platform.system", return_value="Linux"), patch("web.app.subprocess.run", return_value=app.subprocess.CompletedProcess([], 3)):
+            with urlopen(f"{self.base}/api/cockpit") as response:
+                status = json.load(response)
+            self.assertFalse(status["available"])
+            self.assertTrue(status["reason"])
+
     def test_static_page_has_security_headers_and_no_path_escape(self):
         with urlopen(f"{self.base}/") as response:
             self.assertEqual(response.status, 200)

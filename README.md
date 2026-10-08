@@ -27,10 +27,16 @@ From a trusted checkout on the server, run `sudo ./deploy/install.sh`. It instal
 To open the dashboard from a computer that can SSH to the server, create a local tunnel:
 
 ```sh
-ssh -L 8765:127.0.0.1:8765 <your-ssh-alias>
+ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 <your-ssh-alias>
 ```
 
 Then open `http://127.0.0.1:8765` on that computer. This is a private access method over SSH; direct LAN/VPN browser access is not enabled yet. Keep the SSH tunnel running while using the dashboard.
+
+## Optional SSH terminal and system management
+
+On Debian 13 with its official backports repository enabled, run `sudo ./deploy/install-cockpit.sh`. The script requires Cockpit 368 or newer, simulates the package plan, refuses removals, and configures the systemd socket to listen only on `127.0.0.1:9090`. Cockpit is a separate, powerful host-management application; it does not run inside the dashboard's restricted service account. Its web login requires a valid Linux account credential. Do not enable SSH password login just to make Cockpit work. The dashboard shows Cockpit's state and links to it when its socket is active. The tunnel command above forwards both private loopback services. The browser uses Cockpit's local HTTP mode over the encrypted SSH tunnel.
+
+The backport version floor avoids older releases affected by known security issues: [Cockpit 360 security fix](https://cockpit-project.org/blog/cockpit-360.html), [Debian Cockpit backports](https://tracker.debian.org/pkg/cockpit/news/), and [Cockpit loopback/TLS behavior](https://docs.cockpit-project.org/cockpit-guide/main/guide/https.html). The dashboard uninstall script intentionally leaves Cockpit installed because it is an independently managed host component.
 
 ## Local branding
 

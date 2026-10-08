@@ -234,6 +234,16 @@ def service_metrics() -> dict:
     return {"available": True, "sampled_at": time.time(), "total": len(units), "services": units}
 
 
+def cockpit_status() -> dict:
+    if platform.system() != "Linux":
+        return {"available": False, "reason": "Cockpit is available when deployed on Linux."}
+    try:
+        result = subprocess.run(["systemctl", "is-active", "--quiet", "cockpit.socket"], capture_output=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+    except (OSError, subprocess.TimeoutExpired):
+        return {"available": False, "reason": "Cockpit status could not be checked."}
+    return {"available": result.returncode == 0, "reason": "Cockpit is not installed or its socket is stopped."}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "Huou07Playground/0.1"
 
@@ -249,6 +259,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/services":
             self.send_json(200, service_metrics())
+            return
+        if self.path == "/api/cockpit":
+            self.send_json(200, cockpit_status())
             return
         path = "/index.html" if self.path == "/" else self.path
         target = (STATIC / path.lstrip("/")).resolve()
