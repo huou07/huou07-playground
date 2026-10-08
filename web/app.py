@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import os
 import platform
+import pwd
 import re
+import subprocess
 import shutil
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -13,8 +15,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
-_prev_cpu: tuple[int, int] | None = None
+_prev_cpu: tuple[int, int, float] | None = None
 _prev_net: tuple[float, dict[str, tuple[int, int]]] | None = None
+_prev_processes: dict[int, tuple[int, int]] = {}
+_prev_process_total: int | None = None
+_prev_process_time: float | None = None
 
 
 def read_text(path: str, default: str = "") -> str:
@@ -37,9 +42,9 @@ def linux_metrics() -> dict:
     cpu_pct = None
     if _prev_cpu:
         total_delta, idle_delta = cpu_total - _prev_cpu[0], cpu_idle - _prev_cpu[1]
-        if total_delta > 0:
+        if 0 < now - _prev_cpu[2] <= 30 and total_delta > 0:
             cpu_pct = round(max(0, min(100, (total_delta - idle_delta) * 100 / total_delta)))
-    _prev_cpu = (cpu_total, cpu_idle)
+    _prev_cpu = (cpu_total, cpu_idle, now)
 
     mem = {}
     for line in read_text("/proc/meminfo").splitlines():
@@ -72,7 +77,7 @@ def linux_metrics() -> dict:
     rx_rate = tx_rate = None
     if _prev_net and net:
         elapsed = now - _prev_net[0]
-        if elapsed > 0:
+        if 0 < elapsed <= 30:
             rx_rate = sum(max(0, v[0] - _prev_net[1].get(k, v)[0]) for k, v in net.items()) / elapsed
             tx_rate = sum(max(0, v[1] - _prev_net[1].get(k, v)[1]) for k, v in net.items()) / elapsed
     _prev_net = (now, net)
@@ -146,6 +151,89 @@ def linux_metrics() -> dict:
     }
 
 
+def process_metrics() -> dict:
+    global _prev_processes, _prev_process_total, _prev_process_time
+    if platform.system() != "Linux":
+        return {"available": False, "reason": "Process metrics are available when deployed on Linux."}
+    cpu_line = read_text("/proc/stat").splitlines()
+    cpu_values = [int(value) for value in cpu_line[0].split()[1:]] if cpu_line and cpu_line[0].startswith("cpu ") else []
+    total_ticks = sum(cpu_values) - sum(cpu_values[8:10])
+    total_delta = total_ticks - _prev_process_total if _prev_process_total is not None else 0
+    sample_gap = time.monotonic() - _prev_process_time if _prev_process_time is not None else None
+    cores = os.cpu_count() or 1
+    ram_total = 0
+    for line in read_text("/proc/meminfo").splitlines():
+        if line.startswith("MemTotal:"):
+            try:
+                ram_total = int(line.split()[1]) * 1024
+            except (ValueError, IndexError):
+                pass
+            break
+    processes = []
+    current = {}
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            pid = int(proc.name)
+            stat = read_text(str(proc / "stat"))
+            close = stat.rfind(")")
+            fields = stat[close + 1:].split()
+            if close < 0 or len(fields) <= 19:
+                continue
+            ticks = int(fields[11]) + int(fields[12])
+            started = int(fields[19])
+            current[pid] = (ticks, started)
+            previous = _prev_processes.get(pid)
+            cpu_percent = None
+            if previous and previous[1] == started and sample_gap is not None and 0 < sample_gap <= 30 and total_delta > 0:
+                cpu_percent = round(max(0, (ticks - previous[0]) * cores * 100 / total_delta), 1)
+            uid = None
+            rss = 0
+            for line in read_text(str(proc / "status")).splitlines():
+                if line.startswith("Uid:"):
+                    try:
+                        uid = int(line.split()[1])
+                    except (ValueError, IndexError):
+                        pass
+                elif line.startswith("VmRSS:"):
+                    try:
+                        rss = int(line.split()[1]) * 1024
+                    except (ValueError, IndexError):
+                        pass
+            try:
+                owner = pwd.getpwuid(uid).pw_name if uid is not None else "unknown"
+            except KeyError:
+                owner = str(uid) if uid is not None else "unknown"
+            name = read_text(str(proc / "comm")).strip() or stat[stat.find("(") + 1:close]
+            processes.append({"pid": pid, "name": name, "owner": owner, "cpu_percent": cpu_percent, "memory_bytes": rss, "memory_percent": round(rss * 100 / ram_total, 2) if ram_total else None})
+        except (OSError, ValueError, IndexError):
+            continue
+    _prev_processes = current
+    _prev_process_total = total_ticks
+    _prev_process_time = time.monotonic()
+    processes.sort(key=lambda item: (item["cpu_percent"] or 0, item["memory_bytes"]), reverse=True)
+    return {"available": True, "sampled_at": time.time(), "total": len(processes), "processes": processes[:1000]}
+
+
+def service_metrics() -> dict:
+    if platform.system() != "Linux":
+        return {"available": False, "reason": "Systemd service data is available when deployed on Linux."}
+    try:
+        result = subprocess.run(["systemctl", "list-units", "--type=service", "--all", "--plain", "--no-pager", "--no-legend"], capture_output=True, text=True, timeout=3, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+    except (OSError, subprocess.TimeoutExpired):
+        return {"available": False, "reason": "systemctl could not provide service data."}
+    if result.returncode != 0:
+        return {"available": False, "reason": "systemctl could not provide service data."}
+    units = []
+    for line in result.stdout.splitlines():
+        fields = line.split(None, 4)
+        if len(fields) >= 4:
+            units.append({"name": fields[0], "load": fields[1], "active": fields[2], "state": fields[3], "description": fields[4][:100] if len(fields) > 4 else ""})
+    units.sort(key=lambda unit: (unit["active"] != "active", unit["name"].casefold()))
+    return {"available": True, "sampled_at": time.time(), "total": len(units), "services": units}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "Huou07Playground/0.1"
 
@@ -155,6 +243,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/metrics":
             self.send_json(200, linux_metrics())
+            return
+        if self.path == "/api/processes":
+            self.send_json(200, process_metrics())
+            return
+        if self.path == "/api/services":
+            self.send_json(200, service_metrics())
             return
         path = "/index.html" if self.path == "/" else self.path
         target = (STATIC / path.lstrip("/")).resolve()

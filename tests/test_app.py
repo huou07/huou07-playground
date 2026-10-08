@@ -52,6 +52,28 @@ class DashboardApiTests(unittest.TestCase):
         else:
             self.assertTrue(metrics["reason"])
 
+    def test_process_and_service_endpoints_exclude_command_arguments(self):
+        with urlopen(f"{self.base}/api/processes") as response:
+            processes = json.load(response)
+        if processes["available"]:
+            self.assertGreaterEqual(processes["total"], len(processes["processes"]))
+            self.assertLessEqual(len(processes["processes"]), 1000)
+            for process in processes["processes"]:
+                self.assertIn("pid", process)
+                self.assertIn("owner", process)
+                self.assertNotIn("cmdline", process)
+                self.assertNotIn("argv", process)
+        else:
+            self.assertTrue(processes["reason"])
+        with urlopen(f"{self.base}/api/services") as response:
+            services = json.load(response)
+        if services["available"]:
+            self.assertIsInstance(services["services"], list)
+            if services["services"]:
+                self.assertIn("active", services["services"][0])
+        else:
+            self.assertTrue(services["reason"])
+
     def test_static_page_has_security_headers_and_no_path_escape(self):
         with urlopen(f"{self.base}/") as response:
             self.assertEqual(response.status, 200)
