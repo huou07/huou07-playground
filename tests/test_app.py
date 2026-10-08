@@ -71,6 +71,11 @@ class DashboardApiTests(unittest.TestCase):
             result = app.cpu_package_power()
         self.assertFalse(result["available"])
         self.assertIn("permissions", result["reason"])
+        app._power_sample = None
+        unavailable = app.subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with patch("web.app.shutil.which", return_value="/usr/sbin/turbostat"), patch("web.app.subprocess.run", return_value=unavailable):
+            result = app.cpu_package_power()
+        self.assertIn("device access may be unavailable", result["reason"])
 
     def test_process_and_service_endpoints_exclude_command_arguments(self):
         with urlopen(f"{self.base}/api/processes") as response:

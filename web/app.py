@@ -65,7 +65,7 @@ def cpu_package_power() -> dict:
             elif any(term in sample.stderr.lower() for term in ("permission", "denied", "failed to access /dev/cpu/")):
                 result = {"available": False, "reason": "turbostat cannot read the required CPU power counters with the current service permissions."}
             else:
-                result = {"available": False, "reason": "This CPU or kernel does not expose package power through turbostat."}
+                result = {"available": False, "reason": "turbostat returned no package-power value; hardware support or device access may be unavailable."}
         except subprocess.TimeoutExpired:
             result = {"available": False, "reason": "turbostat did not return a sample within three seconds."}
         except (OSError, ValueError, IndexError):
