@@ -8,7 +8,7 @@ import platform
 import re
 import shutil
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -78,7 +78,48 @@ def linux_metrics() -> dict:
     _prev_net = (now, net)
 
     disk = shutil.disk_usage("/")
-    model = next((re.sub(r"^\s+", "", line.split(":", 1)[1]) for line in read_text("/proc/cpuinfo").splitlines() if line.startswith("model name") and ":" in line), platform.processor() or "Unknown")
+    cpuinfo = read_text("/proc/cpuinfo")
+    cpu_lines = cpuinfo.splitlines()
+    model = next((line.split(":", 1)[1].strip() for line in cpu_lines if line.startswith("model name") and ":" in line), platform.processor() or "Unknown")
+    core_pairs = set()
+    for block in cpuinfo.split("\n\n"):
+        physical = re.search(r"^physical id\s*:\s*(\d+)", block, re.M)
+        core = re.search(r"^core id\s*:\s*(\d+)", block, re.M)
+        if physical and core:
+            core_pairs.add((physical.group(1), core.group(1)))
+    frequencies = []
+    for path in Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq/scaling_cur_freq"):
+        try:
+            frequencies.append(int(path.read_text().strip()) / 1000)
+        except (OSError, ValueError):
+            pass
+    if not frequencies:
+        frequencies = [float(match.group(1)) for line in cpu_lines if (match := re.match(r"cpu MHz\s*:\s*([0-9.]+)", line))]
+    cpu_temperature = None
+    for hwmon in Path("/sys/class/hwmon").glob("hwmon*"):
+        name = read_text(str(hwmon / "name")).strip().lower()
+        for label_path in hwmon.glob("temp*_label"):
+            label = read_text(str(label_path)).strip().lower()
+            if not any(word in f"{name} {label}" for word in ("package", "tctl", "tdie", "cpu")):
+                continue
+            input_path = label_path.with_name(label_path.name.removesuffix("_label") + "_input")
+            try:
+                value = int(input_path.read_text().strip()) / 1000
+                if -20 <= value <= 150:
+                    cpu_temperature = round(max(cpu_temperature or value, value), 1)
+            except (OSError, ValueError):
+                pass
+    if cpu_temperature is None:
+        for zone in Path("/sys/class/thermal").glob("thermal_zone*"):
+            if read_text(str(zone / "type")).strip().lower() not in {"x86_pkg_temp", "cpu-thermal"}:
+                continue
+            try:
+                value = int((zone / "temp").read_text().strip()) / 1000
+                if -20 <= value <= 150:
+                    cpu_temperature = round(value, 1)
+                    break
+            except (OSError, ValueError):
+                pass
     load = os.getloadavg() if hasattr(os, "getloadavg") else None
     zram = []
     for device in Path("/sys/block").glob("zram*"):
@@ -93,7 +134,7 @@ def linux_metrics() -> dict:
     return {
         "supported": True,
         "sampled_at": time.time(),
-        "cpu": {"usage_percent": cpu_pct, "logical_cores": os.cpu_count(), "model": model, "load": list(load) if load else None},
+        "cpu": {"usage_percent": cpu_pct, "logical_cores": os.cpu_count(), "physical_cores": len(core_pairs) or None, "frequency_mhz": round(sum(frequencies) / len(frequencies)) if frequencies else None, "temperature_c": cpu_temperature, "model": model, "load": list(load) if load else None},
         "memory": {"used": ram_used, "total": total, "available": available, "percent": round(ram_used * 100 / total) if total else None},
         "storage": {"used": disk.used, "total": disk.total, "percent": round(disk.used * 100 / disk.total) if disk.total else None, "mount": "/"},
         "swap": {"devices": swaps, "used": swap_used, "total": swap_total, "percent": round(swap_used * 100 / swap_total) if swap_total else None},
@@ -150,7 +191,7 @@ def main() -> None:
     if host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("Only loopback binding is supported until authentication and private-network access controls are implemented.")
     port = int(os.environ.get("PORT", "8765"))
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = HTTPServer((host, port), Handler)
     print(f"huou07 playground listening on {host}:{port}")
     try:
         server.serve_forever(poll_interval=0.5)

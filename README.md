@@ -5,7 +5,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 ## Current implementation
 
 - Compact responsive dashboard with dark default and persisted light theme.
-- Live CPU, RAM, root filesystem, swap/ZRAM, host identity, uptime, and network byte counters from Linux procfs and sysfs.
+- Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs.
 - CPU and network rates are calculated from successive samples; the first sample is labeled as sampling.
 - GPU and CPU package power report `N/A` until a supported telemetry adapter is available.
 - No authentication, service control, terminal, VPN, application proxy, or AI tool integration is implemented yet. Bind the server to loopback until private-network access controls are in place.
