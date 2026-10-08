@@ -23,5 +23,5 @@ RestrictAddressFamilies=AF_UNIX
 CapabilityBoundingSet=CAP_SYS_RAWIO
 AmbientCapabilities=CAP_SYS_RAWIO
 DevicePolicy=closed
-DeviceAllow=char-cpu/msr r
+DeviceAllow=char-cpu/* r
 ReadOnlyPaths=/proc /sys
