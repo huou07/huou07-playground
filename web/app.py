@@ -24,6 +24,7 @@ _prev_net: tuple[float, dict[str, tuple[int, int]]] | None = None
 _prev_processes: dict[int, tuple[int, int]] = {}
 _prev_process_total: int | None = None
 _prev_process_time: float | None = None
+_power_sample: tuple[float, dict] | None = None
 
 
 def read_text(path: str, default: str = "") -> str:
@@ -31,6 +32,46 @@ def read_text(path: str, default: str = "") -> str:
         return Path(path).read_text()
     except (OSError, UnicodeError):
         return default
+
+
+def cpu_package_power() -> dict:
+    """Read one summary-only turbostat package-power sample, cached briefly."""
+    global _power_sample
+    now = time.monotonic()
+    if _power_sample and now - _power_sample[0] < 15:
+        return _power_sample[1]
+    turbostat = shutil.which("turbostat")
+    if not turbostat:
+        result = {"available": False, "reason": "turbostat is not installed."}
+    else:
+        try:
+            sample = subprocess.run(
+                [turbostat, "--quiet", "--Summary", "--show", "PkgWatt", "--interval", "1", "--num_iterations", "1"],
+                capture_output=True, text=True, timeout=3, check=False,
+                env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+            )
+            lines = [line.split() for line in sample.stdout.splitlines() if line.strip()]
+            header = next((i for i, fields in enumerate(lines) if "PkgWatt" in fields), None)
+            watts = None
+            if sample.returncode == 0 and header is not None and header + 1 < len(lines):
+                column = lines[header].index("PkgWatt")
+                value = lines[header + 1][column]
+                if value != "-":
+                    parsed = float(value)
+                    if 0 <= parsed <= 2000:
+                        watts = round(parsed, 1)
+            if watts is not None:
+                result = {"available": True, "watts": watts, "measurement": "CPU package power"}
+            elif sample.returncode != 0 and ("permission" in sample.stderr.lower() or "denied" in sample.stderr.lower()):
+                result = {"available": False, "reason": "turbostat cannot read the required CPU power counters with the current service permissions."}
+            else:
+                result = {"available": False, "reason": "This CPU or kernel does not expose package power through turbostat."}
+        except subprocess.TimeoutExpired:
+            result = {"available": False, "reason": "turbostat did not return a sample within three seconds."}
+        except (OSError, ValueError, IndexError):
+            result = {"available": False, "reason": "turbostat returned an unreadable package-power sample."}
+    _power_sample = (now, result)
+    return result
 
 
 def linux_metrics() -> dict:
@@ -151,7 +192,7 @@ def linux_metrics() -> dict:
         "network": {"interfaces": [{"name": name, "received_total": v[0], "sent_total": v[1]} for name, v in net.items()], "download_bytes_per_second": rx_rate, "upload_bytes_per_second": tx_rate},
         "system": {"os": platform.platform(), "kernel": platform.release(), "uptime_seconds": max(0, float(read_text("/proc/uptime", "0").split()[0]))},
         "gpu": {"available": False, "reason": "No supported GPU telemetry adapter is configured."},
-        "power": {"available": False, "reason": "CPU package power is unavailable until turbostat is installed and safely configured."},
+        "power": cpu_package_power(),
     }
 
 

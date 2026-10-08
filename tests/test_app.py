@@ -53,6 +53,25 @@ class DashboardApiTests(unittest.TestCase):
         else:
             self.assertTrue(metrics["reason"])
 
+    def test_turbostat_package_power_parses_summary_without_running_a_shell(self):
+        app._power_sample = None
+        result = app.subprocess.CompletedProcess([], 0, stdout="PkgWatt\n28.4\n", stderr="")
+        with patch("web.app.shutil.which", return_value="/usr/bin/turbostat"), patch("web.app.subprocess.run", return_value=result) as run:
+            self.assertEqual(app.cpu_package_power(), {"available": True, "watts": 28.4, "measurement": "CPU package power"})
+        self.assertEqual(run.call_args.args[0], ["/usr/bin/turbostat", "--quiet", "--Summary", "--show", "PkgWatt", "--interval", "1", "--num_iterations", "1"])
+        self.assertFalse(run.call_args.kwargs.get("shell", False))
+
+    def test_turbostat_reports_missing_tool_and_permission_failure(self):
+        app._power_sample = None
+        with patch("web.app.shutil.which", return_value=None):
+            self.assertIn("not installed", app.cpu_package_power()["reason"])
+        app._power_sample = None
+        denied = app.subprocess.CompletedProcess([], 1, stdout="", stderr="Permission denied")
+        with patch("web.app.shutil.which", return_value="/usr/bin/turbostat"), patch("web.app.subprocess.run", return_value=denied):
+            result = app.cpu_package_power()
+        self.assertFalse(result["available"])
+        self.assertIn("permissions", result["reason"])
+
     def test_process_and_service_endpoints_exclude_command_arguments(self):
         with urlopen(f"{self.base}/api/processes") as response:
             processes = json.load(response)

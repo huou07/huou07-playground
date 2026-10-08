@@ -8,7 +8,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps.
 - The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. SSH tunneling remains the only browser access method.
-- GPU and CPU package power report `N/A` until a supported telemetry adapter is available.
+- GPU reports `N/A` until a supported telemetry adapter is available. CPU package watts are read from `turbostat` when the host has the tool and grants the dashboard account access to its read-only counters; otherwise the API and UI show the specific unavailable reason. The probe runs summary-only once per cache window and does not use sudo.
 - Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be listed in a root-owned server registry with optional bounded health checks. Direct browser access stays disabled; use SSH tunnels.
 
 ## Run locally
@@ -58,6 +58,10 @@ ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 <your-ssh-alias>
 ```
 
 Then open `http://127.0.0.1:8765` on that computer. This is a private access method over SSH; direct LAN/VPN browser access is not enabled yet. Keep the SSH tunnel running while using the dashboard.
+
+## Optional CPU package power telemetry
+
+The dashboard uses `turbostat`'s `PkgWatt` summary when supported. On Debian, `turbostat` is provided by [`linux-cpupower`](https://packages.debian.org/trixie/linux-cpupower). Install it with `sudo apt install linux-cpupower`, then check the dashboard: unsupported CPUs or unreadable counters remain `N/A`. The dashboard service does not receive root or sudo access to read the counters. This is CPU package power, not whole-system wall power.
 
 ## Optional SSH terminal and system management
 
