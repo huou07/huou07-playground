@@ -63,7 +63,9 @@ Then open `http://127.0.0.1:8765` on that computer. This is a private access met
 
 ### Codex CLI on the server
 
-Codex CLI 0.161.0 is installed for the SSH owner. Open Cockpit's terminal, change into a project directory, and run `codex --sandbox workspace-write --ask-for-approval on-request`. On first launch, sign in with ChatGPT yourself; huou07 playground does not handle provider credentials. The official [Codex sandbox documentation](https://learn.chatgpt.com/docs/agent-approvals-security) describes the workspace mode. On this host, a negative check found that the standard workspace profile blocked writes outside the project but still allowed reading a home-directory canary, so this profile is not suitable for untrusted agents or as the final host-secret boundary.
+Codex CLI 0.161.0 is installed for the SSH owner. The managed profile in `deploy/codex-requirements.toml` makes the active workspace writable and denies sandboxed local commands access to the rest of the filesystem. Install it with `sudo ./deploy/install-codex-policy.sh`, then run `./deploy/check-codex-policy.sh` as the Codex owner. The check verifies an in-workspace write, a blocked home-directory read, and a blocked full-access override. Re-run it after Codex upgrades because permission profiles are beta and may change.
+
+Open Cockpit's terminal, change into a project directory, and run `codex --ask-for-approval on-request`. The system-managed profile is the default; do not pass legacy `--sandbox` options, which select the older sandbox mode. On first launch, sign in with ChatGPT yourself; huou07 playground does not handle provider credentials. This filesystem profile covers Codex's sandboxed local commands, not separate MCP, browser, connector, or cloud execution surfaces. See the official [Codex permissions documentation](https://learn.chatgpt.com/docs/permissions) for its scope and limitations.
 
 ## Optional CPU package power telemetry
 

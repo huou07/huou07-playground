@@ -1,0 +1,15 @@
+default_permissions = "huou07_workspace"
+
+[allowed_permission_profiles]
+huou07_workspace = true
+
+[permissions.huou07_workspace]
+description = "Write only inside the active workspace."
+extends = ":workspace"
+
+[permissions.huou07_workspace.filesystem]
+":root" = "deny"
+":minimal" = "read"
+":tmpdir" = "deny"
+":slash_tmp" = "deny"
+"~/.codex/packages/standalone" = "read"
