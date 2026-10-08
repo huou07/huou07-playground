@@ -8,7 +8,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps.
 - The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. SSH tunneling remains the only browser access method.
-- GPU reports `N/A` until a supported telemetry adapter is available. CPU package watts are read from `turbostat` when the host has the tool and grants the dashboard account access to its read-only counters; otherwise the API and UI show the specific unavailable reason. The probe runs summary-only once per cache window and does not use sudo.
+- GPU reports `N/A` until a supported telemetry adapter is available. CPU package watts use a separate restricted systemd collector when supported; the dashboard account reads only its recent sanitized sample and never receives MSR access or root privileges.
 - Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be listed in a root-owned server registry with optional bounded health checks. Direct browser access stays disabled; use SSH tunnels.
 
 ## Run locally
@@ -61,7 +61,7 @@ Then open `http://127.0.0.1:8765` on that computer. This is a private access met
 
 ## Optional CPU package power telemetry
 
-The dashboard uses `turbostat`'s `PkgWatt` summary when supported. On Debian, `turbostat` is provided by [`linux-cpupower`](https://packages.debian.org/trixie/linux-cpupower). Install it with `sudo apt install linux-cpupower`, then check the dashboard: unsupported CPUs or unreadable counters remain `N/A`. The dashboard service does not receive root or sudo access to read the counters. This is CPU package power, not whole-system wall power.
+The dashboard uses `turbostat`'s `PkgWatt` summary when supported. On Debian, `turbostat` is provided by [`linux-cpupower`](https://packages.debian.org/trixie/linux-cpupower). Install it with `sudo apt install linux-cpupower`, then install or upgrade huou07 playground. The installer sets up a separate fixed-purpose systemd sampler with read-only MSR device access and a 15-second timer; it writes only a sanitized sample that the dashboard can read. Unsupported CPUs or unavailable counters remain `N/A`. The web service gets no MSR access, root, or sudo permission. This measures CPU package power, not whole-system wall power.
 
 ## Optional SSH terminal and system management
 

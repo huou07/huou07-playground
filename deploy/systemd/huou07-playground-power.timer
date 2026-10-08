@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh huou07 playground CPU package power
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=huou07-playground-power.service
+
+[Install]
+WantedBy=timers.target

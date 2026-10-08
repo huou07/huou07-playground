@@ -3,6 +3,8 @@ set -eu
 
 ROOT=/opt/huou07-playground
 SERVICE=huou07-playground.service
+POWER_SERVICE=huou07-playground-power.service
+POWER_TIMER=huou07-playground-power.timer
 ACCOUNT=huou07-playground
 SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
@@ -10,12 +12,20 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer as root (for example: sudo ./deploy/install.sh)." >&2
   exit 1
 fi
-if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ] || [ ! -f "$SOURCE/deploy/state.py" ]; then
+if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ] || [ ! -f "$SOURCE/deploy/power.py" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_TIMER" ] || [ ! -f "$SOURCE/deploy/state.py" ]; then
   echo "Run the installer from a complete huou07-playground checkout." >&2
   exit 1
 fi
 if [ -e "/etc/systemd/system/$SERVICE" ] && ! grep -Fq 'ExecStart=/usr/bin/python3 /opt/huou07-playground/current/web/app.py' "/etc/systemd/system/$SERVICE"; then
   echo "An unrelated $SERVICE unit already exists; refusing to replace it." >&2
+  exit 1
+fi
+if [ -e "/etc/systemd/system/$POWER_SERVICE" ] && ! grep -Fq 'ExecStart=/usr/bin/python3 /opt/huou07-playground/current/deploy/power.py' "/etc/systemd/system/$POWER_SERVICE"; then
+  echo "An unrelated $POWER_SERVICE unit already exists; refusing to replace it." >&2
+  exit 1
+fi
+if [ -e "/etc/systemd/system/$POWER_TIMER" ] && ! grep -Fq "Unit=$POWER_SERVICE" "/etc/systemd/system/$POWER_TIMER"; then
+  echo "An unrelated $POWER_TIMER unit already exists; refusing to replace it." >&2
   exit 1
 fi
 if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
@@ -66,6 +76,7 @@ install -d -o root -g root -m 0755 "$release"
 cp -R "$SOURCE/web" "$release/web"
 install -d -o root -g root -m 0755 "$release/deploy"
 install -o root -g root -m 0644 "$SOURCE/deploy/state.py" "$release/deploy/state.py"
+install -o root -g root -m 0644 "$SOURCE/deploy/power.py" "$release/deploy/power.py"
 if [ ! -f "$release/web/static/branding.png" ]; then
   for branding in "$ROOT"/releases/*/web/static/branding.png; do
     if [ -f "$branding" ]; then
@@ -80,6 +91,8 @@ find "$release" -type f -exec chmod 0644 {} +
 ln -sfn "$release" "$ROOT/current.new"
 mv -Tf "$ROOT/current.new" "$ROOT/current"
 install -o root -g root -m 0644 "$SOURCE/deploy/systemd/$SERVICE" "/etc/systemd/system/$SERVICE"
+install -o root -g root -m 0644 "$SOURCE/deploy/systemd/$POWER_SERVICE" "/etc/systemd/system/$POWER_SERVICE"
+install -o root -g root -m 0644 "$SOURCE/deploy/systemd/$POWER_TIMER" "/etc/systemd/system/$POWER_TIMER"
 systemctl daemon-reload
 systemctl enable "$SERVICE"
 if systemctl is-active --quiet "$SERVICE"; then
@@ -91,6 +104,9 @@ fi
 if ! systemctl is-active --quiet "$SERVICE"; then
   echo "The service did not become active; the previous release has been restored." >&2
   exit 1
+fi
+if ! systemctl enable --now "$POWER_TIMER" >/dev/null 2>&1; then
+  echo "Warning: CPU package power sampling could not be scheduled; the dashboard will report it unavailable." >&2
 fi
 trap - EXIT HUP INT TERM
 echo "Installed and running at http://127.0.0.1:8765"

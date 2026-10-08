@@ -24,7 +24,6 @@ _prev_net: tuple[float, dict[str, tuple[int, int]]] | None = None
 _prev_processes: dict[int, tuple[int, int]] = {}
 _prev_process_total: int | None = None
 _prev_process_time: float | None = None
-_power_sample: tuple[float, dict] | None = None
 
 
 def read_text(path: str, default: str = "") -> str:
@@ -35,43 +34,22 @@ def read_text(path: str, default: str = "") -> str:
 
 
 def cpu_package_power() -> dict:
-    """Read one summary-only turbostat package-power sample, cached briefly."""
-    global _power_sample
-    now = time.monotonic()
-    if _power_sample and now - _power_sample[0] < 15:
-        return _power_sample[1]
-    turbostat = shutil.which("turbostat")
-    if not turbostat:
-        result = {"available": False, "reason": "turbostat is not installed."}
-    else:
-        try:
-            sample = subprocess.run(
-                [turbostat, "--quiet", "--Summary", "--show", "PkgWatt", "--interval", "1", "--num_iterations", "1"],
-                capture_output=True, text=True, timeout=3, check=False,
-                env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
-            )
-            lines = [line.split() for line in sample.stdout.splitlines() if line.strip()]
-            header = next((i for i, fields in enumerate(lines) if "PkgWatt" in fields), None)
-            watts = None
-            if sample.returncode == 0 and header is not None and header + 1 < len(lines):
-                column = lines[header].index("PkgWatt")
-                value = lines[header + 1][column]
-                if value != "-":
-                    parsed = float(value)
-                    if 0 <= parsed <= 2000:
-                        watts = round(parsed, 1)
-            if watts is not None:
-                result = {"available": True, "watts": watts, "measurement": "CPU package power"}
-            elif any(term in sample.stderr.lower() for term in ("permission", "denied", "failed to access /dev/cpu/")):
-                result = {"available": False, "reason": "turbostat cannot read the required CPU power counters with the current service permissions."}
-            else:
-                result = {"available": False, "reason": "turbostat returned no package-power value; hardware support or device access may be unavailable."}
-        except subprocess.TimeoutExpired:
-            result = {"available": False, "reason": "turbostat did not return a sample within three seconds."}
-        except (OSError, ValueError, IndexError):
-            result = {"available": False, "reason": "turbostat returned an unreadable package-power sample."}
-    _power_sample = (now, result)
-    return result
+    """Read a fresh, sanitized package-power sample from the restricted collector."""
+    path = Path(os.environ.get("POWER_FILE", "/var/lib/huou07-playground-power/sample.json"))
+    try:
+        sample = json.loads(path.read_text())
+        sampled_at = sample.get("sampled_at")
+        age = time.time() - sampled_at if isinstance(sampled_at, (int, float)) and not isinstance(sampled_at, bool) else None
+        if age is None or age < 0 or age > 60:
+            return {"available": False, "reason": "No current CPU package-power sample is available."}
+        if sample.get("available") is True:
+            watts = sample.get("watts")
+            if isinstance(watts, (int, float)) and not isinstance(watts, bool) and 0 <= watts <= 2000:
+                return {"available": True, "watts": round(watts, 1), "measurement": "CPU package power"}
+        reason = sample.get("reason")
+        return {"available": False, "reason": reason[:160] if isinstance(reason, str) and reason else "CPU package power is unavailable."}
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        return {"available": False, "reason": "No current CPU package-power sample is available."}
 
 
 def linux_metrics() -> dict:
