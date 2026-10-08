@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Workspace</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="brand"><img src="/branding.png" alt=""><span class="brand-fallback" aria-hidden="true">◉</span></div>
+      <nav>
+        <a class="nav-item active" href="#home"><span class="nav-icon">⌂</span>Home</a>
+        <a class="nav-item" href="#apps"><span class="nav-icon">▦</span>Apps</a>
+        <a class="nav-item" href="#system"><span class="nav-icon">▣</span>System</a>
+        <a class="nav-item" href="#services"><span class="nav-icon">⚙</span>Services</a>
+        <a class="nav-item" href="#ssh"><span class="nav-icon">›_</span>SSH</a>
+        <a class="nav-item" href="#network"><span class="nav-icon">⌘</span>Network</a>
+        <a class="nav-item" href="#storage"><span class="nav-icon">▤</span>Storage</a>
+        <a class="nav-item" href="#settings"><span class="nav-icon">⚙</span>Settings</a>
+      </nav>
+      <div class="sidebar-foot"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">Connecting</span></div>
+    </aside>
+    <main id="home">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="menu" aria-label="Open navigation">☰</button>
+        <div class="top-spacer"></div>
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search…" aria-label="Search dashboard"><kbd>⌘ K</kbd></label>
+        <button class="theme-toggle" id="theme" aria-label="Switch to light theme"><span aria-hidden="true">☼</span><span class="toggle-track"><span></span></span><span aria-hidden="true">☾</span></button>
+      </header>
+      <div class="content">
+        <section class="section" id="system">
+          <div class="section-heading"><h1>Home</h1><span class="updated" id="updated">Waiting for system data</span></div>
+          <div class="metric-grid" aria-label="System overview">
+            <article class="metric-card" data-metric="cpu"><div class="metric-top"><span>CPU</span><span class="metric-icon">▥</span></div><strong id="cpu-value">—</strong><div class="metric-note" id="cpu-note">Usage unavailable</div><div class="bar"><span id="cpu-bar"></span></div></article>
+            <article class="metric-card" data-metric="memory"><div class="metric-top"><span>RAM</span><span class="metric-icon">▤</span></div><strong id="memory-value">—</strong><div class="metric-note" id="memory-note">Waiting for data</div><div class="bar"><span id="memory-bar"></span></div></article>
+            <article class="metric-card" data-metric="storage"><div class="metric-top"><span>Storage</span><span class="metric-icon">▣</span></div><strong id="storage-value">—</strong><div class="metric-note" id="storage-note">Root filesystem</div><div class="bar"><span id="storage-bar"></span></div></article>
+            <article class="metric-card" data-metric="gpu"><div class="metric-top"><span>GPU</span><span class="metric-icon">▦</span></div><strong id="gpu-value">N/A</strong><div class="metric-note" id="gpu-note">Telemetry unavailable</div><div class="bar muted"><span></span></div></article>
+            <article class="metric-card" data-metric="zram"><div class="metric-top"><span>ZRAM</span><span class="metric-icon">▧</span></div><strong id="zram-value">N/A</strong><div class="metric-note" id="zram-note">No active ZRAM device</div><div class="bar"><span id="zram-bar"></span></div></article>
+            <article class="metric-card" data-metric="power"><div class="metric-top"><span>CPU Power</span><span class="metric-icon">ϟ</span></div><strong id="power-value">N/A</strong><div class="metric-note" id="power-note">turbostat unavailable</div><div class="bar muted"><span></span></div></article>
+          </div>
+        </section>
+
+        <section class="section" id="apps">
+          <div class="section-heading"><h2>Applications</h2></div>
+          <div class="empty-panel"><div class="empty-symbol" aria-hidden="true">▦</div><div><strong>No applications configured</strong><p>No application registry has been configured yet.</p></div></div>
+        </section>
+
+        <div class="lower-grid">
+          <section class="panel" id="services"><div class="panel-heading"><h2>Services</h2><span class="panel-caption">Host status</span></div><div class="info-row"><span>System service integration</span><span class="badge pending"><i></i>Not configured</span></div><p class="panel-note">Service inspection is not available in this build.</p></section>
+          <section class="panel" id="machine"><div class="panel-heading"><h2>Machine</h2><span class="panel-caption">Live host details</span></div><div class="machine-list"><div><span class="metric-icon">▣</span><span>Model</span><strong id="machine-cpu">Loading…</strong></div><div><span class="metric-icon">⌘</span><span>OS</span><strong id="machine-os">Loading…</strong></div><div><span class="metric-icon">◷</span><span>Kernel</span><strong id="machine-kernel">Loading…</strong></div><div><span class="metric-icon">▤</span><span>Logical cores</span><strong id="machine-cores">Loading…</strong></div><div><span class="metric-icon">◷</span><span>Uptime</span><strong id="machine-uptime">Loading…</strong></div><div><span class="metric-icon">ϟ</span><span>CPU package</span><strong id="machine-power">Unavailable</strong></div></div></section>
+          <section class="panel" id="network"><div class="panel-heading"><h2>Network</h2><span class="panel-caption">Live throughput</span></div><div class="network-value"><span>↓ Download</span><strong id="download">Waiting…</strong></div><div class="network-value"><span>↑ Upload</span><strong id="upload">Waiting…</strong></div><div class="network-value"><span>VPN</span><span class="badge pending"><i></i>Not configured</span></div><p class="panel-note" id="network-total">Transfer totals are private to this dashboard.</p></section>
+        </div>
+        <section class="panel storage-detail" id="storage"><div class="panel-heading"><h2>Storage</h2><span class="panel-caption">Mounted filesystem</span></div><div class="storage-line"><span>Root filesystem</span><strong id="storage-detail">Waiting for system data</strong></div></section>
+        <footer><span id="data-state">System data has not been received.</span><a href="#settings">Settings</a></footer>
+      </div>
+    </main>
+  </div>
+  <div class="mobile-scrim" id="scrim"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

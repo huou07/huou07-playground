@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+assets/turtle-local.png
+web/static/branding.png
+ChatGPT Image Oct 9, 2026, 12_39_03 AM.png
+.playwright-cli/
+
+web/static/branding.png
