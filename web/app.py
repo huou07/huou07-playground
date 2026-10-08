@@ -248,6 +248,21 @@ def cockpit_status() -> dict:
     return {"available": result.returncode == 0, "reason": "Cockpit is not installed or its socket is stopped."}
 
 
+def vpn_status() -> dict:
+    if platform.system() != "Linux":
+        return {"available": False, "connected": False, "reason": "VPN status is available when deployed on Linux."}
+    client = shutil.which("tailscale")
+    if not client:
+        return {"available": False, "connected": False, "reason": "No supported VPN client was found."}
+    try:
+        result = subprocess.run([client, "status", "--json"], capture_output=True, text=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+        data = json.loads(result.stdout) if result.returncode == 0 else {}
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        data = {}
+    connected = data.get("BackendState") == "Running"
+    return {"available": True, "connected": connected, "state": "Connected" if connected else "Disconnected"}
+
+
 def valid_app_url(value: object) -> bool:
     if not isinstance(value, str) or len(value) > 2048 or any(ord(char) < 32 for char in value):
         return False
@@ -338,6 +353,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/cockpit":
             self.send_json(200, cockpit_status())
+            return
+        if self.path == "/api/vpn":
+            self.send_json(200, vpn_status())
             return
         if self.path == "/api/apps":
             self.send_json(200, app_registry())
