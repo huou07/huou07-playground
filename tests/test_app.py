@@ -53,6 +53,20 @@ class DashboardApiTests(unittest.TestCase):
         else:
             self.assertTrue(metrics["reason"])
 
+    def test_nvidia_gpu_metrics_parse_utilization_vram_and_temperature(self):
+        result = app.subprocess.CompletedProcess([], 0, stdout="NVIDIA GeForce RTX 4090, 38, 4096, 8192, 55\n", stderr="")
+        with patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value="/usr/bin/nvidia-smi"), patch("web.app.subprocess.run", return_value=result) as run:
+            metrics = app.gpu_metrics()
+        self.assertEqual(metrics, {"available": True, "model": "NVIDIA GeForce RTX 4090", "usage_percent": 38, "memory_used": 4096 * 1024 * 1024, "memory_total": 8192 * 1024 * 1024, "temperature_c": 55})
+        self.assertEqual(run.call_args.args[0], ["/usr/bin/nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"])
+        self.assertFalse(run.call_args.kwargs.get("shell", False))
+
+    def test_nvidia_gpu_metrics_degrade_when_utility_is_missing(self):
+        with patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value=None):
+            metrics = app.gpu_metrics()
+        self.assertFalse(metrics["available"])
+        self.assertIn("nvidia-smi", metrics["reason"])
+
     def test_process_and_service_endpoints_exclude_command_arguments(self):
         with urlopen(f"{self.base}/api/processes") as response:
             processes = json.load(response)

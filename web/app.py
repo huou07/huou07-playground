@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import csv
+import io
+import math
 import os
 import platform
 import pwd
@@ -50,6 +53,46 @@ def cpu_package_power() -> dict:
         return {"available": False, "reason": reason[:160] if isinstance(reason, str) and reason else "CPU package power is unavailable."}
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
         return {"available": False, "reason": "No current CPU package-power sample is available."}
+
+
+def gpu_metrics() -> dict:
+    """Read NVIDIA utilization, memory and temperature when nvidia-smi is available."""
+    if platform.system() != "Linux":
+        return {"available": False, "reason": "GPU telemetry is available when deployed on Linux."}
+    nvidia_smi = shutil.which("nvidia-smi")
+    if not nvidia_smi:
+        return {"available": False, "reason": "NVIDIA telemetry is unavailable because nvidia-smi is not installed."}
+    try:
+        result = subprocess.run(
+            [nvidia_smi, "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=2, check=False,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+        )
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        if result.returncode != 0 or not rows or len(rows[0]) != 5:
+            return {"available": False, "reason": "nvidia-smi could not read GPU telemetry."}
+        name, usage, used, total, temperature = (value.strip() for value in rows[0])
+
+        def number(value: str, maximum: float) -> float | None:
+            if value.lower() in {"n/a", "[not supported]", ""}:
+                return None
+            parsed = float(value)
+            return parsed if math.isfinite(parsed) and 0 <= parsed <= maximum else None
+
+        usage_percent = number(usage, 100)
+        memory_used_mib = number(used, 10_000_000)
+        memory_total_mib = number(total, 10_000_000)
+        temperature_c = number(temperature, 150)
+        return {
+            "available": True,
+            "model": name[:120] or "NVIDIA GPU",
+            "usage_percent": usage_percent,
+            "memory_used": round(memory_used_mib * 1024 * 1024) if memory_used_mib is not None else None,
+            "memory_total": round(memory_total_mib * 1024 * 1024) if memory_total_mib is not None else None,
+            "temperature_c": temperature_c,
+        }
+    except (OSError, subprocess.TimeoutExpired, csv.Error, ValueError):
+        return {"available": False, "reason": "nvidia-smi did not return a valid GPU sample."}
 
 
 def linux_metrics() -> dict:
@@ -169,7 +212,7 @@ def linux_metrics() -> dict:
         "zram": {"devices": zram, "used": sum(x["used"] or 0 for x in zram), "total": sum(x["total"] or 0 for x in zram)},
         "network": {"interfaces": [{"name": name, "received_total": v[0], "sent_total": v[1]} for name, v in net.items()], "download_bytes_per_second": rx_rate, "upload_bytes_per_second": tx_rate},
         "system": {"os": platform.platform(), "kernel": platform.release(), "uptime_seconds": max(0, float(read_text("/proc/uptime", "0").split()[0]))},
-        "gpu": {"available": False, "reason": "No supported GPU telemetry adapter is configured."},
+        "gpu": gpu_metrics(),
         "power": cpu_package_power(),
     }
 
