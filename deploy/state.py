@@ -325,10 +325,13 @@ def restore_litellm_database(dump: bytes, postgres_password: str) -> None:
             stdin=archive,
         )
     sql = f"ALTER ROLE litellm WITH PASSWORD '{postgres_password}';\n".encode("ascii")
-    run_litellm_podman(
-        ["exec", "-i", "huou07-litellm-db", "psql", "-v", "ON_ERROR_STOP=1", "-U", "litellm", "-d", "postgres"],
-        stdin=io.BytesIO(sql),
-    )
+    with tempfile.TemporaryFile() as password_sql:
+        password_sql.write(sql)
+        password_sql.seek(0)
+        run_litellm_podman(
+            ["exec", "-i", "huou07-litellm-db", "psql", "-v", "ON_ERROR_STOP=1", "-U", "litellm", "-d", "postgres"],
+            stdin=password_sql,
+        )
 
 
 def restore_opencode_tree(files: dict[str, bytes], destination: Path, owner_uid: int, owner_gid: int, config_gid: int, config_uid: int = 0) -> None:

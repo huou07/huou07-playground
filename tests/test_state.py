@@ -93,6 +93,21 @@ class StateArchiveTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "LiteLLM backup is incomplete"):
                 state.read_backup(archive)
 
+    def test_litellm_database_restore_streams_dump_and_password_sql_from_files(self):
+        password = "a" * 64
+        received = []
+
+        def capture(args, stdin=None, stdout=None):
+            received.append((args, stdin.read()))
+
+        with mock.patch.object(state, "run_litellm_podman", side_effect=capture):
+            state.restore_litellm_database(b"database snapshot", password)
+
+        self.assertEqual(received[0][1], b"database snapshot")
+        self.assertIn("pg_restore", received[0][0])
+        self.assertIn("psql", received[1][0])
+        self.assertIn(password.encode(), received[1][1])
+
     def test_backup_restore_round_trip_preserves_private_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
