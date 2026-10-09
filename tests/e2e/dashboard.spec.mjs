@@ -30,6 +30,10 @@ test('navigation, browser preferences, and app launch work end to end', async ({
       tailscale: { available: true, connected: false, state: 'Disconnected' },
     }),
   }));
+  await page.route('**/api/cockpit', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ available: true }),
+  }));
 
   await page.goto('/#/home');
   const brand = page.locator('.brand img');
@@ -54,6 +58,10 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await expect(page.locator('#wg-easy-link')).toHaveAttribute('href', 'http://127.0.0.1:51821/');
 
   await page.locator('#sidebar [data-route="services"]').click();
+  await expect(page.locator('#cockpit-services-link')).toBeVisible();
+  await expect(page.locator('#cockpit-services-link')).toHaveAttribute('href', 'http://127.0.0.1:9090/system/services');
+  await expect(page.locator('#cockpit-process-link')).toBeVisible();
+  await expect(page.locator('#cockpit-process-link')).toHaveAttribute('href', 'http://127.0.0.1:9090/system/terminal');
   await expect(page.locator('#service-total')).toHaveText('1 running · 1 exited · 1 inactive · 1 failed');
   const stoppedService = page.locator('#service-list .service-row').filter({ hasText: 'stopped-demo' });
   await expect(stoppedService).toBeHidden();
