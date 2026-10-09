@@ -43,7 +43,7 @@ After OmniRoute `3.8.51` was installed on 2026-10-09, five server-loopback healt
 - Initial page load and navigation interaction time through the SSH tunnel, with repeated runs.
 - CPU and memory with the dashboard open versus closed over longer samples.
 - File upload and download throughput, including a test larger than available RAM, through Cockpit Files after the owner signs in.
-- VPN latency and throughput; direct VPN browser access is disabled by the SSH-only access choice.
+- WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled by the owner's SSH-tunnel choice.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
 - OmniRoute dashboard navigation and API timing through the SSH tunnel after owner login.
 - LiteLLM admin UI navigation, provider setup, and model management after owner sign-in.
