@@ -55,6 +55,39 @@ class RegisterDefaultAppTests(unittest.TestCase):
                 self.assertFalse(register_default_app(default))
             self.assertEqual(json.loads(registry.read_text())["apps"], [customized])
 
+    def test_migrates_only_explicit_legacy_launch_url_and_preserves_other_settings(self):
+        old_url = "http://127.0.0.1:9090/"
+        existing = {
+            "name": "Cockpit Files",
+            "url": old_url,
+            "category": "My Files",
+            "description": "Owner's note.",
+            "health_url": old_url,
+            "health_method": "HEAD",
+            "management_url": None,
+        }
+        default = {
+            "name": "Cockpit Files",
+            "url": "http://127.0.0.1:9090/system/files",
+            "category": "Files",
+            "description": "Browse and manage files.",
+            "health_url": old_url,
+            "health_method": "GET",
+            "management_url": "http://127.0.0.1:9090/system/files",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            registry = Path(directory) / "apps.json"
+            registry.write_text(json.dumps({"apps": [existing]}))
+            with patch.dict(os.environ, {"APPS_FILE": str(registry)}):
+                self.assertTrue(register_default_app(default, (old_url,)))
+            migrated = json.loads(registry.read_text())["apps"][0]
+        self.assertEqual(migrated["url"], default["url"])
+        self.assertEqual(migrated["category"], existing["category"])
+        self.assertEqual(migrated["description"], existing["description"])
+        self.assertEqual(migrated["health_url"], existing["health_url"])
+        self.assertEqual(migrated["health_method"], existing["health_method"])
+        self.assertEqual(migrated["management_url"], existing["management_url"])
+
     def test_rejects_invalid_builtin_app_without_changing_registry(self):
         app = {"name": "Bad", "url": "file:///etc/passwd"}
         with tempfile.TemporaryDirectory() as directory:

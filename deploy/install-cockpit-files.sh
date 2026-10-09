@@ -24,7 +24,8 @@ register_file_manager() {
       --category Files \
       --description "Browse, edit, upload, download, and manage files." \
       --health-url http://127.0.0.1:9090/ \
-      --management-url http://127.0.0.1:9090/system/files
+      --management-url http://127.0.0.1:9090/system/files \
+      --migrate-url-from http://127.0.0.1:9090/
   fi
 }
 
