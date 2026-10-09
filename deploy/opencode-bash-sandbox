@@ -16,10 +16,47 @@ case "$project/" in
   "$WORKSPACE_ROOT/"*) ;;
   *) echo "OpenCode project must stay inside $WORKSPACE_ROOT." >&2; exit 125 ;;
 esac
-# shortcut: Git worktrees are unavailable until OpenCode worktree sessions are required.
-if [[ -f "$project/.git" ]]; then
-  echo "OpenCode shell sandbox supports project checkouts; Git worktrees are not supported yet." >&2
-  exit 125
+git_common_dir=''
+linked_worktree=0
+if [[ -e "$project/.git" || -L "$project/.git" ]]; then
+  if [[ -L "$project/.git" ]]; then
+    echo "OpenCode shell does not support symbolic Git metadata paths." >&2
+    exit 125
+  fi
+  git_common_dir=$(env -i PATH=/usr/bin:/bin HOME=/tmp /usr/bin/git -C "$project" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
+    echo "OpenCode shell could not resolve the project's Git metadata." >&2
+    exit 125
+  }
+  git_dir=$(env -i PATH=/usr/bin:/bin HOME=/tmp /usr/bin/git -C "$project" rev-parse --absolute-git-dir 2>/dev/null) || {
+    echo "OpenCode shell could not resolve the project's Git directory." >&2
+    exit 125
+  }
+  git_common_dir=$(/usr/bin/realpath -e -- "$git_common_dir")
+  git_dir=$(/usr/bin/realpath -e -- "$git_dir")
+  if [[ -d "$project/.git" ]]; then
+    project_git_dir=$(/usr/bin/realpath -e -- "$project/.git")
+    if [[ "$git_common_dir" != "$project_git_dir" ]]; then
+      echo "OpenCode shell does not support separate Git metadata directories." >&2
+      exit 125
+    fi
+  elif [[ -f "$project/.git" ]]; then
+    case "$git_dir/" in
+      "$git_common_dir"/worktrees/*/) ;;
+      *) echo "OpenCode shell supports linked worktrees only when their Git metadata stays inside $WORKSPACE_ROOT." >&2; exit 125 ;;
+    esac
+    case "$git_common_dir/" in
+      "$WORKSPACE_ROOT/"*) ;;
+      *) echo "OpenCode worktree Git metadata must stay inside $WORKSPACE_ROOT." >&2; exit 125 ;;
+    esac
+    if [[ -e "$git_common_dir/objects/info/alternates" || -L "$git_common_dir/objects/info/alternates" ]]; then
+      echo "OpenCode worktree Git metadata with external object alternates is not supported." >&2
+      exit 125
+    fi
+    linked_worktree=1
+  else
+    echo "OpenCode shell does not support this Git metadata layout." >&2
+    exit 125
+  fi
 fi
 
 relative_cwd=${cwd#"$project"}
@@ -35,15 +72,30 @@ bwrap_args=(
   --tmpfs "$WORKSPACE_ROOT"
 )
 
-relative_project=${project#"$WORKSPACE_ROOT"}
-mountpoint=$WORKSPACE_ROOT
-IFS=/ read -r -a parts <<< "$relative_project"
-for part in "${parts[@]}"; do
-  [[ -z "$part" ]] && continue
-  mountpoint="$mountpoint/$part"
-  bwrap_args+=(--dir "$mountpoint")
-done
+declare -A created_mountpoints=()
+add_mountpoints() {
+  local relative_path=${1#"$WORKSPACE_ROOT"}
+  local mountpoint=$WORKSPACE_ROOT
+  local part
+  local -a parts
+  IFS=/ read -r -a parts <<< "$relative_path"
+  for part in "${parts[@]}"; do
+    [[ -z "$part" ]] && continue
+    mountpoint="$mountpoint/$part"
+    if [[ -z "${created_mountpoints[$mountpoint]+x}" ]]; then
+      bwrap_args+=(--dir "$mountpoint")
+      created_mountpoints["$mountpoint"]=1
+    fi
+  done
+}
+add_mountpoints "$project"
+if [[ "$linked_worktree" -eq 1 ]]; then
+  add_mountpoints "$git_common_dir"
+fi
 bwrap_args+=(--bind "$project" "$project")
+if [[ "$linked_worktree" -eq 1 ]]; then
+  bwrap_args+=(--bind "$git_common_dir" "$git_common_dir")
+fi
 bwrap_args+=(
   --dev /dev
   --proc /proc
