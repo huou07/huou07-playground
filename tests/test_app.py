@@ -5,7 +5,7 @@ import sys
 import threading
 import tempfile
 import unittest
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -342,6 +342,42 @@ class DashboardApiTests(unittest.TestCase):
             self.assertEqual(data["apps"][0]["status"], "available")
             self.assertEqual(data["apps"][0]["management_url"], "https://admin.example.invalid")
             self.assertNotIn("health_url", data["apps"][0])
+
+    def test_app_icon_uses_only_a_registered_loopback_favicon_and_falls_back_cleanly(self):
+        class IconHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/favicon.svg":
+                    body = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1H0z"/></svg>'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/svg+xml")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_error(404)
+
+            def log_message(self, fmt, *args):
+                pass
+
+        with ThreadingHTTPServer(("127.0.0.1", 0), IconHandler) as icon_server, tempfile.TemporaryDirectory() as directory:
+            icon_thread = threading.Thread(target=icon_server.serve_forever, daemon=True)
+            icon_thread.start()
+            registry = Path(directory) / "apps.json"
+            registry.write_text(json.dumps({"apps": [{"name": "Icon App", "url": f"http://127.0.0.1:{icon_server.server_port}/"}]}))
+            try:
+                with patch.dict(os.environ, {"APPS_FILE": str(registry)}):
+                    with urlopen(f"{self.base}/api/apps/icon?name=Icon%20App") as response:
+                        self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
+                        self.assertEqual(response.headers["Content-Security-Policy"], "default-src 'none'; sandbox")
+                        self.assertIn(b"<svg", response.read())
+
+                    registry.write_text(json.dumps({"apps": [{"name": "Remote App", "url": "https://example.invalid/"}]}))
+                    with urlopen(f"{self.base}/api/apps/icon?name=Remote%20App") as response:
+                        self.assertEqual(response.headers.get_content_type(), "image/gif")
+                        self.assertEqual(response.read(), app.APP_ICON_PLACEHOLDER)
+            finally:
+                icon_server.shutdown()
+                icon_thread.join(timeout=2)
 
     def test_app_health_reports_authentication_required(self):
         error = HTTPError("http://127.0.0.1:4096/", 401, "Unauthorized", {}, None)

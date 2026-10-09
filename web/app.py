@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import csv
 import ipaddress
 import io
@@ -22,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parent
@@ -45,6 +46,7 @@ PRIVATE_WG_PORTS = (
     (20132, 20132), # OmniRoute live updates
 )
 _private_proxy_slots = threading.BoundedSemaphore(32)
+APP_ICON_PLACEHOLDER = base64.b64decode("R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=")
 
 
 def read_text(path: str, default: str = "") -> str:
@@ -695,6 +697,39 @@ def app_registry() -> dict:
     return {"available": True, "sampled_at": time.time(), "total": len(result), "apps": result}
 
 
+def app_icon(name: str) -> tuple[str, bytes] | None:
+    """Fetch a small favicon only from the registered app's loopback service."""
+    path = Path(os.environ.get("APPS_FILE", "/var/lib/huou07-playground/apps.json"))
+    try:
+        apps = validate_app_entries(json.loads(path.read_text()))
+        app = next(item for item in apps if item["name"].casefold() == name.casefold())
+        parsed = urlsplit(app["url"])
+        if parsed.scheme != "http" or parsed.hostname.casefold() not in {"127.0.0.1", "localhost", "::1"}:
+            return None
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError, StopIteration):
+        return None
+
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str) -> None:
+            return None
+
+    opener = build_opener(ProxyHandler({}), NoRedirect())
+    for extension, allowed_types in (("ico", {"image/x-icon", "image/vnd.microsoft.icon"}), ("svg", {"image/svg+xml"})):
+        icon_url = urlunsplit((parsed.scheme, parsed.netloc, f"/favicon.{extension}", "", ""))
+        try:
+            request = Request(icon_url, headers={"Accept": "image/svg+xml,image/x-icon,image/vnd.microsoft.icon"})
+            with opener.open(request, timeout=0.5) as response:
+                media_type = response.headers.get_content_type().lower()
+                if response.status != 200 or media_type not in allowed_types:
+                    continue
+                data = response.read(128 * 1024 + 1)
+                if len(data) <= 128 * 1024:
+                    return media_type, data
+        except (OSError, URLError, ValueError):
+            pass
+    return None
+
+
 def mutate_app_registry(change: object) -> None:
     if not isinstance(change, dict):
         raise ValueError
@@ -754,6 +789,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/apps":
             self.send_json(200, app_registry())
+            return
+        if self.path.startswith("/api/apps/icon?"):
+            try:
+                query = parse_qs(urlsplit(self.path).query, max_num_fields=2)
+                names = query.get("name", [])
+                icon = app_icon(names[0]) if len(names) == 1 and names[0] else None
+            except ValueError:
+                icon = None
+            content_type, data = icon or ("image/gif", APP_ICON_PLACEHOLDER)
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, max-age=300")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+            self.end_headers()
+            self.wfile.write(data)
             return
         path = "/index.html" if self.path == "/" else self.path
         target = (STATIC / path.lstrip("/")).resolve()

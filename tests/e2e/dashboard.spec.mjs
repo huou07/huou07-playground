@@ -79,6 +79,7 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await page.locator('#sidebar [data-route="apps"]').click();
   const appCard = page.locator('.app-card').filter({ hasText: 'Browser Acceptance App' });
   await expect(appCard.locator('.app-state')).toHaveText(/Available/);
+  await expect.poll(() => appCard.locator('.app-icon').evaluate(icon => icon.naturalWidth)).toBeGreaterThan(0);
   const popupPromise = page.waitForEvent('popup');
   await appCard.getByRole('link', { name: 'Open Browser Acceptance App' }).click();
   const popup = await popupPromise;
@@ -86,6 +87,18 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await popup.close();
 
   await page.locator('#sidebar [data-route="settings"]').click();
+  await page.locator('#app-form input[name="name"]').fill('Fallback Icon App');
+  await page.locator('#app-form input[name="url"]').fill('https://not-used.example.invalid/');
+  await page.locator('#app-save').click();
+  await page.locator('#sidebar [data-route="apps"]').click();
+  const fallbackCard = page.locator('.app-card').filter({ hasText: 'Fallback Icon App' });
+  await expect.poll(() => fallbackCard.locator('.app-icon').evaluate(icon => icon.naturalWidth)).toBeGreaterThan(0);
+  await expect(fallbackCard.locator('.app-mark')).toContainText('F');
+
+  await page.locator('#sidebar [data-route="settings"]').click();
+  const fallbackRow = page.locator('.app-registry-row').filter({ hasText: 'Fallback Icon App' });
+  await fallbackRow.getByRole('button', { name: 'Remove' }).click();
+  await expect(fallbackRow).toHaveCount(0);
   const appRow = page.locator('.app-registry-row').filter({ hasText: 'Browser Acceptance App' });
   await appRow.getByRole('button', { name: 'Remove' }).click();
   await expect(appRow).toHaveCount(0);
