@@ -45,7 +45,7 @@ systemd-run --quiet --wait --collect \
     touch "$workspace/workspace-write"
     touch "$3/state-write"
     if cat "$canary" >/dev/null 2>&1; then
-      echo "OpenCode sandbox can read the SSH owner's home." >&2
+      echo "OpenCode sandbox can read the SSH owner home." >&2
       exit 21
     fi
     if touch "$4" 2>/dev/null; then
