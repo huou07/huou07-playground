@@ -76,9 +76,17 @@ if [ -e "$containers_config" ]; then
     echo "The dedicated LiteLLM account has an incompatible Podman configuration; refusing to replace it." >&2
     exit 1
   fi
+  if grep -Eq '^[[:space:]]*cgroup_manager[[:space:]]*=' "$containers_config"; then
+    if ! grep -Eq '^[[:space:]]*cgroup_manager[[:space:]]*=[[:space:]]*"cgroupfs"$' "$containers_config"; then
+      echo "The dedicated LiteLLM account has an incompatible Podman cgroup manager; refusing to replace it." >&2
+      exit 1
+    fi
+  else
+    printf '\n[engine]\ncgroup_manager = "cgroupfs"\n' >> "$containers_config"
+  fi
 else
   containers_tmp=$(mktemp "$STATE_DIR/.config/containers/.containers.conf.XXXXXX")
-  printf '[network]\ndefault_rootless_network_cmd = "slirp4netns"\n' > "$containers_tmp"
+  printf '[network]\ndefault_rootless_network_cmd = "slirp4netns"\n\n[engine]\ncgroup_manager = "cgroupfs"\n' > "$containers_tmp"
   chown "$SERVICE:$SERVICE" "$containers_tmp"
   chmod 0600 "$containers_tmp"
   mv "$containers_tmp" "$containers_config"
