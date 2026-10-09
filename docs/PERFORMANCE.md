@@ -82,11 +82,15 @@ On 2026-10-09, dashboard release `20261009072037-136357` from source commit `873
 
 The real browser loaded all nine routes, reported no console warnings, and had no horizontal overflow at 375 px. Private-service links rewrote to their fixed relay ports. This simulated the private-host name through an SSH tunnel; it was not an external WireGuard client test. Loopback API timings omit WAN or VPN latency. The short sample does not measure application launch, provider inference, or file transfer.
 
+## Cockpit Files large-transfer integrity
+
+On 2026-10-09, a real Chromium session connected to Cockpit Files through the SSH recovery tunnel using a disposable, non-sudo Linux account. A local sparse, zero-filled 16-GiB file was uploaded through the Files UI; Cockpit finalized it under its requested name and displayed it as 17.2 GB. The target reported 13,250,101,248 bytes available RAM at upload start, so the payload exceeded available RAM by 3,929,767,936 bytes. The upload and a separate browser download both had exact size 17,179,869,184 bytes and SHA-256 `07d217ebccc55480b7afa191674ec5da87f2d14efbc04dbc7e40efe345f16776`. The download saved locally and matched the source hash. During transfers, the Cockpit bridge process high-water RSS was about 34 MiB; target available RAM stayed around 12.3–13.2 GiB. This verifies streaming-sized operations and integrity for a file larger than available RAM, but does not establish peak memory for every Cockpit process or sustained throughput. Temporary accounts, homes, and files were removed; root filesystem free space returned to its prior range.
+
 ## Still to measure
 
 - Repeated initial-page browser load samples and dashboard-open versus closed CPU/memory over longer intervals.
 - CPU and memory with the dashboard open versus closed over longer samples.
-- File upload and download throughput, including a test larger than available RAM, through Cockpit Files after the owner signs in.
+- Exact Cockpit Files upload/download throughput and behavior after interruption or resume. The 16-GiB integrity run completed through a disposable account; the owner's own permissions and copy/move workflow remain untested.
 - WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
 - OmniRoute dashboard navigation and API timing through the SSH tunnel after owner login.
