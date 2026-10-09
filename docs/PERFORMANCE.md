@@ -52,6 +52,14 @@ On 2026-10-09, dashboard release `20261009063618-110298` (source assets match `f
 
 At the same sample, systemd cgroups for the dashboard, OpenCode Web, LiteLLM, OmniRoute, and wg-easy reported 1,313,619,968 bytes (about 1.22 GiB) combined. Each unit was active. This is the listed huou07 service set only; it excludes Cockpit, host services, and unrelated workloads. The API medians include SSH forwarding and local network round-trip time, unlike the earlier server-loopback measurements.
 
+## Live telemetry cross-check and memory policy
+
+On 2026-10-09, after release `609b8e242e362a4fb2adb6d4ad59f30f65543b9` was active, the deployed metrics endpoint was compared with Linux's `/proc`, `statvfs`, and sysfs data on the Dell. API CPU was 1%; an independent two-second `/proc/stat` sample was 1.0%. API RAM was 3,645,026,304 used / 16,441,217,024 total / 12,796,190,720 available bytes; direct `/proc/meminfo` was 3,642,179,584 / 16,441,217,024 / 12,799,037,440, a small difference from sequential sampling. Dashboard root-disk used/total matched `shutil.disk_usage` exactly at 229,759,639,552 / 485,325,094,912 bytes. Disk-swap used/total matched `/proc/swaps` exactly at 4,307,316,736 / 16,852,709,376 bytes.
+
+The endpoint and `/sys/block` both found zero ZRAM devices. `vm.swappiness` was 1, memory pressure PSI averaged 0.00 over the last 10 seconds, and swap-in/out counters did not change during the two-second sample. With about 11.9 GiB available, there is no measured pressure that justifies adding compressed-memory CPU overhead; disk swap and the existing swappiness setting were left unchanged. This is an observed idle interval, not a stress test.
+
+The live i915 sample reported 0% engine utilization while idle. For an active check, an 8-second, 1280×720, 30 fps VAAPI encode to FFmpeg's null output ran in a temporary systemd unit as the unprivileged dashboard account. The unit had only the `video` and `render` supplementary groups, access to `/dev/dri/renderD128`, no network sockets, a 50% CPU quota, a 256 MiB memory cap, and a 12-second runtime limit. FFmpeg exited successfully; the existing restricted GPU collector sampled Video at 3.8%, with Blitter, Render/3D, and VideoEnhance at 0%. A follow-up sample returned all engines to 0.0%. This verifies active Video-engine telemetry; a Render/3D workload remains untested. No GPU temperature interface was reported. The restricted CPU package collector reported 6.5 W for `PkgWatt`. Network rates were 26.3/40.8 Kbps from the endpoint and 20.6/26.9 Kbps from an independent two-second physical-interface counter sample. That short comparison is noisy because the API and direct sample windows differ; repeat it over longer intervals before drawing a rate-accuracy conclusion.
+
 ## Still to measure
 
 - Rendered page load and navigation interaction time through the SSH tunnel, with repeated browser runs.
