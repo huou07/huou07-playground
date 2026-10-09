@@ -12,6 +12,7 @@ import pwd
 import re
 import subprocess
 import shutil
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -439,6 +440,15 @@ def valid_app_url(value: object) -> bool:
         return False
 
 
+def valid_health_url(value: object) -> bool:
+    if not valid_app_url(value):
+        return False
+    try:
+        return urlsplit(value).hostname.casefold() in {"127.0.0.1", "localhost", "::1"}
+    except (AttributeError, ValueError):
+        return False
+
+
 def app_health(url: str, method: str) -> str:
     class NoRedirect(HTTPRedirectHandler):
         def redirect_request(self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str) -> None:
@@ -475,14 +485,38 @@ def validate_app_entries(config: object) -> list[dict]:
             raise ValueError
         if not isinstance(description, str) or len(description) > 160 or not isinstance(category, str) or len(category) > 40:
             raise ValueError
-        if health_url is not None and not valid_app_url(health_url):
+        if health_url is not None and not valid_health_url(health_url):
             raise ValueError
         if management_url is not None and not valid_app_url(management_url):
             raise ValueError
         if health_method not in {"GET", "HEAD"}:
             raise ValueError
+        if any(item["name"].casefold() == name.strip().casefold() for item in apps):
+            raise ValueError
         apps.append({"name": name.strip(), "url": url, "description": description, "category": category, "health_url": health_url, "health_method": health_method, "management_url": management_url})
     return apps
+
+
+def save_app_registry(config: object) -> None:
+    """Atomically save the non-executable app list in the service-owned config dir."""
+    apps = validate_app_entries(config)
+    path = Path(os.environ.get("APPS_FILE", "/etc/huou07-playground/apps.json"))
+    if path.parent.is_symlink() or not path.parent.is_dir() or path.is_symlink() or not path.is_file():
+        raise OSError("Application registry path is unavailable.")
+    group_id = path.stat().st_gid
+    data = json.dumps({"apps": apps}, separators=(",", ":")).encode()
+    fd, temporary = tempfile.mkstemp(prefix=".apps-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+            os.fchown(output.fileno(), os.geteuid(), group_id)
+            os.fchmod(output.fileno(), 0o660)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def app_registry() -> dict:
@@ -498,6 +532,38 @@ def app_registry() -> dict:
         for item, check in zip(apps, checks):
             result.append({"name": item["name"], "url": item["url"], "description": item["description"], "category": item["category"], "management_url": item["management_url"], "status": check.result() if check else "unmonitored"})
     return {"available": True, "sampled_at": time.time(), "total": len(result), "apps": result}
+
+
+def mutate_app_registry(change: object) -> None:
+    if not isinstance(change, dict):
+        raise ValueError
+    path = Path(os.environ.get("APPS_FILE", "/etc/huou07-playground/apps.json"))
+    current = validate_app_entries(json.loads(path.read_text()))
+    action = change.get("action")
+    name = change.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError
+    match = next((index for index, item in enumerate(current) if item["name"].casefold() == name.strip().casefold()), None)
+    if action == "add":
+        item = validate_app_entries({"apps": [change.get("app")]})[0]
+        if match is not None:
+            raise ValueError
+        current.append(item)
+    elif action == "update":
+        if match is None:
+            raise ValueError
+        item = validate_app_entries({"apps": [change.get("app")]})[0]
+        if "health_url" not in change["app"]:
+            item["health_url"] = current[match]["health_url"]
+            item["health_method"] = current[match]["health_method"]
+        current[match] = item
+    elif action == "delete":
+        if match is None:
+            raise ValueError
+        del current[match]
+    else:
+        raise ValueError
+    save_app_registry({"apps": current})
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -542,6 +608,37 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(data)
+
+    def do_POST(self) -> None:
+        if self.path != "/api/apps":
+            self.send_error(404)
+            return
+        origin = urlsplit(self.headers.get("Origin", ""))
+        host_header = self.headers.get("Host", "")
+        try:
+            request_host = urlsplit(f"http://{host_header}").hostname
+        except ValueError:
+            request_host = None
+        if origin.scheme not in {"http", "https"} or origin.netloc.casefold() != host_header.casefold() or request_host not in {"127.0.0.1", "localhost", "::1"}:
+            self.send_json(403, {"error": "Application changes must come from this local dashboard."})
+            return
+        if self.headers.get_content_type() != "application/json":
+            self.send_json(415, {"error": "Send application/json."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            length = -1
+        if length < 0 or length > 65536:
+            self.send_json(413 if length > 65536 else 400, {"error": "Invalid application registry size."})
+            return
+        try:
+            change = json.loads(self.rfile.read(length))
+            mutate_app_registry(change)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError):
+            self.send_json(400, {"error": "Application registry is invalid or could not be saved."})
+            return
+        self.send_json(200, app_registry())
 
     def send_json(self, status: int, value: dict) -> None:
         data = json.dumps(value, separators=(",", ":")).encode()

@@ -57,10 +57,16 @@ else
 fi
 
 install -d -o root -g root -m 0755 "$ROOT/releases"
-install -d -o root -g "$ACCOUNT" -m 0750 /etc/huou07-playground
-if [ ! -e /etc/huou07-playground/apps.json ]; then
-  install -o root -g "$ACCOUNT" -m 0640 "$SOURCE/config/apps.example.json" /etc/huou07-playground/apps.json
+if [ -L /etc/huou07-playground/apps.json ]; then
+  echo "The application registry must not be a symbolic link." >&2
+  exit 1
 fi
+install -d -o root -g "$ACCOUNT" -m 0770 /etc/huou07-playground
+if [ ! -e /etc/huou07-playground/apps.json ]; then
+  install -o root -g "$ACCOUNT" -m 0660 "$SOURCE/config/apps.example.json" /etc/huou07-playground/apps.json
+fi
+chown root:"$ACCOUNT" /etc/huou07-playground/apps.json
+chmod 0660 /etc/huou07-playground/apps.json
 release="$ROOT/releases/$(date -u +%Y%m%d%H%M%S)-$$"
 previous=$(readlink "$ROOT/current" 2>/dev/null || true)
 rollback() {

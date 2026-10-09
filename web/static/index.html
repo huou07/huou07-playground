@@ -103,6 +103,23 @@
             <section class="panel"><div class="panel-heading"><h2>Appearance</h2></div><label class="setting-row" for="theme-setting"><span>Theme</span><select id="theme-setting"><option value="dark">Dark</option><option value="light">Light</option></select></label></section>
             <section class="panel"><div class="panel-heading"><h2>System metrics</h2></div><label class="setting-row" for="refresh-interval"><span>Refresh interval</span><select id="refresh-interval"><option value="5000">5 seconds</option><option value="10000">10 seconds</option><option value="15000">15 seconds</option><option value="30000">30 seconds</option></select></label><p class="panel-note">This controls dashboard polling. CPU power updates every 15 seconds; Intel GPU samples update every 30 seconds.</p></section>
             <section class="panel settings-integrations"><div class="panel-heading"><h2>Integrations</h2><span class="panel-caption">Live availability</span></div><div class="info-row"><span>Dashboard data</span><strong id="settings-data-state">Checking</strong></div><div class="info-row"><span>Cockpit</span><strong id="settings-cockpit-state">Checking</strong></div><div class="info-row"><span>File manager</span><strong id="settings-files-state">Checking</strong></div><div class="info-row"><span>VPN backend</span><strong id="settings-vpn-state">Checking</strong></div><div class="info-row"><span>Applications</span><strong id="settings-apps-state">Checking</strong></div></section>
+            <section class="panel app-registry-panel settings-integrations"><div class="panel-heading"><h2>Application registry</h2><span class="panel-caption" id="app-registry-status">Loading…</span></div>
+              <p class="panel-note">Add links to tools you can reach through this device's SSH forwards. Health checks are limited to services on this server.</p>
+              <form id="app-form" class="app-form">
+                <div class="app-form-grid">
+                  <label>Name<input name="name" maxlength="60" required autocomplete="off"></label>
+                  <label>Category<input name="category" maxlength="40" value="Application" required autocomplete="off"></label>
+                  <label class="wide">Launch URL<input name="url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4096" required autocomplete="url"></label>
+                  <label class="wide">Description<input name="description" maxlength="160" autocomplete="off"></label>
+                  <label class="wide">Health URL (optional)<input name="health_url" type="url" maxlength="2048" placeholder="http://127.0.0.1:4096/health" autocomplete="url"></label>
+                  <label class="wide" id="app-clear-health-wrap" hidden><span><input name="clear_health" type="checkbox"> Remove the current health check when saving</span></label>
+                  <label class="wide">Management URL (optional)<input name="management_url" type="url" maxlength="2048" autocomplete="url"></label>
+                </div>
+                <p class="panel-note">Health URLs are checked from the server and must use localhost or 127.0.0.1. Leave blank to show “Not monitored.”</p>
+                <div class="app-form-actions"><button class="app-open" type="submit" id="app-save">Add application</button><button class="app-manage" type="button" id="app-cancel" hidden>Cancel edit</button><span id="app-form-status" role="status" aria-live="polite"></span></div>
+              </form>
+              <div id="app-registry-list" class="app-registry-list"><p class="panel-note">Loading applications…</p></div>
+            </section>
           </div>
         </section>
 

@@ -8,7 +8,7 @@ import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -147,6 +147,32 @@ class DashboardApiTests(unittest.TestCase):
             self.assertEqual(result["available"], False)
             self.assertEqual(result["installed"], False)
             self.assertIn("not installed", result["reason"])
+
+    def test_app_registry_mutations_require_local_same_origin(self):
+        body = json.dumps({"action": "add", "name": "Example", "app": {"name": "Example", "url": "http://127.0.0.1:4096", "description": "Test", "category": "Coding", "health_url": None, "management_url": None}}).encode()
+        request = Request(f"{self.base}/api/apps", data=body, headers={"Origin": "http://attacker.invalid", "Content-Type": "application/json"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request)
+        self.assertEqual(error.exception.code, 403)
+
+    def test_app_registry_update_preserves_health_probe_and_limits_it_to_loopback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = Path(directory) / "apps.json"
+            registry.write_text(json.dumps({"apps": [{"name": "Example", "url": "http://127.0.0.1:4096", "description": "Old", "category": "Coding", "health_url": "http://127.0.0.1:9/health", "health_method": "GET", "management_url": None}]}))
+            payload = {"action": "update", "name": "Example", "app": {"name": "OpenCode", "url": "http://127.0.0.1:4096", "description": "Coding workspace", "category": "Coding", "management_url": None}}
+            request = Request(f"{self.base}/api/apps", data=json.dumps(payload).encode(), headers={"Origin": self.base, "Content-Type": "application/json"})
+            with patch.dict(os.environ, {"APPS_FILE": str(registry)}):
+                with urlopen(request) as response:
+                    data = json.load(response)
+                self.assertEqual(data["apps"][0]["name"], "OpenCode")
+                self.assertNotIn("health_url", data["apps"][0])
+                stored = json.loads(registry.read_text())["apps"][0]
+                self.assertEqual(stored["health_url"], "http://127.0.0.1:9/health")
+                invalid = {"action": "add", "name": "Other", "app": {"name": "Other", "url": "http://127.0.0.1:3000", "health_url": "http://192.168.1.1:3000"}}
+                request = Request(f"{self.base}/api/apps", data=json.dumps(invalid).encode(), headers={"Origin": self.base, "Content-Type": "application/json"})
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(request)
+                self.assertEqual(error.exception.code, 400)
 
     def test_vpn_status_reports_tailnet_connection_without_private_details(self):
         result = app.subprocess.CompletedProcess([], 0, stdout=json.dumps({"BackendState": "Running", "Self": {"Online": True, "TailscaleIPs": ["100.64.0.1"]}, "Peer": {"private-host": {"DNSName": "private.example.invalid"}}}))

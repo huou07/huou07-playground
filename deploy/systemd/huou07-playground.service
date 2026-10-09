@@ -26,6 +26,7 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX AF_INET
 ReadOnlyPaths=/proc /sys
+ReadWritePaths=/etc/huou07-playground
 
 [Install]
 WantedBy=multi-user.target

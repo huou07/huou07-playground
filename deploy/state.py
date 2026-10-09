@@ -83,7 +83,7 @@ def read_backup(backup: Path) -> tuple[bytes, bytes | None]:
 
 def restore_backup(backup: Path, config: Path, branding: Path, group_id: int | None = None) -> None:
     config_data, branding_data = read_backup(backup)
-    atomic_write(config, config_data, 0o640, group_id)
+    atomic_write(config, config_data, 0o660, group_id)
     if branding_data is None:
         branding.unlink(missing_ok=True)
     else:

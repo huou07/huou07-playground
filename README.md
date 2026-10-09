@@ -9,7 +9,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps. Network rates display in Kbps/Mbps; cumulative interface totals remain in bytes.
 - The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. Browser access currently uses SSH tunnels; the requested WireGuard access path is not yet configured.
 - NVIDIA utilization, VRAM, and temperature use `nvidia-smi`. Intel i915 engine busy counters use a separate restricted `intel_gpu_top` sampler. The dashboard labels Intel usage as the busiest engine and does not invent dedicated VRAM or GPU temperature. CPU package watts use a separate restricted systemd collector; the dashboard account reads only recent sanitized samples and never receives hardware-counter access or root privileges.
-- Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be listed in a root-owned server registry with optional bounded health checks. Direct browser access stays disabled; use SSH tunnels.
+- Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be managed from Settings, with optional server-local health checks. Direct browser access stays disabled; use SSH tunnels.
 
 ## Run locally
 
@@ -19,11 +19,11 @@ Requires Python 3.10+; no third-party Python packages are used.
 make run
 ```
 
-Open `http://127.0.0.1:8765`. `PORT` can be changed for local development; `HOST` accepts loopback addresses only. The listener cannot be exposed to a LAN or WAN until authentication and private-network access controls exist. The API is read-only: `/api/health` is a liveness check, `/api/metrics` returns hardware/network data, `/api/services` returns systemd states, and `/api/processes` returns a bounded process list without command arguments.
+Open `http://127.0.0.1:8765`. `PORT` can be changed for local development; `HOST` accepts loopback addresses only. The listener cannot be exposed to a LAN or WAN until authentication and private-network access controls exist. Metrics and process APIs are read-only. The application registry accepts validated same-origin changes from the local dashboard; it cannot run commands or store credentials.
 
 ### Application registry
 
-On the server, edit `/etc/huou07-playground/apps.json` to add links. The installer seeds this file from [`config/apps.example.json`](config/apps.example.json) once and preserves it on upgrades. Keep this file root-owned and out of Git; do not put credentials or tokens in it. Example:
+Add and edit links on the Settings page. The installer seeds `/etc/huou07-playground/apps.json` from [`config/apps.example.json`](config/apps.example.json) once and preserves it on upgrades. The dashboard can write only this validated, non-executable registry. The file is out of Git; do not put credentials or tokens in it. Health checks are optional, use GET or HEAD, and can target only `localhost`, `127.0.0.1`, or `::1`, which prevents the dashboard from probing other hosts. Example:
 
 ```json
 {
