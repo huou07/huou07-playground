@@ -39,6 +39,13 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   const brand = page.locator('.brand img');
   await expect(brand).toHaveAttribute('src', '/branding.png');
   await expect.poll(() => brand.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.locator('.metric-card[data-metric="swap"]')).toContainText('Swap');
+  await page.locator('#sidebar [data-route="system"]').click();
+  await expect(page.locator('#page-system')).toContainText('Total active swap');
+  await expect(page.locator('#page-system')).toContainText('Disk-backed swap');
+  await expect(page.locator('#page-system')).toContainText('ZRAM device');
+  await expect(page.locator('#page-system')).toContainText('actual memory occupied by compressed pages');
+  await page.locator('#sidebar [data-route="home"]').click();
   const routes = [
     ['home', 'Home'], ['apps', 'Applications'], ['system', 'System'],
     ['services', 'Services & Processes'], ['files', 'Files'], ['ssh', 'SSH'],

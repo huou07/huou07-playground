@@ -6,6 +6,7 @@ After=network.target huou07-wg-easy.service
 Type=simple
 User=huou07-playground
 Group=huou07-playground
+SupplementaryGroups=huou07-dsh-link
 WorkingDirectory=/opt/huou07-playground/current/web
 Environment=HOST=127.0.0.1
 Environment=PORT=8765

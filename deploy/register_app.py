@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web.app import mutate_app_registry, validate_app_entries
 
 
-def register_default_app(app: dict, migrate_url_from: tuple[str, ...] = ()) -> bool:
+def register_default_app(app: dict, migrate_url_from: tuple[str, ...] = (), migrate_health_from: tuple[str, ...] = ()) -> bool:
     """Register installed apps, migrating only explicitly listed old defaults."""
     app = validate_app_entries({"apps": [app]})[0]
     path = Path(os.environ.get("APPS_FILE", "/var/lib/huou07-playground/apps.json"))
@@ -23,6 +23,10 @@ def register_default_app(app: dict, migrate_url_from: tuple[str, ...] = ()) -> b
     apps = validate_app_entries(json.loads(path.read_text()))
     existing = next((entry for entry in apps if entry["name"].casefold() == app.get("name", "").strip().casefold()), None)
     if existing is not None:
+        if existing["url"] == app["url"] and existing["health_url"] in migrate_health_from:
+            updated = {**existing, "health_url": app["health_url"], "health_method": app["health_method"]}
+            mutate_app_registry({"action": "update", "name": existing["name"], "app": updated})
+            return True
         if existing["url"] not in migrate_url_from:
             return False
         updated = {**existing, "url": app["url"]}
@@ -42,6 +46,7 @@ def main() -> int:
     parser.add_argument("--health-method", choices=("GET", "HEAD"), default="GET")
     parser.add_argument("--management-url")
     parser.add_argument("--migrate-url-from", action="append", default=[])
+    parser.add_argument("--migrate-health-from", action="append", default=[])
     args = parser.parse_args()
     app = {
         "name": args.name,
@@ -53,7 +58,7 @@ def main() -> int:
         "management_url": args.management_url,
     }
     try:
-        added = register_default_app(app, tuple(args.migrate_url_from))
+        added = register_default_app(app, tuple(args.migrate_url_from), tuple(args.migrate_health_from))
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError) as error:
         print(f"Could not register {args.name}: {error}", file=sys.stderr)
         return 1

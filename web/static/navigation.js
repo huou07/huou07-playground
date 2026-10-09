@@ -81,8 +81,9 @@ const defaultVisibleMetrics = new Set(metricIds);
 let visibleMetrics = defaultVisibleMetrics;
 try {
   const savedMetrics = JSON.parse(localStorage.getItem('dashboardVisibleMetrics') || 'null');
-  if (Array.isArray(savedMetrics) && savedMetrics.every(metric => metricIds.includes(metric))) {
-    visibleMetrics = new Set(savedMetrics);
+  if (Array.isArray(savedMetrics)) {
+    const migratedMetrics = savedMetrics.map(metric => metric === 'zram' ? 'swap' : metric);
+    if (migratedMetrics.every(metric => metricIds.includes(metric))) visibleMetrics = new Set(migratedMetrics);
   }
 } catch {
   // An invalid browser preference falls back to showing every metric.

@@ -42,10 +42,12 @@ PRIVATE_WG_PORTS = (
     (4000, 4000),   # LiteLLM
     (51821, 51821), # wg-easy administration
     (14096, 4096),  # OpenCode Web
+    (3080, 3080),   # DeepSeek Harness Web, loopback only on the host
     (20128, 20128), # OmniRoute web UI
     (20129, 20129), # OmniRoute API
     (20132, 20132), # OmniRoute live updates
 )
+DSH_URL_FILE = Path(os.environ.get("DSH_URL_FILE", "/run/huou07-dsh-link/url"))
 _private_proxy_slots = threading.BoundedSemaphore(32)
 APP_ICON_PLACEHOLDER = base64.b64decode("R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=")
 
@@ -55,6 +57,35 @@ def read_text(path: str, default: str = "") -> str:
         return Path(path).read_text()
     except (OSError, UnicodeError):
         return default
+
+
+def dsh_launch_url(token_path: str | None, request_host: str | None) -> str | None:
+    """Build a one-time DSH login URL only for loopback or the wg0 dashboard host."""
+    if (
+        not isinstance(token_path, str)
+        or not re.fullmatch(r"/\?token=[A-Za-z0-9_-]{32,128}", token_path)
+    ):
+        return None
+    try:
+        authority = urlsplit("//" + (request_host or ""))
+        if authority.username or authority.password or authority.path or authority.query or authority.fragment:
+            return None
+        host = authority.hostname
+        if not host or authority.port is None or not 1 <= authority.port <= 65535:
+            return None
+        is_loopback = host.casefold() == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                return None
+        if not is_loopback:
+            if authority.port != 8765 or host not in wireguard_interface_addresses():
+                return None
+        target_host = f"[{host}]" if ":" in host else host
+        return f"http://{target_host}:3080{token_path}"
+    except ValueError:
+        return None
 
 
 def wireguard_interface_addresses() -> list[str]:
@@ -245,16 +276,18 @@ def swap_and_zram_metrics(swaps_text: str | None = None, sys_block: Path = Path(
         except (OSError, ValueError):
             zram_devices.append({"name": device.name, "total": None, "used": None, "compressed": None, "physical_used": None, "swap_used": zram_swaps.get(device.name, {}).get("used", 0)})
 
-    swap_total = sum(item["total"] for item in disk_swaps)
-    swap_used = sum(item["used"] for item in disk_swaps)
+    disk_swap_total = sum(item["total"] for item in disk_swaps)
+    disk_swap_used = sum(item["used"] for item in disk_swaps)
     zram_total = sum(item["total"] or 0 for item in zram_devices)
     zram_used = sum(item["used"] or 0 for item in zram_devices)
     zram_compressed = sum(item["compressed"] or 0 for item in zram_devices)
     zram_physical_used = sum(item["physical_used"] or 0 for item in zram_devices)
-    zram_swap_used = sum(item["swap_used"] or 0 for item in zram_devices)
     zram_swap_total = sum(zram_swaps.get(item["name"], {}).get("total", 0) for item in zram_devices)
+    zram_swap_used = sum(zram_swaps.get(item["name"], {}).get("used", 0) for item in zram_devices)
+    active_swap_total = disk_swap_total + zram_swap_total
+    active_swap_used = disk_swap_used + zram_swap_used
     return (
-        {"devices": disk_swaps, "used": swap_used, "total": swap_total, "percent": round(swap_used * 100 / swap_total) if swap_total else None},
+        {"devices": disk_swaps, "used": active_swap_used, "total": active_swap_total, "percent": round(active_swap_used * 100 / active_swap_total) if active_swap_total else None, "disk_used": disk_swap_used, "disk_total": disk_swap_total},
         {"devices": zram_devices, "used": zram_used, "total": zram_total, "compressed": zram_compressed, "physical_used": zram_physical_used, "swap_used": zram_swap_used, "swap_total": zram_swap_total},
     )
 
@@ -861,6 +894,30 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/vpn":
             self.send_json(200, vpn_status())
+            return
+        if self.path.startswith("/api/apps/launch?"):
+            try:
+                query = parse_qs(urlsplit(self.path).query, max_num_fields=2)
+                names = query.get("name", [])
+            except ValueError:
+                names = []
+            if names != ["DeepSeek Harness"]:
+                self.send_error(404)
+                return
+            try:
+                token_path = "" if DSH_URL_FILE.is_symlink() else DSH_URL_FILE.read_text().strip()
+            except OSError:
+                token_path = ""
+            location = dsh_launch_url(token_path or None, self.headers.get("Host"))
+            if location is None:
+                self.send_json(503, {"error": "DeepSeek Harness is starting or its private login link is unavailable."})
+                return
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
             return
         if self.path == "/api/apps":
             self.send_json(200, app_registry())

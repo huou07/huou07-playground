@@ -5,7 +5,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 ## Current implementation
 
 - Compact responsive dashboard with dark default and persisted light theme.
-- Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, detected physical drive model/type/capacity, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs. Drive health is not queried; serial identifiers are not collected.
+- Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, detected physical drive model/type/capacity, combined swap with disk and ZRAM breakdown, host identity, uptime, and physical network byte counters from Linux procfs and sysfs. Drive health is not queried; serial identifiers are not collected.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps. Network rates display in Kbps/Mbps; cumulative interface totals remain in bytes.
 - WireGuard is the intended primary private access path, with SSH tunnels retained as an independent recovery route. The dashboard binds to loopback and, when available, the exact private IPv4 assigned to `wg0`, with the WireGuard socket bound to that device. It does not accept the WireGuard address through other interfaces. When UFW is active and `wg0` has a listener, the installer records and allows that UDP port only on the host's default-route interface; uninstall removes only that recorded rule. Configure the router's external UDP mapping separately. The installed wg-easy setup still needs the owner's endpoint and first peer before a real external handshake can be verified. Tailscale status omits private peer names and addresses; Tailscale Serve remains disabled.
 - LiteLLM Gateway is installed as a separate rootless Podman service with a private PostgreSQL database. The proxy binds to server loopback on port 4000; the dashboard relays its UI and API only over `wg0`, with SSH forwarding as recovery. Provider credentials and model configuration remain owner-controlled and have not been entered.
@@ -128,4 +128,4 @@ A non-destructive target inspection was completed before implementation. Existin
 
 ## Development status
 
-See [docs/STATUS.md](docs/STATUS.md) for verified progress, known gaps, and the next safe action. This repository is not production-ready; deployment and security acceptance remain outstanding.
+See [docs/STATUS.md](docs/STATUS.md) for verified progress, owner setup items, and documented security limits. The dashboard and supporting services are deployed privately; credential-dependent AI use and an external WireGuard handshake still require owner setup.

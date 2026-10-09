@@ -63,6 +63,20 @@ class DashboardApiTests(unittest.TestCase):
         with patch.object(app.shutil, "which", return_value="/usr/sbin/ip"), patch.object(app.subprocess, "run", return_value=result):
             self.assertEqual(app.wireguard_interface_addresses(), [])
 
+    def test_dsh_launch_url_only_targets_loopback_or_wireguard_dashboard_host(self):
+        path = "/?token=" + "aBc123_-" * 5 + "xyz"
+        self.assertEqual(app.dsh_launch_url(path, "127.0.0.1:8765"), f"http://127.0.0.1:3080{path}")
+        self.assertEqual(app.dsh_launch_url(path, "127.0.0.1:18765"), f"http://127.0.0.1:3080{path}")
+        with patch.object(app, "wireguard_interface_addresses", return_value=["10.8.0.1"]):
+            self.assertEqual(app.dsh_launch_url(path, "10.8.0.1:8765"), f"http://10.8.0.1:3080{path}")
+            self.assertIsNone(app.dsh_launch_url(path, "10.8.0.1:18765"))
+            self.assertIsNone(app.dsh_launch_url(path, "192.168.1.10:8765"))
+        self.assertIsNone(app.dsh_launch_url("/../etc/", "127.0.0.1:8765"))
+        self.assertIsNone(app.dsh_launch_url("/token?target=https://example.test", "127.0.0.1:8765"))
+        self.assertIsNone(app.dsh_launch_url("/?token=short", "127.0.0.1:8765"))
+        self.assertIsNone(app.dsh_launch_url(path + "&target=evil", "127.0.0.1:8765"))
+        self.assertIsNone(app.dsh_launch_url(path, "example.test:8765"))
+
     def test_interface_bound_listener_binds_socket_to_exact_device(self):
         server = object.__new__(app.InterfaceBoundHTTPServer)
         server.interface = "wg0"
@@ -81,7 +95,7 @@ class DashboardApiTests(unittest.TestCase):
             app.PrivateProxyServer.server_bind(server)
         fake_socket.setsockopt.assert_called_once_with(app.socket.SOL_SOCKET, 25, b"wg0\0")
         self.assertEqual(app.PRIVATE_WG_PORTS, (
-            (9090, 9090), (4000, 4000), (51821, 51821), (14096, 4096),
+            (9090, 9090), (4000, 4000), (51821, 51821), (14096, 4096), (3080, 3080),
             (20128, 20128), (20129, 20129), (20132, 20132),
         ))
 
@@ -135,8 +149,10 @@ class DashboardApiTests(unittest.TestCase):
             (device / "mm_stat").write_text("300000 125000 140000 0 0 0 0 0 0")
             swaps_text = "Filename Type Size Used Priority\n/dev/nvme0n1p3 partition 1024 256 -1\n/dev/zram0 partition 512 128 100\n"
             disk_swap, zram = app.swap_and_zram_metrics(swaps_text, Path(temporary))
-        self.assertEqual(disk_swap["total"], 1024 * 1024)
-        self.assertEqual(disk_swap["used"], 256 * 1024)
+        self.assertEqual(disk_swap["total"], 1536 * 1024)
+        self.assertEqual(disk_swap["used"], 384 * 1024)
+        self.assertEqual(disk_swap["disk_total"], 1024 * 1024)
+        self.assertEqual(disk_swap["disk_used"], 256 * 1024)
         self.assertEqual(zram["total"], 524288)
         self.assertEqual(zram["used"], 300000)
         self.assertEqual(zram["compressed"], 125000)
