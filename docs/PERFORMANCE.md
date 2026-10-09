@@ -40,7 +40,7 @@ After OmniRoute `3.8.51` was installed on 2026-10-09, five server-loopback healt
 
 ## SSH-forwarded dashboard and current service memory
 
-On 2026-10-09, the dashboard was sampled from the Mac through a verified SSH tunnel to the Dell. Eight requests per route were measured; the first request is reported separately and the warm median uses the remaining seven. Each response returned HTTP 200. The browser was not used for this timing sample, so render and interaction time are excluded.
+On 2026-10-09, dashboard release `20261009063618-110298` (source assets match `fe832db90f9be6b842f12834341c48a9fe1af483`) was sampled from the Mac through a verified SSH tunnel to the Dell. Eight requests per route were measured; the first request is reported separately and the warm median uses the remaining seven. Each response returned HTTP 200. The browser was not used for this timing sample, so render and interaction time are excluded.
 
 | Route | Response bytes | First request | Warm median |
 | --- | ---: | ---: | ---: |
