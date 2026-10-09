@@ -185,7 +185,7 @@ def validate_omniroute_environment(data: bytes) -> None:
     required = {
         "JWT_SECRET", "API_KEY_SECRET", "OMNIROUTE_WS_BRIDGE_SECRET", "MACHINE_ID_SALT",
         "OMNIROUTE_CLI_SALT", "INITIAL_PASSWORD", "REQUIRE_API_KEY", "ALLOW_API_KEY_REVEAL",
-        "APP_BIND_HOST", "DASHBOARD_PORT", "API_PORT", "LIVE_WS_PORT", "DATA_DIR", "REDIS_URL",
+        "APP_BIND_HOST", "API_HOST", "DASHBOARD_PORT", "API_PORT", "LIVE_WS_PORT", "DATA_DIR", "REDIS_URL",
         "OMNIROUTE_MEMORY_MB", "NODE_ENV",
     }
     if not isinstance(data, bytes) or len(data) > MAX_OMNIROUTE_ENV_BYTES:
@@ -206,7 +206,7 @@ def validate_omniroute_environment(data: bytes) -> None:
     if any(len(values[key]) < 32 or any(char not in "0123456789abcdef" for char in values[key]) for key in secrets):
         raise ValueError("OmniRoute backup secrets have an invalid format.")
     fixed = {
-        "REQUIRE_API_KEY": "true", "ALLOW_API_KEY_REVEAL": "false", "APP_BIND_HOST": "127.0.0.1",
+        "REQUIRE_API_KEY": "true", "ALLOW_API_KEY_REVEAL": "false", "APP_BIND_HOST": "127.0.0.1", "API_HOST": "0.0.0.0",
         "DASHBOARD_PORT": "20128", "API_PORT": "20129", "LIVE_WS_PORT": "20132",
         "DATA_DIR": "/app/data", "REDIS_URL": "redis://127.0.0.1:6379", "OMNIROUTE_MEMORY_MB": "8192",
         "NODE_ENV": "production",

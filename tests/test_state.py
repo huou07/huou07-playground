@@ -25,6 +25,7 @@ class StateArchiveTests(unittest.TestCase):
             "REQUIRE_API_KEY": "true",
             "ALLOW_API_KEY_REVEAL": "false",
             "APP_BIND_HOST": "127.0.0.1",
+            "API_HOST": "0.0.0.0",
             "DASHBOARD_PORT": "20128",
             "API_PORT": "20129",
             "LIVE_WS_PORT": "20132",

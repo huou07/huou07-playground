@@ -121,6 +121,7 @@ values = {
     "REQUIRE_API_KEY": "true",
     "ALLOW_API_KEY_REVEAL": "false",
     "APP_BIND_HOST": "127.0.0.1",
+    "API_HOST": "0.0.0.0",
     "DASHBOARD_PORT": "20128",
     "API_PORT": "20129",
     "LIVE_WS_PORT": "20132",
@@ -146,6 +147,35 @@ except BaseException:
     raise
 PY
 fi
+python3 - "$CONFIG_DIR/omniroute.env" <<'PY'
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+lines = data.decode("ascii").splitlines()
+api_hosts = [line.partition("=")[2] for line in lines if line.startswith("API_HOST=")]
+if api_hosts and api_hosts != ["0.0.0.0"]:
+    raise SystemExit("The existing OmniRoute API bind setting is incompatible; refusing to change it.")
+if not api_hosts:
+    updated = data + (b"" if not data or data.endswith(b"\n") else b"\n") + b"API_HOST=0.0.0.0\n"
+    fd, temporary = tempfile.mkstemp(prefix=".omniroute.env.", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as output:
+            output.write(updated)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+PY
 chown root:root "$CONFIG_DIR/omniroute.env"
 chmod 0600 "$CONFIG_DIR/omniroute.env"
 
