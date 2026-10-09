@@ -8,6 +8,7 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, detected physical drive model/type/capacity, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs. Drive health is not queried; serial identifiers are not collected.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps. Network rates display in Kbps/Mbps; cumulative interface totals remain in bytes.
 - The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. Browser access currently uses SSH tunnels; the requested WireGuard access path is not yet configured.
+- LiteLLM Gateway is installed as a separate rootless Podman service with a private PostgreSQL database. The proxy binds to server loopback on port 4000; its dashboard and API are available through an SSH tunnel. Provider credentials and model configuration remain owner-controlled and have not been entered.
 - NVIDIA utilization, VRAM, and temperature use `nvidia-smi`. Intel i915 engine busy counters use a separate restricted `intel_gpu_top` sampler. The dashboard labels Intel usage as the busiest engine and does not invent dedicated VRAM or GPU temperature. CPU package watts use a separate restricted systemd collector; the dashboard account reads only recent sanitized samples and never receives hardware-counter access or root privileges.
 - Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be managed from Settings, with optional server-local health checks. Direct browser access stays disabled; use SSH tunnels.
 
@@ -51,7 +52,7 @@ On a host with rootless Podman configured, run `sh deploy/check-rootless-sandbox
 
 ### Back up and restore private state
 
-Before uninstalling or making a risky change, run `sudo python3 /opt/huou07-playground/current/deploy/state.py backup`. The archive is written with mode `0600` under `/var/backups/huou07-playground/`, outside the repository. It contains the app registry, the OpenCode service's private config, sessions and provider auth when present, and the private turtle image when present. The archive is not encrypted; treat it as a credential file and store copies only on trusted storage. Backup briefly stops OpenCode so its state is consistent, then starts it again. Restore validates the archive before replacing state and also stops/restarts OpenCode when that archive contains OpenCode data: `sudo python3 /opt/huou07-playground/current/deploy/state.py restore /var/backups/huou07-playground/<archive>.tar.gz`. OpenCode state is limited to 1 GiB per archive; larger state is rejected without creating a backup. Backups stay local unless you copy them to trusted storage yourself.
+Before uninstalling or making a risky change, run `sudo python3 /opt/huou07-playground/current/deploy/state.py backup`. The archive is written with mode `0600` under `/var/backups/huou07-playground/`, outside the repository. It contains the app registry, OpenCode's private config/sessions/provider auth, LiteLLM's database dump and private environment files when installed, and the private turtle image when present. The archive is not encrypted; treat it as a credential file and store copies only on trusted storage. Backup briefly stops OpenCode and LiteLLM so their state is consistent, then starts them again. Restore validates the archive before replacing state and restarts the services whose data is included: `sudo python3 /opt/huou07-playground/current/deploy/state.py restore /var/backups/huou07-playground/<archive>.tar.gz`. OpenCode state is limited to 1 GiB per archive; larger state is rejected without creating a backup. Backups stay local unless you copy them to trusted storage yourself.
 
 To open the dashboard from a computer that can SSH to the server, create a local tunnel:
 
@@ -60,6 +61,10 @@ ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 -L 14096:127.0.0.1:4096 <your-
 ```
 
 Then open `http://127.0.0.1:8765` on that computer. This is a private access method over SSH; direct LAN/VPN browser access is not enabled yet. Keep the SSH tunnel running while using the dashboard.
+
+To reach LiteLLM through the same private tunnel, add `-L 4000:127.0.0.1:4000` and open `http://127.0.0.1:4000/ui`. Sign in as `admin` using the gateway master key from `/etc/huou07-litellm/litellm.env` on the server. Keep that key on the server and enter provider credentials yourself in LiteLLM after signing in. The master key is also included in local state backups, which must be handled as credentials.
+
+Install the isolated LiteLLM gateway on a compatible Debian host with `sudo ./deploy/install-litellm.sh`. It requires rootless Podman and creates a dedicated service account, loopback-only proxy, private PostgreSQL database, and local-only secrets. The first install does not configure providers or models; complete those steps in LiteLLM yourself after login. Back up before upgrades or restore operations using the state commands above.
 
 ### OpenCode CLI and web interface
 

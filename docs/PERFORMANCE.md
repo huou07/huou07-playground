@@ -28,6 +28,12 @@ This is a first low-load sample from the live Debian target on 2026-10-09. It is
 
 The first metrics request was slower than the next four; this small sample cannot determine whether that is repeatable cold-start work. The nonzero swap allocation did not change during the sample. With 13 GiB available and no observed swap traffic, adding ZRAM is not justified by this baseline.
 
+## LiteLLM idle sample
+
+After LiteLLM Gateway was installed on 2026-10-09, five authenticated local requests to `/v1/models` returned HTTP 200 with a 2.76 ms median; five liveness requests returned HTTP 200 with a 0.94 ms median. These are host-loopback API timings and do not include the SSH tunnel or browser UI. No provider or model is configured, so this does not measure inference latency.
+
+At the same sample, systemd reported 611.6 MiB current memory for the gateway (2 GiB cap, two CPU quota cores) and 87.6 MiB for PostgreSQL (1 GiB cap, one CPU quota core). The full pod's memory, idle CPU, and storage-write rate have not been benchmarked separately.
+
 ## Still to measure
 
 - Initial page load and navigation interaction time through the SSH tunnel, with repeated runs.
@@ -35,5 +41,6 @@ The first metrics request was slower than the next four; this small sample canno
 - File upload and download throughput, including a test larger than available RAM, through Cockpit Files after the owner signs in.
 - VPN latency and throughput; direct VPN browser access is disabled by the SSH-only access choice.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
+- LiteLLM admin UI navigation, provider setup, and model management after owner sign-in.
 
 Repeat the measurements after material changes and record the exact commit, target state, sample length, and whether the browser was open.
