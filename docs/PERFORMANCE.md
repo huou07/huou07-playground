@@ -86,10 +86,20 @@ The real browser loaded all nine routes, reported no console warnings, and had n
 
 On 2026-10-09, a real Chromium session connected to Cockpit Files through the SSH recovery tunnel using a disposable, non-sudo Linux account. A local sparse, zero-filled 16-GiB file was uploaded through the Files UI; Cockpit finalized it under its requested name and displayed it as 17.2 GB. The target reported 13,250,101,248 bytes available RAM at upload start, so the payload exceeded available RAM by 3,929,767,936 bytes. The upload and a separate browser download both had exact size 17,179,869,184 bytes and SHA-256 `07d217ebccc55480b7afa191674ec5da87f2d14efbc04dbc7e40efe345f16776`. The download saved locally and matched the source hash. During transfers, the Cockpit bridge process high-water RSS was about 34 MiB; target available RAM stayed around 12.3–13.2 GiB. This verifies streaming-sized operations and integrity for a file larger than available RAM, but does not establish peak memory for every Cockpit process or sustained throughput. Temporary accounts, homes, and files were removed; root filesystem free space returned to its prior range.
 
+## Dashboard open/closed resource sample
+
+On 2026-10-09, the deployed `20261009092950-217379` release (source commit `700f2f6628e03937aeb43da140c0a659e1806e14`) was reached through an SSH tunnel from Chromium. I sampled the dashboard systemd cgroup 12 times with five-second sleeps between samples, first with the browser closed and then with the Home page open. CPU use is the `CPUUsageNSec` delta over the approximately 55-second sample window, expressed as a share of one logical CPU; memory is the median of `MemoryCurrent` samples.
+
+| State | Dashboard cgroup CPU | Median cgroup memory |
+| --- | ---: | ---: |
+| Browser closed | 2.1% of one CPU | 52,406,272 bytes (50.0 MiB) |
+| Home page open | 3.4% of one CPU | 53,340,160 bytes (50.9 MiB) |
+
+The page-open sample briefly peaked at 61,485,056 bytes (58.6 MiB) during initial loading. Chromium reported no console errors or warnings. This is one 55-second low-load sample per state; it includes scheduled collectors and systemd cgroup accounting, and does not isolate individual requests or establish a long-term idle baseline. Repeat it across longer intervals before making optimization decisions.
+
 ## Still to measure
 
-- Repeated initial-page browser load samples and dashboard-open versus closed CPU/memory over longer intervals.
-- CPU and memory with the dashboard open versus closed over longer samples.
+- Repeated initial-page load samples and longer dashboard-open versus closed CPU/memory samples.
 - Exact Cockpit Files upload/download throughput and behavior after interruption or resume. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed. The companion Move files page passed no-overwrite and cross-filesystem moves; a 3 MiB file retained its SHA-256 and the source disappeared. A disposable non-sudo account changed its own file mode 0664→0464→0664. The owner's own login and permissions remain unverified.
 - WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
