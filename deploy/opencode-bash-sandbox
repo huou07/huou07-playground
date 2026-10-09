@@ -48,13 +48,13 @@ if [[ -e "$project/.git" || -L "$project/.git" ]]; then
       "$WORKSPACE_ROOT/"*) ;;
       *) echo "OpenCode worktree Git metadata must stay inside $WORKSPACE_ROOT." >&2; exit 125 ;;
     esac
-    if [[ -e "$git_common_dir/objects/info/alternates" || -L "$git_common_dir/objects/info/alternates" ]]; then
-      echo "OpenCode worktree Git metadata with external object alternates is not supported." >&2
-      exit 125
-    fi
     linked_worktree=1
   else
     echo "OpenCode shell does not support this Git metadata layout." >&2
+    exit 125
+  fi
+  if [[ -e "$git_common_dir/objects/info/alternates" || -L "$git_common_dir/objects/info/alternates" ]]; then
+    echo "OpenCode Git metadata with external object alternates is not supported." >&2
     exit 125
   fi
 fi
