@@ -126,7 +126,7 @@ def validate_litellm_environment(files: dict[str, bytes]) -> None:
         raise ValueError("LiteLLM backup keys have an invalid format.")
     if postgres["POSTGRES_USER"] != "litellm" or postgres["POSTGRES_DB"] != "litellm" or not postgres["POSTGRES_PASSWORD"].isalnum():
         raise ValueError("LiteLLM backup database settings have an invalid format.")
-    database_url = f"postgresql://litellm:{postgres['POSTGRES_PASSWORD']}@huou07-litellm-db:5432/litellm"
+    database_url = f"postgresql://litellm:{postgres['POSTGRES_PASSWORD']}@127.0.0.1:5432/litellm"
     if app["DATABASE_URL"] != database_url:
         raise ValueError("LiteLLM backup database credentials do not match.")
 

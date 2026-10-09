@@ -121,7 +121,7 @@ if [ ! -e "$CONFIG_DIR/litellm.env" ]; then
   master_key=$(python3 -c 'import secrets; print("sk-" + secrets.token_hex(32))')
   salt_key=$(python3 -c 'import secrets; print("sk-" + secrets.token_hex(32))')
   litellm_tmp=$(mktemp "$CONFIG_DIR/.litellm.env.XXXXXX")
-  printf 'LITELLM_MASTER_KEY=%s\nLITELLM_SALT_KEY=%s\nDATABASE_URL=postgresql://litellm:%s@huou07-litellm-db:5432/litellm\n' "$master_key" "$salt_key" "$postgres_password" > "$litellm_tmp"
+  printf 'LITELLM_MASTER_KEY=%s\nLITELLM_SALT_KEY=%s\nDATABASE_URL=postgresql://litellm:%s@127.0.0.1:5432/litellm\n' "$master_key" "$salt_key" "$postgres_password" > "$litellm_tmp"
   unset postgres_password master_key salt_key
   chown root:root "$litellm_tmp"
   chmod 0600 "$litellm_tmp"
@@ -129,6 +129,34 @@ if [ ! -e "$CONFIG_DIR/litellm.env" ]; then
 fi
 chown root:root "$CONFIG_DIR/litellm.env"
 chmod 0600 "$CONFIG_DIR/litellm.env"
+
+python3 - "$CONFIG_DIR/litellm.env" <<'PY'
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+old = b"@huou07-litellm-db:5432/litellm"
+new = b"@127.0.0.1:5432/litellm"
+if data.count(old) == 1:
+    data = data.replace(old, new)
+elif data.count(new) != 1:
+    raise SystemExit("LiteLLM database URL is not in a supported format.")
+fd, temporary = tempfile.mkstemp(prefix=".litellm.env.", dir=path.parent)
+try:
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "wb") as output:
+        output.write(data)
+    os.replace(temporary, path)
+except BaseException:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+    raise
+PY
 
 python3 - "$CONFIG_DIR" <<'PY'
 import re
@@ -155,7 +183,7 @@ if (database["POSTGRES_USER"], database["POSTGRES_DB"]) != ("litellm", "litellm"
     raise SystemExit("Invalid private LiteLLM database identity.")
 if not database["POSTGRES_PASSWORD"].isalnum() or not all(key_ok(gateway[key]) for key in ("LITELLM_MASTER_KEY", "LITELLM_SALT_KEY")):
     raise SystemExit("Invalid private LiteLLM key format.")
-expected_url = f"postgresql://litellm:{database['POSTGRES_PASSWORD']}@huou07-litellm-db:5432/litellm"
+expected_url = f"postgresql://litellm:{database['POSTGRES_PASSWORD']}@127.0.0.1:5432/litellm"
 if gateway["DATABASE_URL"] != expected_url:
     raise SystemExit("LiteLLM and PostgreSQL credentials do not match.")
 PY

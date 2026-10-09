@@ -14,7 +14,7 @@ Environment=STORE_MODEL_IN_DB=True
 EnvironmentFile=/etc/huou07-litellm/litellm.env
 RuntimeDirectory=huou07-litellm
 RuntimeDirectoryMode=0700
-ExecStart=/usr/bin/podman run --replace --rm --name huou07-litellm-proxy --network huou07-litellm --publish 127.0.0.1:4000:4000 --memory=2g --cpus=2 --security-opt=no-new-privileges --cap-drop=all --log-driver=journald --env LITELLM_MASTER_KEY --env LITELLM_SALT_KEY --env DATABASE_URL --env STORE_MODEL_IN_DB ghcr.io/berriai/litellm:v1.103.1
+ExecStart=/usr/bin/podman run --replace --rm --name huou07-litellm-proxy --pod huou07-litellm --memory=2g --cpus=2 --security-opt=no-new-privileges --cap-drop=all --log-driver=journald --env LITELLM_MASTER_KEY --env LITELLM_SALT_KEY --env DATABASE_URL --env STORE_MODEL_IN_DB ghcr.io/berriai/litellm:v1.103.1
 ExecStop=/usr/bin/podman stop --time 30 huou07-litellm-proxy
 Restart=on-failure
 RestartSec=5

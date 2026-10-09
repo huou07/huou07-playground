@@ -27,7 +27,7 @@ class StateArchiveTests(unittest.TestCase):
             (env_dir / "litellm.env").write_text(
                 "LITELLM_MASTER_KEY=sk-master0123456789\n"
                 "LITELLM_SALT_KEY=sk-salt0123456789\n"
-                f"DATABASE_URL=postgresql://litellm:{password}@huou07-litellm-db:5432/litellm\n"
+                f"DATABASE_URL=postgresql://litellm:{password}@127.0.0.1:5432/litellm\n"
             )
             dump = root / "database.dump"
             dump.write_bytes(b"private database snapshot")
@@ -63,7 +63,7 @@ class StateArchiveTests(unittest.TestCase):
             (env_dir / "litellm.env").write_text(
                 "LITELLM_MASTER_KEY=sk-master0123456789\n"
                 "LITELLM_SALT_KEY=sk-salt0123456789\n"
-                "DATABASE_URL=postgresql://litellm:wrong@huou07-litellm-db:5432/litellm\n"
+                "DATABASE_URL=postgresql://litellm:wrong@127.0.0.1:5432/litellm\n"
             )
             dump = root / "database.dump"
             dump.write_bytes(b"snapshot")
