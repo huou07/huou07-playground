@@ -1,21 +1,48 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 1 ] || [ -z "$1" ] || [ "${1#-}" != "$1" ]; then
-  echo "Usage: $0 <ssh-host-alias-or-destination>" >&2
+mode=all
+case "$#" in
+  1) host=$1 ;;
+  2)
+    if [ "$1" != "--omniroute-only" ]; then
+      echo "Usage: $0 [--omniroute-only] <ssh-host-alias-or-destination>" >&2
+      exit 2
+    fi
+    mode=omniroute
+    host=$2
+    ;;
+  *)
+    echo "Usage: $0 [--omniroute-only] <ssh-host-alias-or-destination>" >&2
+    exit 2
+    ;;
+esac
+if [ -z "$host" ] || [ "${host#-}" != "$host" ]; then
+  echo "Usage: $0 [--omniroute-only] <ssh-host-alias-or-destination>" >&2
   exit 2
+fi
+
+if [ "$mode" = omniroute ]; then
+  set -- \
+    -L 127.0.0.1:20128:127.0.0.1:20128 \
+    -L 127.0.0.1:20129:127.0.0.1:20129 \
+    -L 127.0.0.1:20132:127.0.0.1:20132 \
+    "$host"
+else
+  set -- \
+    -L 127.0.0.1:8765:127.0.0.1:8765 \
+    -L 127.0.0.1:9090:127.0.0.1:9090 \
+    -L 127.0.0.1:4000:127.0.0.1:4000 \
+    -L 127.0.0.1:51821:127.0.0.1:51821 \
+    -L 127.0.0.1:14096:127.0.0.1:4096 \
+    -L 127.0.0.1:20128:127.0.0.1:20128 \
+    -L 127.0.0.1:20129:127.0.0.1:20129 \
+    -L 127.0.0.1:20132:127.0.0.1:20132 \
+    "$host"
 fi
 
 exec ssh -N -T \
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
-  -L 127.0.0.1:8765:127.0.0.1:8765 \
-  -L 127.0.0.1:9090:127.0.0.1:9090 \
-  -L 127.0.0.1:4000:127.0.0.1:4000 \
-  -L 127.0.0.1:51821:127.0.0.1:51821 \
-  -L 127.0.0.1:14096:127.0.0.1:4096 \
-  -L 127.0.0.1:20128:127.0.0.1:20128 \
-  -L 127.0.0.1:20129:127.0.0.1:20129 \
-  -L 127.0.0.1:20132:127.0.0.1:20132 \
-  "$1"
+  "$@"

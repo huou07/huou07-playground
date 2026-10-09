@@ -72,6 +72,8 @@ To open the dashboard and its configured web apps from a computer that can SSH t
 ./tools/huou07-ssh-tunnel <your-ssh-alias>
 ```
 
+If another SSH tunnel already forwards the dashboard and apps, add only OmniRoute's missing ports with `./tools/huou07-ssh-tunnel --omniroute-only <your-ssh-alias>`.
+
 Then open `http://127.0.0.1:8765`. The helper forwards the dashboard, Cockpit, LiteLLM, wg-easy, OpenCode Web, and OmniRoute to this computer's loopback only. It stays in the foreground; press Ctrl+C to close it. SSH host-key verification remains controlled by your normal SSH configuration. If SSH reports that a local address is already in use, close the other tunnel using that port first. On a phone, configure the same local-to-server forwards in its SSH client before opening the dashboard; this remains the recovery access method. After wg-easy setup, open the dashboard at the server's private WireGuard address on port `8765`. The dashboard relays the installed Cockpit, OpenCode, LiteLLM, OmniRoute, and wg-easy web interfaces on their documented ports, while their own services remain loopback-only. Relay sockets accept traffic only on `wg0`; active UFW hosts receive matching interface-scoped TCP rules. In each client, set `Allowed IPs` to only the server's WireGuard address (or explicitly needed private subnets); do not use `0.0.0.0/0` or `::/0`, and do not set client DNS. Verify the dashboard handshake, normal Internet, and local-LAN routes before relying on the peer. Keep SSH available independently. The dashboard binds only to loopback and the exact private `wg0` address. Restart `huou07-playground.service` over SSH if the `wg0` address changes.
 
 ### Private WireGuard setup
