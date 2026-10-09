@@ -97,7 +97,18 @@ On 2026-10-09, a real Chromium session used Cockpit Files through the existing S
 | Upload | 17.724 s · 14.44 MiB/s (121.2 Mbit/s) | 17.496 s · 14.63 MiB/s (122.7 Mbit/s) |
 | Download | 13.216 s · 19.37 MiB/s (162.5 Mbit/s) | 12.990 s · 19.71 MiB/s (165.3 Mbit/s) |
 
-These single runs were close to the `scp` baseline on this route and disk. They are not repeated or controlled benchmark results, and do not predict speeds on other networks or storage. Interruption/resume behavior remains untested. The 16-GiB integrity run above is the separate large-file and memory observation. The temporary account, local files, and server files were removed.
+These single runs were close to the `scp` baseline on this route and disk. A later repeated `scp` sample on the same route and filesystem is recorded below; Cockpit itself has not yet been repeated. Neither run predicts speeds on other networks or storage. Interruption/resume behavior remains untested. The 16-GiB integrity run above is the separate large-file and memory observation. The temporary account, local files, and server files were removed.
+
+## Repeated SSH transfer baseline
+
+On 2026-10-09, a 268,435,456-byte random-data file was transferred three times in each direction with `scp` over the verified SSH connection to the Dell's `/var/tmp`. Transfer timing excludes local file generation and hash calculation. Every uploaded and downloaded copy matched SHA-256 `52c7707a971735d5ab137433e35d9ebdf30e5570a50631e94f162fbfe4362b60`, and the temporary files were removed.
+
+| Direction | Three sample times | Median throughput | Throughput range |
+| --- | --- | ---: | ---: |
+| Upload | 17.116 / 17.439 / 17.783 s | 14.68 MiB/s | 14.40–14.96 MiB/s |
+| Download | 13.146 / 13.012 / 12.864 s | 19.67 MiB/s | 19.47–19.90 MiB/s |
+
+These repeated SSH results are close to the earlier one-run Cockpit Files measurements (14.44 MiB/s upload and 19.37 MiB/s download), but the Cockpit side still needs repeated samples for a like-for-like comparison. The values characterize this SSH route and `/var/tmp` storage at this time only; transfer interruption/resume and peak memory remain unmeasured.
 
 ## Dashboard open/closed resource sample
 
@@ -113,7 +124,7 @@ The page-open sample briefly peaked at 61,485,056 bytes (58.6 MiB) during initia
 ## Still to measure
 
 - Repeated initial-page load samples and longer dashboard-open versus closed CPU/memory samples.
-- Repeat Cockpit Files upload/download throughput and interruption/resume checks. One 256 MiB throughput comparison against `scp` is recorded. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed. The companion Move files page passed no-overwrite and cross-filesystem moves; a 3 MiB file retained its SHA-256 and the source disappeared. A disposable non-sudo account changed its own file mode 0664→0464→0664. The owner's own login and permissions remain unverified.
+- Repeat Cockpit Files upload/download throughput and interruption/resume checks. One 256 MiB Cockpit comparison against `scp` and a repeated three-sample `scp` baseline are recorded. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed. The companion Move files page passed no-overwrite and cross-filesystem moves; a 3 MiB file retained its SHA-256 and the source disappeared. A disposable non-sudo account changed its own file mode 0664→0464→0664. The owner's own login and permissions remain unverified.
 - WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
 - OmniRoute dashboard navigation and API timing through the SSH tunnel after owner login.
