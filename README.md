@@ -46,7 +46,7 @@ Only `name` and `url` are required. URLs must use HTTP or HTTPS. The app link op
 
 ## Install on Debian with systemd
 
-From a trusted checkout on the server, run `sudo ./deploy/install.sh`. It installs the web files under `/opt/huou07-playground`, creates a dedicated unprivileged service account, and starts a loopback-only systemd unit. It does not change firewall, VPN, proxy, or SSH settings. The installer keeps prior releases so the symlink can be switched back if an upgrade fails. To remove the app and its releases, run `sudo ./deploy/uninstall.sh`; the dedicated account is retained.
+From a trusted checkout on the server, run `sudo ./deploy/install.sh`. It installs the web files under `/opt/huou07-playground`, creates a dedicated unprivileged service account, and starts a systemd unit that listens on loopback and, when present, only the private IPv4 assigned to `wg0`. It does not change firewall, VPN, proxy, or SSH settings. The installer keeps prior releases so the symlink can be switched back if an upgrade fails. To remove the app and its releases, run `sudo ./deploy/uninstall.sh`; the dedicated account is retained.
 
 On a host with rootless Podman configured, run `sh deploy/check-rootless-sandbox.sh` as the unprivileged Podman owner to verify the digest-pinned workspace boundary before integrating a containerized agent.
 
