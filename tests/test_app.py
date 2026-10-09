@@ -9,7 +9,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web import app
@@ -217,6 +217,13 @@ class DashboardApiTests(unittest.TestCase):
             self.assertEqual(data["apps"][0]["status"], "available")
             self.assertEqual(data["apps"][0]["management_url"], "https://admin.example.invalid")
             self.assertNotIn("health_url", data["apps"][0])
+
+    def test_app_health_reports_authentication_required(self):
+        error = HTTPError("http://127.0.0.1:4096/", 401, "Unauthorized", {}, None)
+        opener = Mock()
+        opener.open.side_effect = error
+        with patch("web.app.build_opener", return_value=opener):
+            self.assertEqual(app.app_health("http://127.0.0.1:4096/", "GET"), "authentication_required")
 
     def test_app_registry_rejects_script_urls(self):
         with tempfile.TemporaryDirectory() as directory:
