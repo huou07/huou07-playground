@@ -174,6 +174,21 @@ class DashboardApiTests(unittest.TestCase):
                     urlopen(request)
                 self.assertEqual(error.exception.code, 400)
 
+    def test_app_registry_add_and_delete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = Path(directory) / "apps.json"
+            registry.write_text('{"apps":[]}')
+            headers = {"Origin": self.base, "Content-Type": "application/json"}
+            app_data = {"name": "OpenCode", "url": "http://127.0.0.1:4096", "description": "Coding workspace", "category": "Coding", "health_url": None, "management_url": None}
+            with patch.dict(os.environ, {"APPS_FILE": str(registry)}):
+                request = Request(f"{self.base}/api/apps", data=json.dumps({"action": "add", "name": "OpenCode", "app": app_data}).encode(), headers=headers)
+                with urlopen(request) as response:
+                    self.assertEqual(json.load(response)["total"], 1)
+                request = Request(f"{self.base}/api/apps", data=json.dumps({"action": "delete", "name": "OpenCode"}).encode(), headers=headers)
+                with urlopen(request) as response:
+                    self.assertEqual(json.load(response)["total"], 0)
+            self.assertEqual(json.loads(registry.read_text())["apps"], [])
+
     def test_vpn_status_reports_tailnet_connection_without_private_details(self):
         result = app.subprocess.CompletedProcess([], 0, stdout=json.dumps({"BackendState": "Running", "Self": {"Online": True, "TailscaleIPs": ["100.64.0.1"]}, "Peer": {"private-host": {"DNSName": "private.example.invalid"}}}))
         with patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value="/usr/bin/tailscale"), patch("web.app.subprocess.run", return_value=result) as run:
