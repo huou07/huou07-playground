@@ -20,6 +20,16 @@ test('navigation, browser preferences, and app launch work end to end', async ({
       ],
     }),
   }));
+  await page.route('**/api/vpn', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      available: true,
+      connected: false,
+      state: 'Needs owner setup',
+      wireguard: { available: true, connected: false, state: 'Needs owner setup', peer_count: 0, listen_port: 51820 },
+      tailscale: { available: true, connected: false, state: 'Disconnected' },
+    }),
+  }));
 
   await page.goto('/#/home');
   const brand = page.locator('.brand img');
@@ -38,7 +48,9 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   }
 
   await page.locator('#sidebar [data-route="network"]').click();
-  await expect(page.locator('#page-network')).toContainText('complete the wg-easy setup with the public DDNS hostname and verified router UDP mapping');
+  await expect(page.locator('#wireguard-listener')).toHaveText('51820/UDP');
+  await expect(page.locator('#page-network')).toContainText("map the router's chosen external UDP port to the server listener shown above");
+  await expect(page.locator('#page-network')).toContainText('This status cannot verify the router mapping.');
   await expect(page.locator('#wg-easy-link')).toHaveAttribute('href', 'http://127.0.0.1:51821/');
 
   await page.locator('#sidebar [data-route="services"]').click();

@@ -498,6 +498,7 @@ def wg_status_sample() -> dict | None:
         sampled_at = sample.get("sampled_at")
         peer_count = sample.get("peer_count")
         handshake = sample.get("latest_handshake_at")
+        listen_port = sample.get("listen_port")
         if (
             sample.get("available") is not True
             or not isinstance(sampled_at, (int, float))
@@ -509,9 +510,10 @@ def wg_status_sample() -> dict | None:
             or isinstance(peer_count, bool)
             or not 0 <= peer_count <= 65535
             or (handshake is not None and (not isinstance(handshake, int) or isinstance(handshake, bool) or not 0 < handshake <= now + 30))
+            or (listen_port is not None and (not isinstance(listen_port, int) or isinstance(listen_port, bool) or not 1 <= listen_port <= 65535))
         ):
             return None
-        return {"peer_count": peer_count, "latest_handshake_at": handshake}
+        return {"peer_count": peer_count, "latest_handshake_at": handshake, "listen_port": listen_port}
     except (OSError, json.JSONDecodeError, AttributeError, TypeError):
         return None
 
@@ -545,10 +547,10 @@ def vpn_status() -> dict:
             sample = wg_status_sample()
             if sample is None:
                 setup_required = wg_easy_needs_setup()
-                wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Status unavailable", "peer_count": 0}
+                wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Status unavailable", "peer_count": 0, "listen_port": None}
             elif sample["peer_count"] == 0:
                 setup_required = wg_easy_needs_setup()
-                wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Waiting for peer", "peer_count": 0}
+                wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Waiting for peer", "peer_count": 0, "listen_port": sample["listen_port"]}
             else:
                 latest = sample["latest_handshake_at"]
                 age = max(0, int(time.time()) - latest) if latest else None
@@ -558,6 +560,7 @@ def vpn_status() -> dict:
                     "connected": connected,
                     "state": "Connected" if connected else "Waiting for peer",
                     "peer_count": sample["peer_count"],
+                    "listen_port": sample["listen_port"],
                     "last_handshake_seconds": age,
                 }
     return {"available": wireguard["available"], "connected": wireguard["connected"], "state": wireguard["state"], "wireguard": wireguard, "tailscale": tailnet}

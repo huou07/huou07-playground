@@ -13,13 +13,19 @@ class WireGuardStatusTests(unittest.TestCase):
         output = "public-key-one\t0\npublic-key-two\t1700000000\npublic-key-three\t1699999990\ninvalid\n"
         self.assertEqual(wg_status.parse_latest_handshakes(output), (3, 1700000000))
 
+    def test_parser_accepts_only_a_single_valid_listen_port(self):
+        self.assertEqual(wg_status.parse_listen_port("51820\n"), 51820)
+        for output in ("", "0", "65536", "51820\n51821", "private diagnostic"):
+            self.assertIsNone(wg_status.parse_listen_port(output))
+
     def test_collector_uses_fixed_command_and_never_returns_peer_keys(self):
         result = wg_status.subprocess.CompletedProcess([], 0, stdout="public-key-one\t1700000000\n")
-        with patch("deploy.wg_status.subprocess.run", return_value=result) as run, patch("deploy.wg_status.time.time", return_value=1700000010):
+        port = wg_status.subprocess.CompletedProcess([], 0, stdout="51820\n")
+        with patch("deploy.wg_status.subprocess.run", side_effect=[result, port]) as run, patch("deploy.wg_status.time.time", return_value=1700000010):
             sample = wg_status.collect_status("/usr/bin/wg")
-        self.assertEqual(sample, {"available": True, "peer_count": 1, "latest_handshake_at": 1700000000, "sampled_at": 1700000010})
+        self.assertEqual(sample, {"available": True, "peer_count": 1, "latest_handshake_at": 1700000000, "listen_port": 51820, "sampled_at": 1700000010})
         self.assertNotIn("public-key-one", json.dumps(sample))
-        self.assertEqual(run.call_args.args[0], ["/usr/bin/wg", "show", "wg0", "latest-handshakes"])
+        self.assertEqual([call.args[0] for call in run.call_args_list], [["/usr/bin/wg", "show", "wg0", "latest-handshakes"], ["/usr/bin/wg", "show", "wg0", "listen-port"]])
 
     def test_collector_reports_empty_interface_and_command_failure(self):
         empty = wg_status.subprocess.CompletedProcess([], 0, stdout="")

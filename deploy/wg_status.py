@@ -29,6 +29,14 @@ def parse_latest_handshakes(output: str) -> tuple[int, int | None]:
     return len(peers), latest or None
 
 
+def parse_listen_port(output: str) -> int | None:
+    try:
+        port = int(output.strip())
+    except ValueError:
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
 def collect_status(binary: str | None = None, run=None) -> dict:
     tool = binary or shutil.which("wg")
     if not tool:
@@ -45,10 +53,20 @@ def collect_status(binary: str | None = None, run=None) -> dict:
     if result.returncode != 0:
         return {"available": False}
     peer_count, latest = parse_latest_handshakes(result.stdout or "")
+    try:
+        listen_result = runner(
+            [tool, "show", "wg0", "listen-port"], capture_output=True,
+            text=True, timeout=2, check=False,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        listen_result = None
+    listen_port = parse_listen_port(listen_result.stdout or "") if listen_result is not None and listen_result.returncode == 0 else None
     return {
         "available": True,
         "peer_count": peer_count,
         "latest_handshake_at": latest,
+        "listen_port": listen_port,
         "sampled_at": time.time(),
     }
 
