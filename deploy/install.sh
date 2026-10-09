@@ -146,6 +146,9 @@ if command -v intel_gpu_top >/dev/null 2>&1 && [ "$has_i915" -eq 1 ]; then
 else
   systemctl disable --now "$GPU_TIMER" >/dev/null 2>&1 || true
 fi
+if [ -x "$SOURCE/deploy/configure-wg-private-web-access.sh" ]; then
+  "$SOURCE/deploy/configure-wg-private-web-access.sh" || echo "Warning: private WireGuard application firewall rules were not configured." >&2
+fi
 trap - EXIT HUP INT TERM
 echo "Installed and running at http://127.0.0.1:8765"
 echo "Use an SSH tunnel to open it remotely: ssh -L 8765:127.0.0.1:8765 <your-ssh-alias>"

@@ -32,6 +32,9 @@ if [ -e "/etc/systemd/system/$GPU_TIMER" ] && ! grep -Fq "Unit=$GPU_SERVICE" "/e
   echo "An unrelated $GPU_TIMER unit exists; refusing to remove it." >&2
   exit 1
 fi
+if [ -x "$(dirname "$0")/remove-wg-private-web-access.sh" ]; then
+  "$(dirname "$0")/remove-wg-private-web-access.sh"
+fi
 if systemctl is-active --quiet "$SERVICE"; then
   systemctl stop "$SERVICE"
 fi

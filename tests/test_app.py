@@ -72,6 +72,19 @@ class DashboardApiTests(unittest.TestCase):
             app.InterfaceBoundHTTPServer.server_bind(server)
         fake_socket.setsockopt.assert_called_once_with(app.socket.SOL_SOCKET, 25, b"wg0\0")
 
+    def test_private_proxy_binds_to_wireguard_and_only_fixed_application_ports(self):
+        server = object.__new__(app.PrivateProxyServer)
+        server.interface = "wg0"
+        fake_socket = Mock()
+        with patch.object(app.socket, "SO_BINDTODEVICE", 25, create=True), patch.object(app.socketserver.TCPServer, "server_bind"):
+            server.socket = fake_socket
+            app.PrivateProxyServer.server_bind(server)
+        fake_socket.setsockopt.assert_called_once_with(app.socket.SOL_SOCKET, 25, b"wg0\0")
+        self.assertEqual(app.PRIVATE_WG_PORTS, (
+            (9090, 9090), (4000, 4000), (51821, 51821), (14096, 4096),
+            (20128, 20128), (20129, 20129), (20132, 20132),
+        ))
+
     def test_health_endpoint(self):
         with urlopen(f"{self.base}/api/health") as response:
             self.assertEqual(response.status, 200)

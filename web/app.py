@@ -14,6 +14,7 @@ import re
 import subprocess
 import shutil
 import socket
+import socketserver
 import tempfile
 import threading
 import time
@@ -34,6 +35,16 @@ _prev_net: tuple[float, dict[str, tuple[int, int]]] | None = None
 _prev_processes: dict[int, tuple[int, int]] = {}
 _prev_process_total: int | None = None
 _prev_process_time: float | None = None
+PRIVATE_WG_PORTS = (
+    (9090, 9090),   # Cockpit, including Cockpit Files
+    (4000, 4000),   # LiteLLM
+    (51821, 51821), # wg-easy administration
+    (14096, 4096),  # OpenCode Web
+    (20128, 20128), # OmniRoute web UI
+    (20129, 20129), # OmniRoute API
+    (20132, 20132), # OmniRoute live updates
+)
+_private_proxy_slots = threading.BoundedSemaphore(32)
 
 
 def read_text(path: str, default: str = "") -> str:
@@ -790,6 +801,82 @@ class InterfaceBoundHTTPServer(HTTPServer):
         super().server_bind()
 
 
+class PrivateProxyHandler(socketserver.BaseRequestHandler):
+    """Bounded-memory TCP relay to a fixed loopback application port."""
+    def handle(self) -> None:
+        try:
+            upstream = socket.create_connection(("127.0.0.1", self.server.backend_port), timeout=3)
+        except OSError:
+            return
+        client = self.request
+        client.settimeout(None)
+        upstream.settimeout(None)
+
+        def forward(source: socket.socket, destination: socket.socket) -> None:
+            try:
+                while True:
+                    chunk = source.recv(65536)
+                    if not chunk:
+                        break
+                    destination.sendall(chunk)
+            except OSError:
+                pass
+            finally:
+                try:
+                    destination.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+
+        sender = threading.Thread(target=forward, args=(client, upstream), daemon=True)
+        sender.start()
+        try:
+            forward(upstream, client)
+        finally:
+            for connection in (client, upstream):
+                try:
+                    connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                connection.close()
+            sender.join(timeout=1)
+
+
+class PrivateProxyServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """TCP relay listener restricted to the WireGuard device."""
+    allow_reuse_address = True
+    daemon_threads = True
+    block_on_close = False
+    request_queue_size = 32
+
+    def __init__(self, server_address: tuple[str, int], backend_port: int, interface: str):
+        self.backend_port = backend_port
+        self.interface = interface
+        super().__init__(server_address, PrivateProxyHandler)
+
+    def server_bind(self) -> None:
+        option = getattr(socket, "SO_BINDTODEVICE", None)
+        if option is None:
+            raise OSError("Interface-bound listeners are not supported on this platform.")
+        self.socket.setsockopt(socket.SOL_SOCKET, option, self.interface.encode("ascii") + b"\0")
+        super().server_bind()
+
+    def process_request(self, request: socket.socket, client_address: tuple[str, int]) -> None:
+        if not _private_proxy_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            _private_proxy_slots.release()
+            raise
+
+    def process_request_thread(self, request: socket.socket, client_address: tuple[str, int]) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            _private_proxy_slots.release()
+
+
 def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     if host not in {"127.0.0.1", "::1", "localhost"}:
@@ -808,6 +895,16 @@ def main() -> None:
         worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)
         worker.start()
         wg_servers.append(server)
+        for listen_port, backend_port in PRIVATE_WG_PORTS:
+            try:
+                proxy = PrivateProxyServer((address, listen_port), backend_port, "wg0")
+            except OSError:
+                print("A private application listener is unavailable; its loopback service remains active.")
+                continue
+            servers.append(proxy)
+            worker = threading.Thread(target=proxy.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)
+            worker.start()
+            wg_servers.append(proxy)
         print("WireGuard dashboard listener ready on the private wg0 interface.")
     try:
         servers[0].serve_forever(poll_interval=0.5)
