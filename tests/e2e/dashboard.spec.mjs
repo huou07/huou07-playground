@@ -77,6 +77,7 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await expect(stoppedService).toBeHidden();
 
   await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(() => page.locator('#sidebar').evaluate(sidebar => sidebar.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
   const mobileBrand = page.locator('.mobile-brand');
   await expect(mobileBrand).toBeVisible();
   await expect.poll(() => mobileBrand.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
