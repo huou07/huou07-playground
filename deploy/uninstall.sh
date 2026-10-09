@@ -35,6 +35,9 @@ fi
 if [ -x "$(dirname "$0")/remove-wg-private-web-access.sh" ]; then
   "$(dirname "$0")/remove-wg-private-web-access.sh"
 fi
+if [ -x "$(dirname "$0")/remove-wg-udp-access.sh" ]; then
+  "$(dirname "$0")/remove-wg-udp-access.sh"
+fi
 if systemctl is-active --quiet "$SERVICE"; then
   systemctl stop "$SERVICE"
 fi

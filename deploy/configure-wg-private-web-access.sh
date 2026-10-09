@@ -28,11 +28,7 @@ install -d -o root -g root -m 0755 "$STATE_DIR"
 rule_present() {
   port=$1
   "$UFW" status 2>/dev/null | awk -v rule="${port}/tcp" '
-    $1 == rule && $2 == "ALLOW" && $3 == "IN" {
-      for (i = 4; i < NF; i++) {
-        if ($i == "on" && $(i + 1) == "wg0") found = 1
-      }
-    }
+    $1 == rule && $2 == "on" && $3 == "wg0" && $4 == "ALLOW" { found = 1 }
     END { exit !found }
   '
 }
