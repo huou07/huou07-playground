@@ -134,9 +134,19 @@ On 2026-10-09, the deployed `20261009092950-217379` release (source commit `700f
 
 The page-open sample briefly peaked at 61,485,056 bytes (58.6 MiB) during initial loading. Chromium reported no console errors or warnings. This is one 55-second low-load sample per state; it includes scheduled collectors and systemd cgroup accounting, and does not isolate individual requests or establish a long-term idle baseline. Repeat it across longer intervals before making optimization decisions.
 
+## Repeated dashboard open/closed resource sample
+
+On 2026-10-09, deployed release `20261009101431-248479` (source commit `73fb4ebfb816a8a0e86f816a8a54e39ec78f5de2`) was sampled through the SSH recovery tunnel. Each state ran for 301 seconds with 61 samples five seconds apart. CPU is the `cpu.stat` usage delta divided by elapsed time, as a share of one logical CPU. Memory is from the dashboard's systemd cgroup; the browser was fully closed for the first interval and Chromium kept the Home page open at its default five-second refresh for the second.
+
+| State | Dashboard cgroup CPU | Median memory | 95th percentile | Peak memory |
+| --- | ---: | ---: | ---: | ---: |
+| Browser closed | 1.77% of one CPU | 51,957,760 bytes (49.5 MiB) | 52,514,816 bytes (50.1 MiB) | 52,760,576 bytes (50.3 MiB) |
+| Home page open | 2.77% of one CPU | 52,600,832 bytes (50.2 MiB) | 55,083,008 bytes (52.5 MiB) | 55,832,576 bytes (53.3 MiB) |
+
+The browser-open interval used the Mac's installed Chrome through the SSH tunnel and rendered the deployed Home view successfully. It reported no page or console errors. The tunnel was closed afterward; the target dashboard service remained active and its health endpoint returned `{"ok":true}`. This is a low-load sample of one client and one five-second refresh setting; it includes the dashboard's scheduled collectors and does not model concurrent clients or application workloads.
+
 ## Still to measure
 
-- Repeated initial-page load samples and longer dashboard-open versus closed CPU/memory samples.
 - Owner-specific Cockpit login and permission changes remain unverified. Repeated 256 MiB Cockpit Files and `scp` throughput samples passed integrity checks; a browser-disconnected upload left no file with the requested name, and a fresh full retry succeeded. A resumable partial transfer was not available in that run. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed. The companion Move files page passed no-overwrite and cross-filesystem moves; a 3 MiB file retained its SHA-256 and the source disappeared. A disposable non-sudo account changed its own file mode 0664→0464→0664.
 - WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
