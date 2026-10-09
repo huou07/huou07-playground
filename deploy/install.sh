@@ -88,11 +88,32 @@ chown "$ACCOUNT":"$ACCOUNT" "$APPS_FILE"
 chmod 0660 "$APPS_FILE"
 release="$ROOT/releases/$(date -u +%Y%m%d%H%M%S)-$$"
 previous=$(readlink "$ROOT/current" 2>/dev/null || true)
+wait_for_dashboard() {
+  /usr/bin/python3 -c '
+import json
+import time
+from urllib.request import urlopen
+
+for _ in range(30):
+    try:
+        with urlopen("http://127.0.0.1:8765/api/health", timeout=0.5) as response:
+            if response.status == 200 and json.load(response) == {"ok": True}:
+                break
+    except (OSError, ValueError):
+        pass
+    time.sleep(0.25)
+else:
+    raise SystemExit(1)
+'
+}
 rollback() {
   if [ -n "$previous" ]; then
     ln -sfn "$previous" "$ROOT/current.rollback"
     mv -Tf "$ROOT/current.rollback" "$ROOT/current"
     systemctl restart "$SERVICE" >/dev/null 2>&1 || true
+    if ! wait_for_dashboard; then
+      echo "The previous release was restored but did not become healthy." >&2
+    fi
   else
     systemctl disable --now "$SERVICE" >/dev/null 2>&1 || true
     rm -f "$ROOT/current"
@@ -139,8 +160,8 @@ else
   systemctl start "$SERVICE"
 fi
 
-if ! systemctl is-active --quiet "$SERVICE"; then
-  echo "The service did not become active; the previous release has been restored." >&2
+if ! systemctl is-active --quiet "$SERVICE" || ! wait_for_dashboard; then
+  echo "The service did not become healthy; the previous release has been restored." >&2
   exit 1
 fi
 if ! systemctl enable --now "$POWER_TIMER" >/dev/null 2>&1; then
