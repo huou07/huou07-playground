@@ -38,6 +38,7 @@ LITELLM_UNIT = Path("/etc/systemd/system") / LITELLM_SERVICE
 LITELLM_DB_UNIT = Path("/etc/systemd/system") / LITELLM_DB_SERVICE
 LITELLM_ENV_DIR = Path("/etc/huou07-litellm")
 LITELLM_DATA_DIR = Path("/var/lib/huou07-litellm")
+LITELLM_RUNTIME_DIR = Path("/run/huou07-litellm")
 
 
 def create_backup(
@@ -294,9 +295,19 @@ def parse_postgres_password(data: bytes) -> str:
 
 def run_litellm_podman(args: list[str], stdin=None, stdout=None) -> subprocess.CompletedProcess:
     account = pwd.getpwnam("huou07-litellm")
+    if LITELLM_RUNTIME_DIR.is_symlink():
+        raise ValueError("The LiteLLM runtime directory must not be a symbolic link.")
+    LITELLM_RUNTIME_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not LITELLM_RUNTIME_DIR.is_dir():
+        raise ValueError("The LiteLLM runtime path is not a directory.")
+    if os.geteuid() == 0:
+        os.chown(LITELLM_RUNTIME_DIR, account.pw_uid, account.pw_gid)
+    elif LITELLM_RUNTIME_DIR.stat().st_uid != account.pw_uid:
+        raise ValueError("The LiteLLM runtime directory has an unexpected owner.")
+    os.chmod(LITELLM_RUNTIME_DIR, 0o700)
     command = [
         "runuser", "-u", "huou07-litellm", "--", "env",
-        f"HOME={account.pw_dir}", "XDG_RUNTIME_DIR=/run/huou07-litellm",
+        f"HOME={account.pw_dir}", f"XDG_RUNTIME_DIR={LITELLM_RUNTIME_DIR}",
         "/usr/bin/podman", *args,
     ]
     return subprocess.run(command, stdin=stdin, stdout=stdout, check=True, cwd=account.pw_dir)

@@ -14,11 +14,15 @@ from deploy import state
 
 class StateArchiveTests(unittest.TestCase):
     def test_litellm_podman_uses_the_service_account_home_as_working_directory(self):
-        account = type("Account", (), {"pw_dir": "/var/lib/huou07-litellm"})()
-        with mock.patch.object(state.pwd, "getpwnam", return_value=account), \
-             mock.patch.object(state.subprocess, "run") as run:
-            state.run_litellm_podman(["ps"])
-        self.assertEqual(run.call_args.kwargs["cwd"], account.pw_dir)
+        with tempfile.TemporaryDirectory() as directory:
+            account = type("Account", (), {"pw_dir": "/var/lib/huou07-litellm", "pw_uid": os.geteuid(), "pw_gid": os.getegid()})()
+            runtime = Path(directory) / "runtime"
+            with mock.patch.object(state, "LITELLM_RUNTIME_DIR", runtime), \
+                 mock.patch.object(state.pwd, "getpwnam", return_value=account), \
+                 mock.patch.object(state.subprocess, "run") as run:
+                state.run_litellm_podman(["ps"])
+            self.assertEqual(run.call_args.kwargs["cwd"], account.pw_dir)
+            self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)
 
     def test_litellm_backup_restore_round_trip_keeps_secrets_private(self):
         with tempfile.TemporaryDirectory() as directory:
