@@ -463,6 +463,8 @@ def app_health(url: str, method: str) -> str:
         finally:
             response.close()
     except HTTPError as error:
+        if 300 <= error.code < 400:
+            return "available"
         return "authentication_required" if error.code == 401 else "unavailable"
     except (OSError, URLError, ValueError):
         return "unavailable"

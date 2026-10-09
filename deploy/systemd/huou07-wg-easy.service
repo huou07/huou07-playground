@@ -1,0 +1,36 @@
+[Unit]
+Description=huou07 WireGuard Easy administration
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/huou07-wg-easy
+RuntimeDirectory=huou07-wg-easy
+RuntimeDirectoryMode=0700
+UMask=0077
+ExecStartPre=/usr/sbin/modprobe wireguard
+ExecStart=/usr/bin/podman run --replace --rm --name huou07-wg-easy --network=host --volume /var/lib/huou07-wg-easy:/etc/wireguard --volume /lib/modules:/lib/modules:ro --cap-drop=all --cap-add=NET_ADMIN --cap-add=NET_RAW --security-opt=no-new-privileges --memory=512m --cpus=1 --env HOST=127.0.0.1 --env PORT=51821 --env INSECURE=true --env DISABLE_IPV6=true --env WG_INTERFACE=wg0 ghcr.io/wg-easy/wg-easy@sha256:6b89677a396dc2831d3b5b74d720d6d50c38fd2cbe9071bc8419453f236a94b3
+ExecStartPost=/usr/local/libexec/huou07-wg-easy/wait-ready.sh
+ExecStop=/usr/bin/podman stop --time 30 huou07-wg-easy
+ExecStopPost=-/usr/bin/podman rm --force huou07-wg-easy
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=75
+TimeoutStopSec=40
+ProtectHome=yes
+ProtectSystem=full
+ProtectKernelTunables=no
+ProtectKernelModules=no
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+TasksMax=128
+LimitNOFILE=4096
+MemoryMax=768M
+CPUQuota=100%
+Delegate=yes
+
+[Install]
+WantedBy=multi-user.target

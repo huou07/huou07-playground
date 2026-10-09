@@ -1,0 +1,84 @@
+#!/bin/sh
+set -eu
+
+SERVICE=huou07-wg-easy
+STATE_DIR=/var/lib/$SERVICE
+CONFIG_DIR=/etc/$SERVICE
+LIBEXEC_DIR=/usr/local/libexec/$SERVICE
+SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+IMAGE=ghcr.io/wg-easy/wg-easy@sha256:6b89677a396dc2831d3b5b74d720d6d50c38fd2cbe9071bc8419453f236a94b3
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run this installer as root (for example: sudo ./deploy/install-wg-easy.sh)." >&2
+  exit 1
+fi
+if [ ! -x /usr/bin/podman ] || [ ! -x /usr/bin/wg ] || [ ! -x /usr/sbin/modprobe ] || [ ! -x /usr/bin/systemctl ] || [ ! -d /run/systemd/system ]; then
+  echo "A running systemd installation with rootful Podman and wireguard-tools is required." >&2
+  exit 1
+fi
+if [ ! -c /dev/net/tun ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE.service" ]; then
+  echo "The host WireGuard device or service unit is missing." >&2
+  exit 1
+fi
+unit="/etc/systemd/system/$SERVICE.service"
+if [ -e "$unit" ] && {
+  ! grep -Fqx "Description=huou07 WireGuard Easy administration" "$unit" ||
+  ! grep -Fq "$IMAGE" "$unit"
+}; then
+  echo "An unrelated $SERVICE.service unit already exists; refusing to replace it." >&2
+  exit 1
+fi
+
+install -d -o root -g root -m 0700 "$STATE_DIR" "$CONFIG_DIR"
+install -d -o root -g root -m 0755 "$LIBEXEC_DIR"
+/usr/sbin/modprobe wireguard
+install -o root -g root -m 0755 "$SOURCE/deploy/wg-easy-wait-ready.sh" "$LIBEXEC_DIR/wait-ready.sh"
+install -o root -g root -m 0644 "$SOURCE/deploy/systemd/$SERVICE.service" "$unit"
+if ! /usr/bin/podman image exists "$IMAGE"; then
+  /usr/bin/podman pull "$IMAGE"
+fi
+
+systemctl daemon-reload
+systemctl enable "$SERVICE.service"
+systemctl restart "$SERVICE.service"
+attempt=0
+while [ "$attempt" -lt 80 ]; do
+  state=$(systemctl show --property=ActiveState --value "$SERVICE.service")
+  if [ "$state" = active ] && /usr/bin/curl --fail --silent --max-time 3 http://127.0.0.1:51821/ >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$state" = failed ]; then
+    echo "wg-easy failed to start; inspect its systemd status without publishing logs." >&2
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+if [ "$attempt" -ge 80 ]; then
+  echo "wg-easy did not become ready on loopback." >&2
+  exit 1
+fi
+
+PYTHONPATH="$SOURCE" APPS_FILE=/etc/huou07-playground/apps.json python3 - <<'PY'
+from web.app import mutate_app_registry, validate_app_entries
+import json
+from pathlib import Path
+
+path = Path("/etc/huou07-playground/apps.json")
+apps = validate_app_entries(json.loads(path.read_text()))
+name = "WireGuard Easy"
+app = {
+    "name": name,
+    "url": "http://127.0.0.1:51821/",
+    "description": "Manage private WireGuard peers. The administration page is available through an SSH tunnel.",
+    "category": "Network & VPN",
+    "health_url": "http://127.0.0.1:51821/",
+    "health_method": "GET",
+    "management_url": "http://127.0.0.1:51821/",
+}
+action = "update" if any(item["name"].casefold() == name.casefold() for item in apps) else "add"
+mutate_app_registry({"action": action, "name": name, "app": app})
+PY
+
+echo "wg-easy is running on 127.0.0.1:51821."
+echo "Forward that port over SSH to finish the owner setup; no WireGuard UDP listener or firewall rule has been enabled yet."

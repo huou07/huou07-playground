@@ -225,6 +225,13 @@ class DashboardApiTests(unittest.TestCase):
         with patch("web.app.build_opener", return_value=opener):
             self.assertEqual(app.app_health("http://127.0.0.1:4096/", "GET"), "authentication_required")
 
+    def test_app_health_reports_redirecting_setup_page_as_available(self):
+        error = HTTPError("http://127.0.0.1:51821/", 307, "Temporary Redirect", {}, None)
+        opener = Mock()
+        opener.open.side_effect = error
+        with patch("web.app.build_opener", return_value=opener):
+            self.assertEqual(app.app_health("http://127.0.0.1:51821/", "GET"), "available")
+
     def test_app_registry_rejects_script_urls(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "apps.json"
