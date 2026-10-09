@@ -212,8 +212,9 @@ if ! run_as_litellm /usr/bin/podman image exists ghcr.io/berriai/litellm:v1.103.
 fi
 
 systemctl daemon-reload
-systemctl enable --now "$SERVICE-db.service"
-systemctl enable --now "$SERVICE.service"
+systemctl enable "$SERVICE-db.service" "$SERVICE.service"
+systemctl restart "$SERVICE-db.service"
+systemctl restart "$SERVICE.service"
 attempt=0
 while [ "$attempt" -lt 120 ]; do
   db_state=$(systemctl show --property=ActiveState --value "$SERVICE-db.service")
