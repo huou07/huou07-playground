@@ -13,8 +13,8 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer as root (for example: sudo ./deploy/install-litellm.sh)." >&2
   exit 1
 fi
-if [ ! -x /usr/bin/podman ] || [ ! -x /usr/bin/systemctl ] || [ ! -d /run/systemd/system ]; then
-  echo "A running systemd installation with Podman is required." >&2
+if [ ! -x /usr/bin/podman ] || [ ! -x /usr/bin/slirp4netns ] || [ ! -x /usr/bin/systemctl ] || [ ! -d /run/systemd/system ]; then
+  echo "A running systemd installation with Podman and slirp4netns is required." >&2
   exit 1
 fi
 if [ ! -f /etc/huou07-playground/apps.json ] || [ ! -d /opt/huou07-playground/current ]; then
@@ -69,6 +69,20 @@ fi
 
 install -d -o "$SERVICE" -g "$SERVICE" -m 0750 "$STATE_DIR"
 install -d -o root -g root -m 0755 "$CONFIG_DIR" "$LIBEXEC_DIR"
+install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$STATE_DIR/.config/containers"
+containers_config="$STATE_DIR/.config/containers/containers.conf"
+if [ -e "$containers_config" ]; then
+  if [ -L "$containers_config" ] || ! grep -Eq '^[[:space:]]*default_rootless_network_cmd[[:space:]]*=[[:space:]]*"slirp4netns"$' "$containers_config"; then
+    echo "The dedicated LiteLLM account has an incompatible Podman configuration; refusing to replace it." >&2
+    exit 1
+  fi
+else
+  containers_tmp=$(mktemp "$STATE_DIR/.config/containers/.containers.conf.XXXXXX")
+  printf '[network]\ndefault_rootless_network_cmd = "slirp4netns"\n' > "$containers_tmp"
+  chown "$SERVICE:$SERVICE" "$containers_tmp"
+  chmod 0600 "$containers_tmp"
+  mv "$containers_tmp" "$containers_config"
+fi
 install -o root -g root -m 0755 "$SOURCE/deploy/litellm-prepare.sh" "$LIBEXEC_DIR/prepare.sh"
 install -o root -g root -m 0755 "$SOURCE/deploy/litellm-wait-postgres.sh" "$LIBEXEC_DIR/wait-postgres.sh"
 install -o root -g root -m 0644 "$SOURCE/deploy/systemd/huou07-litellm-db.service" "/etc/systemd/system/$SERVICE-db.service"
