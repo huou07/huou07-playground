@@ -155,7 +155,7 @@ install -o root -g root -m 0755 "$SOURCE/deploy/omniroute-wait-redis.sh" "$LIBEX
 install -o root -g root -m 0644 "$SOURCE/deploy/systemd/$SERVICE.service" "$unit"
 install -d -o "$SERVICE" -g "$SERVICE" -m 0700 /run/huou07-omniroute
 run_as_omniroute() {
-  runuser -u "$SERVICE" -- env HOME="$STATE_DIR" XDG_RUNTIME_DIR=/run/huou07-omniroute "$@"
+  (cd "$STATE_DIR" && runuser -u "$SERVICE" -- env HOME="$STATE_DIR" XDG_RUNTIME_DIR=/run/huou07-omniroute "$@")
 }
 run_as_omniroute /usr/bin/podman info >/dev/null
 if ! run_as_omniroute /usr/bin/podman image exists "$REDIS_IMAGE"; then
