@@ -34,6 +34,10 @@ test('navigation, browser preferences, and app launch work end to end', async ({
     await expect(page.locator(`#page-${route} h1`)).toHaveText(title);
   }
 
+  await page.locator('#sidebar [data-route="network"]').click();
+  await expect(page.locator('#page-network')).toContainText('complete the wg-easy setup with the public DDNS hostname and verified router UDP mapping');
+  await expect(page.locator('#wg-easy-link')).toHaveAttribute('href', 'http://127.0.0.1:51821/');
+
   await page.locator('#sidebar [data-route="services"]').click();
   await expect(page.locator('#service-total')).toHaveText('1 running · 1 exited · 1 inactive · 1 failed');
   const stoppedService = page.locator('#service-list .service-row').filter({ hasText: 'stopped-demo' });
