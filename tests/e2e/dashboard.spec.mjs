@@ -22,6 +22,9 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   }));
 
   await page.goto('/#/home');
+  const brand = page.locator('.brand img');
+  await expect(brand).toHaveAttribute('src', '/branding.png');
+  await expect.poll(() => brand.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
   const routes = [
     ['home', 'Home'], ['apps', 'Applications'], ['system', 'System'],
     ['services', 'Services & Processes'], ['files', 'Files'], ['ssh', 'SSH'],

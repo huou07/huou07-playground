@@ -112,9 +112,9 @@ On Debian 13 with its official backports repository enabled, run `sudo ./deploy/
 
 The backport version floor avoids older releases affected by known security issues: [Cockpit 360 security fix](https://cockpit-project.org/blog/cockpit-360.html), [Debian Cockpit backports](https://tracker.debian.org/pkg/cockpit/news/), and [Cockpit loopback/TLS behavior](https://docs.cockpit-project.org/cockpit-guide/main/guide/https.html). The dashboard uninstall script intentionally leaves Cockpit installed because it is an independently managed host component.
 
-## Local branding
+## Turtle branding
 
-The supplied turtle artwork is kept as a local-only file at `assets/turtle-local.png` and is excluded from Git until its redistribution rights are confirmed. Copy it to `web/static/branding.png` before deployment to use it; the installer carries an existing private copy forward across upgrades. The runtime asset is ignored by Git, and clean/public builds use a neutral fallback mark.
+The dashboard uses the supplied Google Noto Emoji turtle (U+1F422) as its local brand image. The image is distributed under Apache License 2.0; its attribution and the complete license are next to the image in `web/static/`. This keeps clean checkouts and deployments consistent with the supplied design.
 
 ## Server discovery
 
