@@ -22,7 +22,6 @@ ProtectHome=yes
 ProtectSystem=full
 ProtectKernelTunables=no
 ProtectKernelModules=no
-ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
