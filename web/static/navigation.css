@@ -1,4 +1,5 @@
 .page-view[hidden]{display:none!important}
+*[hidden]{display:none!important}
 .quick-links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin-top:16px}
 .quick-links a{display:grid;gap:3px;padding:13px 14px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);text-decoration:none}
 .quick-links a:hover{border-color:var(--accent)}
