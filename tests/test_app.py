@@ -212,7 +212,7 @@ class DashboardApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / "huou07-wg-easy.service"
             unit.touch()
-            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", side_effect=lambda name: {"tailscale": "/usr/bin/tailscale", "wg": "/usr/bin/wg"}.get(name)), patch("web.app.subprocess.run", side_effect=[tailnet, active, no_peers]):
+            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", side_effect=lambda name: {"tailscale": "/usr/bin/tailscale", "wg": "/usr/bin/wg"}.get(name)), patch("web.app.wg_easy_needs_setup", return_value=True), patch("web.app.subprocess.run", side_effect=[tailnet, active, no_peers]):
                 with urlopen(f"{self.base}/api/vpn") as response:
                     data = json.load(response)
         self.assertEqual(data["wireguard"], {"available": True, "connected": False, "state": "Needs owner setup", "peer_count": 0})
@@ -229,6 +229,20 @@ class DashboardApiTests(unittest.TestCase):
         self.assertFalse(payload["connected"])
         self.assertEqual(payload["wireguard"]["state"], "Not installed")
         self.assertEqual(payload["tailscale"]["state"], "Unavailable")
+
+    def test_wg_easy_setup_detection_recognizes_only_setup_redirects(self):
+        class Opener:
+            def __init__(self, location):
+                self.location = location
+
+            def open(self, request, timeout):
+                headers = {"Location": self.location}
+                raise app.HTTPError(request.full_url, 302, "Found", headers, None)
+
+        with patch("web.app.build_opener", side_effect=lambda *args: Opener("/setup/1")):
+            self.assertTrue(app.wg_easy_needs_setup())
+        with patch("web.app.build_opener", side_effect=lambda *args: Opener("/login")):
+            self.assertFalse(app.wg_easy_needs_setup())
 
     def test_app_registry_checks_configured_health_and_hides_probe_url(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -416,6 +416,22 @@ def cockpit_files_status() -> dict:
     return {"available": True, "installed": True}
 
 
+def wg_easy_needs_setup() -> bool:
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str) -> None:
+            return None
+
+    opener = build_opener(ProxyHandler({}), NoRedirect())
+    try:
+        response = opener.open(Request("http://127.0.0.1:51821/", headers={"User-Agent": "huou07-playground/0.1"}), timeout=1)
+        response.close()
+        return False
+    except HTTPError as error:
+        return 300 <= error.code < 400 and urlsplit(error.headers.get("Location", "")).path.startswith("/setup/")
+    except (OSError, URLError, ValueError):
+        return False
+
+
 def vpn_status() -> dict:
     if platform.system() != "Linux":
         unavailable = {"available": False, "connected": False, "state": "Unavailable"}
@@ -455,9 +471,11 @@ def vpn_status() -> dict:
                             except ValueError:
                                 pass
                 if result.returncode != 0:
-                    wireguard = {"available": False, "connected": False, "state": "Waiting for setup", "peer_count": 0}
+                    setup_required = wg_easy_needs_setup()
+                    wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Status unavailable", "peer_count": 0}
                 elif not peers:
-                    wireguard = {"available": True, "connected": False, "state": "Needs owner setup", "peer_count": 0}
+                    setup_required = wg_easy_needs_setup()
+                    wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Waiting for peer", "peer_count": 0}
                 else:
                     latest = max(peers)
                     age = max(0, int(time.time()) - latest) if latest else None
