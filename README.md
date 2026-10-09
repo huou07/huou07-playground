@@ -64,7 +64,7 @@ Then open `http://127.0.0.1:8765` on that computer. This is a private access met
 
 To reach LiteLLM through the same private tunnel, add `-L 4000:127.0.0.1:4000` and open `http://127.0.0.1:4000/ui`. Sign in as `admin` using the gateway master key from `/etc/huou07-litellm/litellm.env` on the server. Keep that key on the server and enter provider credentials yourself in LiteLLM after signing in. The master key is also included in local state backups, which must be handled as credentials.
 
-Install the isolated LiteLLM gateway on a compatible Debian host with `sudo ./deploy/install-litellm.sh`. It requires rootless Podman and creates a dedicated service account, loopback-only proxy, private PostgreSQL database, and local-only secrets. The first install does not configure providers or models; complete those steps in LiteLLM yourself after login. Back up before upgrades or restore operations using the state commands above.
+Install the isolated LiteLLM gateway on a compatible Debian host with `sudo ./deploy/install-litellm.sh`. It requires rootless Podman and creates a dedicated service account, loopback-only proxy, private PostgreSQL database, and local-only secrets. An empty startup model list enables LiteLLM's database-backed model management without putting credentials in a YAML file. The first install does not configure providers or models; complete those steps in LiteLLM yourself after login. Back up before upgrades or restore operations using the state commands above.
 
 ### OpenCode CLI and web interface
 
