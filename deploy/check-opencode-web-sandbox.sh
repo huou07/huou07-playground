@@ -23,7 +23,8 @@ fi
 owner_home=$(getent passwd "$owner" | cut -d: -f6)
 canary=$(mktemp "$owner_home/.huou07-opencode-canary.XXXXXX")
 workspace=$(runuser -u "$APP_USER" -- mktemp -d "$WORKSPACE_DIR/.boundary.XXXXXX")
-trap 'rm -f "$canary" "$DENIED"; rm -rf "$workspace"' EXIT HUP INT TERM
+state_probe="$STATE_DIR/.boundary-state-$$"
+trap 'rm -f "$canary" "$DENIED" "$state_probe"; rm -rf "$workspace"' EXIT HUP INT TERM
 printf 'owner-home-canary\n' > "$canary"
 chmod 0644 "$canary"
 rm -f "$DENIED"
@@ -43,7 +44,7 @@ systemd-run --quiet --wait --collect \
     workspace=$1
     canary=$2
     touch "$workspace/workspace-write"
-    touch "$3/state-write"
+    touch "$3"
     if cat "$canary" >/dev/null 2>&1; then
       echo "OpenCode sandbox can read the SSH owner home." >&2
       exit 21
@@ -52,6 +53,6 @@ systemd-run --quiet --wait --collect \
       echo "OpenCode sandbox can write outside its private state and workspace." >&2
       exit 22
     fi
-  ' sh "$workspace" "$canary" "$STATE_DIR" "$DENIED"
+  ' sh "$workspace" "$canary" "$state_probe" "$DENIED"
 
 echo "OpenCode service boundary passed: workspace/state writes allowed; owner home hidden; /etc writes denied."

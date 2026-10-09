@@ -62,6 +62,7 @@ def add_opencode_state(archive: tarfile.TarFile, source: Path) -> None:
     files = []
     total = 0
     allowed_roots = {"config", "data", "state", "cache"}
+    generated_shell_files = {".bash_logout", ".bashrc", ".profile"}
     for path in sorted(source.rglob("*")):
         if path.is_symlink():
             raise ValueError("OpenCode state contains a symbolic link.")
@@ -70,6 +71,8 @@ def add_opencode_state(archive: tarfile.TarFile, source: Path) -> None:
         if not path.is_file():
             raise ValueError("OpenCode state contains an unsupported file type.")
         relative = path.relative_to(source)
+        if len(relative.parts) == 1 and relative.name in generated_shell_files:
+            continue
         if not relative.parts or relative.parts[0] not in allowed_roots or any(part in {".", ".."} for part in relative.parts):
             raise ValueError("OpenCode state contains an unexpected path.")
         total += path.stat().st_size
