@@ -1,4 +1,4 @@
-.PHONY: run check
+.PHONY: run check acceptance
 run:
 	python3 web/app.py
 check:
@@ -6,3 +6,6 @@ check:
 	bash -n deploy/opencode-bash-sandbox
 	python3 -m py_compile web/app.py deploy/state.py deploy/power.py deploy/gpu.py deploy/wg_status.py tests/test_app.py tests/test_power.py tests/test_gpu.py tests/test_state.py tests/test_wg_status.py
 	python3 -m unittest discover -s tests -v
+
+acceptance:
+	npm run test:e2e

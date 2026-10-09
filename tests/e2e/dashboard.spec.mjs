@@ -1,0 +1,66 @@
+import { test, expect } from '@playwright/test';
+
+test('navigation, browser preferences, and app launch work end to end', async ({ page }) => {
+  const pageErrors = [];
+  const consoleErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+
+  await page.goto('/#/home');
+  const routes = [
+    ['home', 'Home'], ['apps', 'Applications'], ['system', 'System'],
+    ['services', 'Services & Processes'], ['files', 'Files'], ['ssh', 'SSH'],
+    ['network', 'Network & VPN'], ['storage', 'Storage'], ['settings', 'Settings'],
+  ];
+  for (const [route, title] of routes) {
+    await page.locator(`#sidebar [data-route="${route}"]`).click();
+    await expect(page.locator(`#page-${route}`)).toBeVisible();
+    await expect(page.locator('[data-view]:visible')).toHaveCount(1);
+    await expect(page.locator(`#page-${route} h1`)).toHaveText(title);
+  }
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.locator('#menu').click();
+  await expect(page.locator('#sidebar')).toHaveClass(/open/);
+  await page.locator('#sidebar [data-route="settings"]').click();
+  await expect(page.locator('#sidebar')).not.toHaveClass(/open/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+
+  const gpuSetting = page.locator('[data-metric-setting="gpu"]');
+  await gpuSetting.uncheck();
+  await page.locator('#refresh-interval').selectOption('15000');
+  await page.locator('#theme-setting').selectOption('light');
+  await expect(page.locator('.metric-card[data-metric="gpu"]')).toBeHidden();
+  await page.reload();
+  await expect(page.locator('[data-metric-setting="gpu"]')).not.toBeChecked();
+  await expect(page.locator('#refresh-interval')).toHaveValue('15000');
+  await expect(page.locator('#theme-setting')).toHaveValue('light');
+  await page.locator('#metrics-reset').click();
+  await expect(page.locator('.metric-card:not([hidden])')).toHaveCount(6);
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  await page.locator('#app-form input[name="name"]').fill('Browser Acceptance App');
+  await page.locator('#app-form input[name="url"]').fill(process.env.HUOU07_E2E_APP_URL);
+  await page.locator('#app-form input[name="description"]').fill('Temporary local app used by browser acceptance tests.');
+  await page.locator('#app-form input[name="health_url"]').fill(process.env.HUOU07_E2E_APP_HEALTH_URL);
+  await page.locator('#app-save').click();
+  await expect(page.locator('#app-registry-list .app-registry-row').filter({ hasText: 'Browser Acceptance App' })).toHaveCount(1);
+
+  await page.locator('#sidebar [data-route="apps"]').click();
+  const appCard = page.locator('.app-card').filter({ hasText: 'Browser Acceptance App' });
+  await expect(appCard.locator('.app-state')).toHaveText(/Available/);
+  const popupPromise = page.waitForEvent('popup');
+  await appCard.getByRole('link', { name: 'Open Browser Acceptance App' }).click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole('heading', { name: 'Acceptance app launched' })).toBeVisible();
+  await popup.close();
+
+  await page.locator('#sidebar [data-route="settings"]').click();
+  const appRow = page.locator('.app-registry-row').filter({ hasText: 'Browser Acceptance App' });
+  await appRow.getByRole('button', { name: 'Remove' }).click();
+  await expect(appRow).toHaveCount(0);
+  await expect(pageErrors).toEqual([]);
+  await expect(consoleErrors).toEqual([]);
+});

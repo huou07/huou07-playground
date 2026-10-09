@@ -9,5 +9,8 @@ assets/turtle-local.png
 web/static/branding.png
 ChatGPT Image Oct 9, 2026, 12_39_03 AM.png
 .playwright-cli/
+node_modules/
+playwright-report/
+test-results/
 
 web/static/branding.png

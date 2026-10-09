@@ -22,6 +22,18 @@ make run
 
 Open `http://127.0.0.1:8765`. `PORT` can be changed for local development; `HOST` accepts loopback addresses only. When deployed, the dashboard also binds to the private IPv4 assigned to `wg0`, if present, and limits that listener to traffic arriving through `wg0`. It never binds to all interfaces. Metrics and process APIs are read-only. The application registry accepts validated same-origin changes from the local dashboard; it cannot run commands or store credentials.
 
+### Browser acceptance checks
+
+The browser suite uses a temporary dashboard registry and local test app; it does not alter a deployment or the normal app registry. It requires Node.js 20+ and uses test-only JavaScript dependencies. Install them and Chromium once, then run:
+
+```sh
+npm ci
+npx playwright install chromium
+make acceptance
+```
+
+The suite checks all nine routes, mobile navigation, persistent theme/refresh/metric preferences, and adding, health-checking, launching, and removing a local test app. To use an existing Chrome or Chromium binary instead of Playwright's downloaded browser, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable path.
+
 ### Application registry
 
 Add and edit links on the Settings page. The installer seeds `/var/lib/huou07-playground/apps.json` from [`config/apps.example.json`](config/apps.example.json) and preserves it on upgrades. Existing installs migrate the registry from `/etc/huou07-playground/apps.json`. The dashboard can write only this validated, non-executable registry; application secrets stay under the root-managed `/etc/huou07-playground` directory. The registry is out of Git; do not put credentials or tokens in it. Health checks are optional, use GET or HEAD, and can target only `localhost`, `127.0.0.1`, or `::1`, which prevents the dashboard from probing other hosts. Example:
