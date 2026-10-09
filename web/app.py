@@ -125,6 +125,56 @@ def storage_devices(sys_block: Path = Path("/sys/block")) -> list[dict]:
     return devices
 
 
+def swap_and_zram_metrics(swaps_text: str | None = None, sys_block: Path = Path("/sys/block")) -> tuple[dict, dict]:
+    """Separate disk swap from compressed ZRAM usage and memory consumption."""
+    if swaps_text is None:
+        swaps_text = read_text("/proc/swaps")
+    disk_swaps = []
+    zram_swaps = {}
+    for line in swaps_text.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        item = {"name": fields[0], "total": int(fields[2]) * 1024, "used": int(fields[3]) * 1024, "kind": fields[1]}
+        if Path(fields[0]).name.startswith("zram"):
+            zram_swaps[Path(fields[0]).name] = item
+        else:
+            disk_swaps.append(item)
+
+    zram_devices = []
+    try:
+        devices = sorted(sys_block.glob("zram*"), key=lambda item: item.name)
+    except OSError:
+        devices = []
+    for device in devices:
+        try:
+            total = int((device / "disksize").read_text().strip())
+            stats = [int(value) for value in (device / "mm_stat").read_text().split()]
+            zram_devices.append({
+                "name": device.name,
+                "total": total,
+                "used": stats[0] if stats else 0,
+                "compressed": stats[1] if len(stats) > 1 else None,
+                "physical_used": stats[2] if len(stats) > 2 else None,
+                "swap_used": zram_swaps.get(device.name, {}).get("used", 0),
+            })
+        except (OSError, ValueError):
+            zram_devices.append({"name": device.name, "total": None, "used": None, "compressed": None, "physical_used": None, "swap_used": zram_swaps.get(device.name, {}).get("used", 0)})
+
+    swap_total = sum(item["total"] for item in disk_swaps)
+    swap_used = sum(item["used"] for item in disk_swaps)
+    zram_total = sum(item["total"] or 0 for item in zram_devices)
+    zram_used = sum(item["used"] or 0 for item in zram_devices)
+    zram_compressed = sum(item["compressed"] or 0 for item in zram_devices)
+    zram_physical_used = sum(item["physical_used"] or 0 for item in zram_devices)
+    zram_swap_used = sum(item["swap_used"] or 0 for item in zram_devices)
+    zram_swap_total = sum(zram_swaps.get(item["name"], {}).get("total", 0) for item in zram_devices)
+    return (
+        {"devices": disk_swaps, "used": swap_used, "total": swap_total, "percent": round(swap_used * 100 / swap_total) if swap_total else None},
+        {"devices": zram_devices, "used": zram_used, "total": zram_total, "compressed": zram_compressed, "physical_used": zram_physical_used, "swap_used": zram_swap_used, "swap_total": zram_swap_total},
+    )
+
+
 def linux_metrics() -> dict:
     global _prev_cpu, _prev_net
     if platform.system() != "Linux":
@@ -151,13 +201,7 @@ def linux_metrics() -> dict:
     available = mem.get("MemAvailable", 0)
     ram_used = max(0, total - available)
 
-    swaps = []
-    for line in read_text("/proc/swaps").splitlines()[1:]:
-        fields = line.split()
-        if len(fields) >= 4:
-            swaps.append({"name": fields[0], "total": int(fields[2]) * 1024, "used": int(fields[3]) * 1024, "kind": fields[1]})
-    swap_total = sum(item["total"] for item in swaps)
-    swap_used = sum(item["used"] for item in swaps)
+    swaps, zram = swap_and_zram_metrics()
 
     net = {}
     for line in read_text("/proc/net/dev").splitlines()[2:]:
@@ -222,16 +266,6 @@ def linux_metrics() -> dict:
             except (OSError, ValueError):
                 pass
     load = os.getloadavg() if hasattr(os, "getloadavg") else None
-    zram = []
-    for device in Path("/sys/block").glob("zram*"):
-        try:
-            total_bytes = int((device / "disksize").read_text().strip())
-            stats = (device / "mm_stat").read_text().split()
-            used_bytes = int(stats[0]) if stats else 0
-            zram.append({"name": device.name, "total": total_bytes, "used": used_bytes, "compressed": int(stats[1]) if len(stats) > 1 else None, "physical_used": int(stats[2]) if len(stats) > 2 else None})
-        except (OSError, ValueError):
-            zram.append({"name": device.name, "total": None, "used": None})
-
     return {
         "supported": True,
         "sampled_at": time.time(),
@@ -239,8 +273,8 @@ def linux_metrics() -> dict:
         "memory": {"used": ram_used, "total": total, "available": available, "percent": round(ram_used * 100 / total) if total else None},
         "storage": {"used": disk.used, "total": disk.total, "percent": round(disk.used * 100 / disk.total) if disk.total else None, "mount": "/"},
         "storage_devices": storage_devices(),
-        "swap": {"devices": swaps, "used": swap_used, "total": swap_total, "percent": round(swap_used * 100 / swap_total) if swap_total else None},
-        "zram": {"devices": zram, "used": sum(x["used"] or 0 for x in zram), "total": sum(x["total"] or 0 for x in zram)},
+        "swap": swaps,
+        "zram": zram,
         "network": {"interfaces": [{"name": name, "received_total": v[0], "sent_total": v[1]} for name, v in net.items()], "download_bytes_per_second": rx_rate, "upload_bytes_per_second": tx_rate},
         "system": {"os": platform.platform(), "kernel": platform.release(), "uptime_seconds": max(0, float(read_text("/proc/uptime", "0").split()[0]))},
         "gpu": gpu_metrics(),
@@ -339,6 +373,19 @@ def cockpit_status() -> dict:
     except (OSError, subprocess.TimeoutExpired):
         return {"available": False, "reason": "Cockpit status could not be checked."}
     return {"available": result.returncode == 0, "reason": "Cockpit is not installed or its socket is stopped."}
+
+
+def cockpit_files_status() -> dict:
+    """Report whether the system-wide Cockpit Files package is installed and usable."""
+    if platform.system() != "Linux":
+        return {"available": False, "installed": False, "reason": "Cockpit Files is available when deployed on Linux."}
+    package = any((Path(root) / "files" / "manifest.json").is_file() for root in ("/usr/share/cockpit", "/usr/local/share/cockpit"))
+    if not package:
+        return {"available": False, "installed": False, "reason": "Cockpit Files is not installed."}
+    cockpit = cockpit_status()
+    if not cockpit["available"]:
+        return {"available": False, "installed": True, "reason": "Cockpit Files is installed, but Cockpit is unavailable."}
+    return {"available": True, "installed": True}
 
 
 def vpn_status() -> dict:
@@ -446,6 +493,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/cockpit":
             self.send_json(200, cockpit_status())
+            return
+        if self.path == "/api/files":
+            self.send_json(200, cockpit_files_status())
             return
         if self.path == "/api/vpn":
             self.send_json(200, vpn_status())

@@ -71,6 +71,23 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(devices, [{"name": "nvme0n1", "model": "Example NVMe Drive", "kind": "SSD", "size": 200 * 512}])
         self.assertNotIn("serial", devices[0])
 
+    def test_swap_and_zram_metrics_keep_disk_and_compressed_memory_separate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            device = Path(temporary) / "zram0"
+            device.mkdir()
+            (device / "disksize").write_text("524288")
+            (device / "mm_stat").write_text("300000 125000 140000 0 0 0 0 0 0")
+            swaps_text = "Filename Type Size Used Priority\n/dev/nvme0n1p3 partition 1024 256 -1\n/dev/zram0 partition 512 128 100\n"
+            disk_swap, zram = app.swap_and_zram_metrics(swaps_text, Path(temporary))
+        self.assertEqual(disk_swap["total"], 1024 * 1024)
+        self.assertEqual(disk_swap["used"], 256 * 1024)
+        self.assertEqual(zram["total"], 524288)
+        self.assertEqual(zram["used"], 300000)
+        self.assertEqual(zram["compressed"], 125000)
+        self.assertEqual(zram["physical_used"], 140000)
+        self.assertEqual(zram["swap_total"], 512 * 1024)
+        self.assertEqual(zram["swap_used"], 128 * 1024)
+
     def test_nvidia_gpu_metrics_parse_utilization_vram_and_temperature(self):
         result = app.subprocess.CompletedProcess([], 0, stdout="NVIDIA GeForce RTX 4090, 38, 4096, 8192, 55\n", stderr="")
         with patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value="/usr/bin/nvidia-smi"), patch("web.app.subprocess.run", return_value=result) as run:
@@ -117,6 +134,17 @@ class DashboardApiTests(unittest.TestCase):
                 status = json.load(response)
             self.assertFalse(status["available"])
             self.assertTrue(status["reason"])
+
+    def test_files_endpoint_reports_installed_package_and_cockpit_availability(self):
+        with patch("web.app.platform.system", return_value="Linux"), patch.object(app.Path, "is_file", return_value=True), patch("web.app.subprocess.run", return_value=app.subprocess.CompletedProcess([], 0)):
+            with urlopen(f"{self.base}/api/files") as response:
+                self.assertEqual(json.load(response), {"available": True, "installed": True})
+        with patch("web.app.platform.system", return_value="Linux"), patch.object(app.Path, "is_file", return_value=False):
+            with urlopen(f"{self.base}/api/files") as response:
+                result = json.load(response)
+            self.assertEqual(result["available"], False)
+            self.assertEqual(result["installed"], False)
+            self.assertIn("not installed", result["reason"])
 
     def test_vpn_status_reports_tailnet_connection_without_private_details(self):
         result = app.subprocess.CompletedProcess([], 0, stdout=json.dumps({"BackendState": "Running", "Self": {"Online": True, "TailscaleIPs": ["100.64.0.1"]}, "Peer": {"private-host": {"DNSName": "private.example.invalid"}}}))
@@ -171,7 +199,11 @@ class DashboardApiTests(unittest.TestCase):
         with urlopen(f"{self.base}/") as response:
             self.assertEqual(response.status, 200)
             self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
-            self.assertIn("<title>Workspace</title>", response.read().decode())
+            html = response.read().decode()
+            self.assertIn("<title>Home · huou07 playground</title>", html)
+            self.assertIn('src="/navigation.js"', html)
+            for route in ("home", "apps", "system", "services", "files", "ssh", "network", "storage", "settings"):
+                self.assertIn(f'data-view="{route}"', html)
         with self.assertRaises(HTTPError) as error:
             urlopen(f"{self.base}/%2e%2e/app.py")
         self.assertEqual(error.exception.code, 404)

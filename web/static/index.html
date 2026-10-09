@@ -4,38 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>Workspace</title>
+  <title>Home · huou07 playground</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/navigation.css">
   <script src="/app.js" defer></script>
+  <script src="/navigation.js" defer></script>
 </head>
 <body>
   <div class="layout">
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
       <div class="brand"><img src="/branding.png" alt=""><span class="brand-fallback" aria-hidden="true">◉</span></div>
-      <nav>
-        <a class="nav-item active" href="#home"><span class="nav-icon">⌂</span>Home</a>
-        <a class="nav-item" href="#apps"><span class="nav-icon">▦</span>Apps</a>
-        <a class="nav-item" href="#system"><span class="nav-icon">▣</span>System</a>
-        <a class="nav-item" href="#services"><span class="nav-icon">⚙</span>Services</a>
-        <a class="nav-item" href="#processes"><span class="nav-icon">▥</span>Processes</a>
-        <a class="nav-item" href="#ssh"><span class="nav-icon">›_</span>SSH</a>
-        <a class="nav-item" href="#network"><span class="nav-icon">⌘</span>Network</a>
-        <a class="nav-item" href="#storage"><span class="nav-icon">▤</span>Storage</a>
-        <a class="nav-item" href="#settings"><span class="nav-icon">⚙</span>Settings</a>
+      <nav aria-label="Workspace pages">
+        <a class="nav-item active" href="#/home" data-route="home" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span>Home</a>
+        <a class="nav-item" href="#/apps" data-route="apps"><span class="nav-icon" aria-hidden="true">▦</span>Apps</a>
+        <a class="nav-item" href="#/system" data-route="system"><span class="nav-icon" aria-hidden="true">▣</span>System</a>
+        <a class="nav-item" href="#/services" data-route="services"><span class="nav-icon" aria-hidden="true">⚙</span>Services</a>
+        <a class="nav-item" href="#/files" data-route="files"><span class="nav-icon" aria-hidden="true">▤</span>Files</a>
+        <a class="nav-item" href="#/ssh" data-route="ssh"><span class="nav-icon" aria-hidden="true">›_</span>SSH</a>
+        <a class="nav-item" href="#/network" data-route="network"><span class="nav-icon" aria-hidden="true">⌘</span>Network</a>
+        <a class="nav-item" href="#/storage" data-route="storage"><span class="nav-icon" aria-hidden="true">▧</span>Storage</a>
+        <a class="nav-item" href="#/settings" data-route="settings"><span class="nav-icon" aria-hidden="true">⚙</span>Settings</a>
       </nav>
       <div class="sidebar-foot"><span class="status-dot" aria-hidden="true"></span><span id="connection-label">Connecting</span></div>
     </aside>
-    <main id="home">
+    <main>
       <header class="topbar">
-        <button class="icon-button menu-button" id="menu" aria-label="Open navigation">☰</button>
+        <button class="icon-button menu-button" id="menu" aria-label="Open navigation" aria-expanded="false">☰</button>
         <div class="top-spacer"></div>
-        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search…" aria-label="Search dashboard"><kbd>⌘ K</kbd></label>
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search this page…" aria-label="Search current page"><kbd>⌘ K</kbd></label>
         <button class="theme-toggle" id="theme" aria-label="Switch to light theme"><span aria-hidden="true">☼</span><span class="toggle-track"><span></span></span><span aria-hidden="true">☾</span></button>
       </header>
       <div class="content">
-        <section class="section" id="system">
-          <div class="section-heading"><h1>Home</h1><span class="updated" id="updated">Waiting for system data</span></div>
+        <section class="page-view" id="page-home" data-view="home" aria-labelledby="home-title">
+          <div class="section-heading"><h1 id="home-title">Home</h1><span class="updated" id="updated">Waiting for system data</span></div>
           <div class="metric-grid" aria-label="System overview">
             <article class="metric-card" data-metric="cpu"><div class="metric-top"><span>CPU</span><span class="metric-icon">▥</span></div><strong id="cpu-value">—</strong><div class="metric-note" id="cpu-note">Usage unavailable</div><div class="bar"><span id="cpu-bar"></span></div></article>
             <article class="metric-card" data-metric="memory"><div class="metric-top"><span>RAM</span><span class="metric-icon">▤</span></div><strong id="memory-value">—</strong><div class="metric-note" id="memory-note">Waiting for data</div><div class="bar"><span id="memory-bar"></span></div></article>
@@ -44,24 +46,66 @@
             <article class="metric-card" data-metric="zram"><div class="metric-top"><span>ZRAM</span><span class="metric-icon">▧</span></div><strong id="zram-value">N/A</strong><div class="metric-note" id="zram-note">No active ZRAM device</div><div class="bar"><span id="zram-bar"></span></div></article>
             <article class="metric-card" data-metric="power"><div class="metric-top"><span>CPU Power</span><span class="metric-icon">ϟ</span></div><strong id="power-value">N/A</strong><div class="metric-note" id="power-note">turbostat unavailable</div><div class="bar muted"><span></span></div></article>
           </div>
+          <section class="quick-links" aria-label="Workspace shortcuts">
+            <a href="#/apps" data-route="apps"><strong>Applications</strong><span>Open configured tools</span></a>
+            <a href="#/system" data-route="system"><strong>System</strong><span>Hardware and memory details</span></a>
+            <a href="#/services" data-route="services"><strong>Services</strong><span>Inspect processes and services</span></a>
+            <a href="#/files" data-route="files"><strong>Files</strong><span>Browse server files</span></a>
+          </section>
         </section>
 
-        <section class="section" id="apps">
-          <div class="section-heading"><h2>Applications</h2></div>
+        <section class="page-view" id="page-apps" data-view="apps" aria-labelledby="apps-title" hidden>
+          <div class="section-heading"><h1 id="apps-title">Applications</h1><a class="subtle-link" href="#/settings" data-route="settings">Manage settings</a></div>
           <div class="empty-panel" id="apps-empty"><div class="empty-symbol" aria-hidden="true">▦</div><div><strong>No applications configured</strong><p>No application registry has been configured yet.</p></div></div>
           <div class="app-grid" id="apps-list" hidden></div>
         </section>
 
-        <section class="panel ssh-panel" id="ssh"><div class="panel-heading"><h2>SSH terminal</h2><span class="badge pending" id="cockpit-status"><i></i>Checking Cockpit</span></div><p class="panel-note">Open the server terminal and management tools in Cockpit. It uses your Linux account and runs separately from this dashboard.</p><a class="primary-link" id="cockpit-link" href="http://127.0.0.1:9090" target="_blank" rel="noopener" hidden>Open Cockpit <span aria-hidden="true">↗</span></a><p class="panel-note">For remote use, forward both dashboard port 8765 and Cockpit port 9090 through SSH.</p></section>
+        <section class="page-view" id="page-system" data-view="system" aria-labelledby="system-title" hidden>
+          <div class="section-heading"><h1 id="system-title">System</h1><span class="updated" id="system-updated">Live hardware details</span></div>
+          <div class="lower-grid system-grid">
+            <section class="panel" id="machine"><div class="panel-heading"><h2>Machine</h2><span class="panel-caption">Live host details</span></div><div class="machine-list"><div><span class="metric-icon">▣</span><span>Model</span><strong id="machine-cpu">Loading…</strong></div><div><span class="metric-icon">⌘</span><span>OS</span><strong id="machine-os">Loading…</strong></div><div><span class="metric-icon">◷</span><span>Kernel</span><strong id="machine-kernel">Loading…</strong></div><div><span class="metric-icon">▤</span><span>Logical cores</span><strong id="machine-cores">Loading…</strong></div><div><span class="metric-icon">▦</span><span>GPU</span><strong id="machine-gpu">Unavailable</strong></div><div><span class="metric-icon">▧</span><span>Disk swap</span><strong id="machine-swap">Loading…</strong></div><div><span class="metric-icon">◷</span><span>Uptime</span><strong id="machine-uptime">Loading…</strong></div><div><span class="metric-icon">ϟ</span><span>CPU package</span><strong id="machine-power">Unavailable</strong></div></div></section>
+            <section class="panel"><div class="panel-heading"><h2>Memory</h2><span class="panel-caption">Current kernel state</span></div><div class="info-row"><span>Physical RAM</span><strong id="system-ram">Loading…</strong></div><div class="info-row"><span>Disk swap</span><strong id="system-swap">Loading…</strong></div><div class="info-row"><span>Compressed ZRAM</span><strong id="system-zram">Loading…</strong></div><p class="panel-note">Swap pages already allocated are not evidence of current memory pressure. System metrics show current usage and active devices.</p></section>
+          </div>
+        </section>
 
-        <div class="lower-grid">
-          <section class="panel" id="services"><div class="panel-heading"><h2>Services</h2><span class="panel-caption" id="service-total">Loading…</span></div><div class="services-list" id="service-list"><p class="panel-note">Loading system services…</p></div></section>
-          <section class="panel" id="machine"><div class="panel-heading"><h2>Machine</h2><span class="panel-caption">Live host details</span></div><div class="machine-list"><div><span class="metric-icon">▣</span><span>Model</span><strong id="machine-cpu">Loading…</strong></div><div><span class="metric-icon">⌘</span><span>OS</span><strong id="machine-os">Loading…</strong></div><div><span class="metric-icon">◷</span><span>Kernel</span><strong id="machine-kernel">Loading…</strong></div><div><span class="metric-icon">▤</span><span>Logical cores</span><strong id="machine-cores">Loading…</strong></div><div><span class="metric-icon">▦</span><span>GPU</span><strong id="machine-gpu">Unavailable</strong></div><div><span class="metric-icon">▧</span><span>Swap</span><strong id="machine-swap">Loading…</strong></div><div><span class="metric-icon">◷</span><span>Uptime</span><strong id="machine-uptime">Loading…</strong></div><div><span class="metric-icon">ϟ</span><span>CPU package</span><strong id="machine-power">Unavailable</strong></div></div></section>
-          <section class="panel" id="network"><div class="panel-heading"><h2>Network</h2><span class="panel-caption">Live throughput</span></div><div class="network-value"><span>↓ Download</span><strong id="download">Waiting…</strong></div><div class="network-value"><span>↑ Upload</span><strong id="upload">Waiting…</strong></div><div class="network-value"><span>VPN</span><span class="badge pending" id="vpn-status"><i></i>Checking</span></div><p class="panel-note" id="network-total">Transfer totals are private to this dashboard.</p></section>
-        </div>
-        <section class="panel process-panel" id="processes"><div class="panel-heading"><h2>Processes</h2><div class="process-actions"><label class="mobile-sort">Sort <select id="process-sort" aria-label="Sort processes"><option value="cpu_percent">CPU</option><option value="memory_bytes">Memory</option><option value="pid">PID</option><option value="name">Name</option></select></label><span class="panel-caption" id="process-total">Loading…</span></div></div><div class="process-table-wrap"><table class="process-table"><thead><tr><th><button data-sort="name" aria-sort="none">Process</button></th><th><button data-sort="pid" aria-sort="none">PID</button></th><th><button data-sort="owner" aria-sort="none">Owner</button></th><th><button data-sort="cpu_percent" aria-sort="descending">CPU</button></th><th><button data-sort="memory_bytes" aria-sort="none">Memory</button></th></tr></thead><tbody id="process-list"><tr><td colspan="5">Loading process data…</td></tr></tbody></table></div></section>
-        <section class="panel storage-detail" id="storage"><div class="panel-heading"><h2>Storage</h2><span class="panel-caption">Mounted filesystem and detected drives</span></div><div class="storage-line"><span>Root filesystem</span><strong id="storage-detail">Waiting for system data</strong></div><div class="storage-devices" id="storage-devices"><p class="panel-note">Waiting for storage device data</p></div><p class="panel-note">Drive health is not queried by this dashboard.</p></section>
-        <footer><span id="data-state">System data has not been received.</span><a href="#settings">Settings</a></footer>
+        <section class="page-view" id="page-services" data-view="services" aria-labelledby="services-title" hidden>
+          <div class="section-heading"><h1 id="services-title">Services &amp; Processes</h1><span class="updated">Read-only inspection</span></div>
+          <div class="lower-grid operations-grid">
+            <section class="panel" id="services"><div class="panel-heading"><h2>Services</h2><span class="panel-caption" id="service-total">Loading…</span></div><div class="services-list" id="service-list"><p class="panel-note">Loading system services…</p></div></section>
+            <section class="panel process-panel" id="processes"><div class="panel-heading"><h2>Processes</h2><div class="process-actions"><label class="mobile-sort">Sort <select id="process-sort" aria-label="Sort processes"><option value="cpu_percent">CPU</option><option value="memory_bytes">Memory</option><option value="pid">PID</option><option value="name">Name</option></select></label><span class="panel-caption" id="process-total">Loading…</span></div></div><div class="process-table-wrap"><table class="process-table"><thead><tr><th><button data-sort="name" aria-sort="none">Process</button></th><th><button data-sort="pid" aria-sort="none">PID</button></th><th><button data-sort="owner" aria-sort="none">Owner</button></th><th><button data-sort="cpu_percent" aria-sort="descending">CPU</button></th><th><button data-sort="memory_bytes" aria-sort="none">Memory</button></th></tr></thead><tbody id="process-list"><tr><td colspan="5">Loading process data…</td></tr></tbody></table></div></section>
+          </div>
+        </section>
+
+        <section class="page-view" id="page-files" data-view="files" aria-labelledby="files-title" hidden>
+          <div class="section-heading"><h1 id="files-title">Files</h1><span class="updated">Cockpit account permissions apply</span></div>
+          <section class="panel file-manager-panel"><div class="panel-heading"><h2>Server file manager</h2><span class="badge pending" id="file-manager-status"><i></i>Checking</span></div><p class="panel-note" id="file-manager-note">Checking for the Cockpit Files integration.</p><a class="primary-link" id="file-manager-link" href="http://127.0.0.1:9090/cockpit/@localhost/files" target="_blank" rel="noopener" hidden>Open Files <span aria-hidden="true">↗</span></a></section>
+        </section>
+
+        <section class="page-view" id="page-ssh" data-view="ssh" aria-labelledby="ssh-title" hidden>
+          <div class="section-heading"><h1 id="ssh-title">SSH</h1><span class="updated">Independent recovery access</span></div>
+          <section class="panel ssh-panel"><div class="panel-heading"><h2>SSH terminal</h2><span class="badge pending" id="cockpit-status"><i></i>Checking Cockpit</span></div><p class="panel-note">Open the server terminal and management tools in Cockpit. It uses your Linux account and runs separately from this dashboard.</p><a class="primary-link" id="cockpit-link" href="http://127.0.0.1:9090" target="_blank" rel="noopener" hidden>Open Cockpit <span aria-hidden="true">↗</span></a><p class="panel-note">SSH remains available as recovery access while private WireGuard access is being configured.</p></section>
+        </section>
+
+        <section class="page-view" id="page-network" data-view="network" aria-labelledby="network-title" hidden>
+          <div class="section-heading"><h1 id="network-title">Network &amp; VPN</h1><span class="updated">Live interface throughput</span></div>
+          <section class="panel" id="network"><div class="panel-heading"><h2>Network</h2><span class="panel-caption">Rates are sampled from Linux interfaces</span></div><div class="network-value"><span>↓ Download</span><strong id="download">Waiting…</strong></div><div class="network-value"><span>↑ Upload</span><strong id="upload">Waiting…</strong></div><div class="network-value"><span>VPN status</span><span class="badge pending" id="vpn-status"><i></i>Checking</span></div><p class="panel-note" id="network-total">Transfer totals are private to this dashboard.</p><p class="panel-note">WireGuard is the planned primary private access method. SSH remains available during setup.</p></section>
+        </section>
+
+        <section class="page-view" id="page-storage" data-view="storage" aria-labelledby="storage-title" hidden>
+          <div class="section-heading"><h1 id="storage-title">Storage</h1><span class="updated">Capacity and physical device inventory</span></div>
+          <section class="panel storage-detail" id="storage"><div class="panel-heading"><h2>Disk usage</h2><span class="panel-caption">Mounted filesystem and detected drives</span></div><div class="storage-line"><span>Root filesystem</span><strong id="storage-detail">Waiting for system data</strong></div><div class="storage-devices" id="storage-devices"><p class="panel-note">Waiting for storage device data</p></div><p class="panel-note">Drive health is not queried by this dashboard.</p></section>
+        </section>
+
+        <section class="page-view" id="page-settings" data-view="settings" aria-labelledby="settings-title" hidden>
+          <div class="section-heading"><h1 id="settings-title">Settings</h1><span class="updated">Saved in this browser</span></div>
+          <div class="settings-grid">
+            <section class="panel"><div class="panel-heading"><h2>Appearance</h2></div><label class="setting-row" for="theme-setting"><span>Theme</span><select id="theme-setting"><option value="dark">Dark</option><option value="light">Light</option></select></label></section>
+            <section class="panel"><div class="panel-heading"><h2>System metrics</h2></div><label class="setting-row" for="refresh-interval"><span>Refresh interval</span><select id="refresh-interval"><option value="5000">5 seconds</option><option value="10000">10 seconds</option><option value="15000">15 seconds</option><option value="30000">30 seconds</option></select></label><p class="panel-note">This controls CPU, memory, storage, GPU, network, and power sampling in the dashboard.</p></section>
+            <section class="panel settings-integrations"><div class="panel-heading"><h2>Integrations</h2><span class="panel-caption">Live availability</span></div><div class="info-row"><span>Dashboard data</span><strong id="settings-data-state">Checking</strong></div><div class="info-row"><span>Cockpit</span><strong id="settings-cockpit-state">Checking</strong></div><div class="info-row"><span>File manager</span><strong id="settings-files-state">Checking</strong></div><div class="info-row"><span>VPN backend</span><strong id="settings-vpn-state">Checking</strong></div><div class="info-row"><span>Applications</span><strong id="settings-apps-state">Checking</strong></div></section>
+          </div>
+        </section>
+
+        <footer><span id="data-state">System data has not been received.</span><a href="#/settings" data-route="settings">Settings</a></footer>
       </div>
     </main>
   </div>
