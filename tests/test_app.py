@@ -29,6 +29,40 @@ class DashboardApiTests(unittest.TestCase):
         cls.server.server_close()
         cls.thread.join(timeout=2)
 
+    def test_wireguard_listener_discovers_only_private_wg0_ipv4_addresses(self):
+        result = app.subprocess.CompletedProcess([], 0, stdout=json.dumps([
+            {"ifname": "wg0", "addr_info": [
+                {"family": "inet", "scope": "global", "local": "10.77.0.1", "prefixlen": 24},
+                {"family": "inet", "scope": "global", "local": "8.8.8.8", "prefixlen": 24},
+            ]},
+            {"ifname": "wg1", "addr_info": [
+                {"family": "inet", "scope": "global", "local": "10.88.0.1", "prefixlen": 24},
+            ]},
+        ]))
+        with patch.object(app.shutil, "which", return_value="/usr/sbin/ip"), patch.object(app.subprocess, "run", return_value=result) as run:
+            self.assertEqual(app.wireguard_interface_addresses(), ["10.77.0.1"])
+        self.assertEqual(run.call_args.args[0], ["/usr/sbin/ip", "-j", "-4", "addr", "show", "dev", "wg0"])
+
+    def test_wireguard_listener_falls_back_to_loopback_when_interface_is_unavailable(self):
+        with patch.object(app.shutil, "which", return_value=None):
+            self.assertEqual(app.wireguard_interface_addresses(), [])
+
+    def test_wireguard_listener_ignores_malformed_address_data(self):
+        result = app.subprocess.CompletedProcess([], 0, stdout=json.dumps([
+            {"ifname": "wg0", "addr_info": "not a list"},
+            {"ifname": "wg0", "addr_info": [
+                {"family": "inet", "scope": "global", "local": None},
+                {"family": "inet", "scope": "global", "local": "0.0.0.0"},
+            ]},
+        ]))
+        with patch.object(app.shutil, "which", return_value="/usr/sbin/ip"), patch.object(app.subprocess, "run", return_value=result):
+            self.assertEqual(app.wireguard_interface_addresses(), [])
+
+    def test_wireguard_listener_falls_back_on_invalid_ip_output(self):
+        result = app.subprocess.CompletedProcess([], 0, stdout=None)
+        with patch.object(app.shutil, "which", return_value="/usr/sbin/ip"), patch.object(app.subprocess, "run", return_value=result):
+            self.assertEqual(app.wireguard_interface_addresses(), [])
+
     def test_health_endpoint(self):
         with urlopen(f"{self.base}/api/health") as response:
             self.assertEqual(response.status, 200)

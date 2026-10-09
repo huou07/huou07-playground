@@ -7,10 +7,10 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Compact responsive dashboard with dark default and persisted light theme.
 - Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, detected physical drive model/type/capacity, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs. Drive health is not queried; serial identifiers are not collected.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps. Network rates display in Kbps/Mbps; cumulative interface totals remain in bytes.
-- WireGuard is the intended primary private access path, with SSH tunnels retained as an independent recovery route. The installed wg-easy setup still needs the owner's endpoint, UDP mapping, and first peer before a real external handshake can be verified. Tailscale status omits private peer names and addresses; Tailscale Serve remains disabled.
+- WireGuard is the intended primary private access path, with SSH tunnels retained as an independent recovery route. The dashboard binds to loopback and, when available, the exact private IPv4 assigned to `wg0`; it does not bind to all interfaces. The installed wg-easy setup still needs the owner's endpoint, UDP mapping, and first peer before a real external handshake can be verified. Tailscale status omits private peer names and addresses; Tailscale Serve remains disabled.
 - LiteLLM Gateway is installed as a separate rootless Podman service with a private PostgreSQL database. The proxy binds to server loopback on port 4000; its dashboard and API are available through an SSH tunnel. Provider credentials and model configuration remain owner-controlled and have not been entered.
 - NVIDIA utilization, VRAM, and temperature use `nvidia-smi`. Intel i915 engine busy counters use a separate restricted `intel_gpu_top` sampler. The dashboard labels Intel usage as the busiest engine and does not invent dedicated VRAM or GPU temperature. CPU package watts use a separate restricted systemd collector; the dashboard account reads only recent sanitized samples and never receives hardware-counter access or root privileges.
-- Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be managed from Settings, with optional server-local health checks. Until WireGuard passes an external handshake and private-service checks, use SSH tunnels; dashboard services remain loopback-only.
+- Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be managed from Settings, with optional server-local health checks. Until WireGuard passes an external handshake and private-service checks, use SSH tunnels; each service remains loopback-only except for the dashboard's exact `wg0` address listener.
 
 ## Run locally
 
@@ -20,7 +20,7 @@ Requires Python 3.10+; no third-party Python packages are used.
 make run
 ```
 
-Open `http://127.0.0.1:8765`. `PORT` can be changed for local development; `HOST` accepts loopback addresses only. The listener cannot be exposed to a LAN or WAN until authentication and private-network access controls exist. Metrics and process APIs are read-only. The application registry accepts validated same-origin changes from the local dashboard; it cannot run commands or store credentials.
+Open `http://127.0.0.1:8765`. `PORT` can be changed for local development; `HOST` accepts loopback addresses only. When deployed, the dashboard also binds to the private IPv4 assigned to `wg0`, if present. It never binds to all interfaces. Metrics and process APIs are read-only. The application registry accepts validated same-origin changes from the local dashboard; it cannot run commands or store credentials.
 
 ### Application registry
 
@@ -60,7 +60,13 @@ To open the dashboard from a computer that can SSH to the server, create a local
 ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 -L 14096:127.0.0.1:4096 <your-ssh-alias>
 ```
 
-Then open `http://127.0.0.1:8765` on that computer. This is the current recovery access method. WireGuard is intended to become the primary path after the owner completes wg-easy setup and an external client passes handshake, private-service, LAN, and ordinary Internet checks. Keep SSH available independently until those checks pass. Dashboard listeners remain loopback-only.
+Then open `http://127.0.0.1:8765` on that computer. This remains the recovery access method. After wg-easy setup, open the dashboard at the server's private WireGuard address on port `8765`. In each client, set `Allowed IPs` to only the server's WireGuard address (or explicitly needed private subnets); do not use `0.0.0.0/0` or `::/0`, and do not set client DNS. Verify the dashboard handshake, normal Internet, and local-LAN routes before relying on the peer. Keep SSH available independently. The dashboard binds only to loopback and the exact private `wg0` address. Restart `huou07-playground.service` over SSH if the `wg0` address changes.
+
+### Private WireGuard setup
+
+Install the pinned wg-easy service with `sudo ./deploy/install-wg-easy.sh`. Its administration page stays on server loopback; add `-L 51821:127.0.0.1:51821` to the SSH tunnel above and open `http://127.0.0.1:51821`. In the v15 owner setup wizard, enter the DDNS hostname and the UDP listen port that matches the router's verified external-to-server mapping. The wizard stores the host and listen port and uses them in generated client profiles; do not guess the previously mentioned port. See the upstream [v15 setup guide](https://wg-easy.github.io/wg-easy/latest/guides/setup/).
+
+For every client, set `Allowed IPs` to the server's WireGuard address only unless another private subnet is explicitly needed. Do not include `0.0.0.0/0` or `::/0`, and leave client DNS unchanged. `Allowed IPs` determines client-side routes; wg-easy documents this in its [client settings](https://wg-easy.github.io/wg-easy/latest/guides/clients/). The dashboard listener follows the exact private IPv4 address assigned to `wg0`; it does not bind to LAN or public interfaces. The current release prepares the dashboard path only; Cockpit, wg-easy admin, and other application pages still use their documented SSH forwards. Keep SSH as recovery access until an external cellular peer passes handshake, dashboard, Internet, LAN, reconnect, and revocation checks. Do not open a firewall rule before verifying the router mapping and keeping SSH recovery intact.
 
 To reach LiteLLM through the same private tunnel, add `-L 4000:127.0.0.1:4000` and open `http://127.0.0.1:4000/ui`. Sign in as `admin` using the gateway master key from `/etc/huou07-litellm/litellm.env` on the server. Keep that key on the server and enter provider credentials yourself in LiteLLM after signing in. The master key is also included in local state backups, which must be handled as credentials.
 

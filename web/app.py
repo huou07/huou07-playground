@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import csv
+import ipaddress
 import io
 import math
 import os
@@ -13,6 +14,7 @@ import re
 import subprocess
 import shutil
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -38,6 +40,44 @@ def read_text(path: str, default: str = "") -> str:
         return Path(path).read_text()
     except (OSError, UnicodeError):
         return default
+
+
+def wireguard_interface_addresses() -> list[str]:
+    """Return private IPv4 addresses assigned to the WireGuard interface only."""
+    binary = shutil.which("ip")
+    if not binary:
+        return []
+    try:
+        result = subprocess.run(
+            [binary, "-j", "-4", "addr", "show", "dev", "wg0"],
+            capture_output=True, text=True, timeout=2, check=False,
+            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"},
+        )
+        if result.returncode != 0:
+            return []
+        links = json.loads(result.stdout)
+    except (OSError, UnicodeError, TypeError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return []
+    addresses = []
+    for link in links if isinstance(links, list) else []:
+        if not isinstance(link, dict) or link.get("ifname") != "wg0":
+            continue
+        info = link.get("addr_info", [])
+        for address in info if isinstance(info, list) else []:
+            if not isinstance(address, dict) or address.get("scope") != "global":
+                continue
+            try:
+                parsed = ipaddress.ip_address(address.get("local", ""))
+            except (TypeError, ValueError):
+                continue
+            if (
+                parsed.version == 4 and parsed.is_private
+                and not parsed.is_loopback and not parsed.is_link_local
+                and not parsed.is_unspecified and not parsed.is_multicast
+                and str(parsed) not in addresses
+            ):
+                addresses.append(str(parsed))
+    return addresses
 
 
 def cpu_package_power() -> dict:
@@ -740,14 +780,29 @@ def main() -> None:
     if host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("Only loopback binding is supported until authentication and private-network access controls are implemented.")
     port = int(os.environ.get("PORT", "8765"))
-    server = HTTPServer((host, port), Handler)
-    print(f"huou07 playground listening on {host}:{port}")
+    servers = [HTTPServer((host, port), Handler)]
+    wg_servers = []
+    print(f"huou07 playground loopback listener ready on port {port}")
+    for address in wireguard_interface_addresses():
+        try:
+            server = HTTPServer((address, port), Handler)
+        except OSError:
+            print("WireGuard dashboard listener unavailable; loopback access remains active.")
+            continue
+        servers.append(server)
+        worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)
+        worker.start()
+        wg_servers.append(server)
+        print("WireGuard dashboard listener ready on the private wg0 interface.")
     try:
-        server.serve_forever(poll_interval=0.5)
+        servers[0].serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        for server in wg_servers:
+            server.shutdown()
+        for server in servers:
+            server.server_close()
 
 
 if __name__ == "__main__":
