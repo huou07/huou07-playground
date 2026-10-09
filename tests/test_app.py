@@ -350,7 +350,21 @@ class DashboardApiTests(unittest.TestCase):
     def test_app_icon_uses_only_a_registered_loopback_favicon_and_falls_back_cleanly(self):
         class IconHandler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/favicon.ico":
+                if self.path == "/metadata/":
+                    body = b'<html><head><link rel="icon" type="image/png" href="/icons/app.png"><link rel="icon" href="http://127.0.0.1:' + str(self.server.external_port).encode() + b'/favicon.ico"></head></html>'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/icons/app.png":
+                    body = b"local metadata icon"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/png")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/favicon.ico":
                     self.send_response(302)
                     self.send_header("Location", self.server.redirect_target)
                     self.end_headers()
@@ -387,6 +401,7 @@ class DashboardApiTests(unittest.TestCase):
         with ThreadingHTTPServer(("127.0.0.1", 0), ExternalIconHandler) as external_server, ThreadingHTTPServer(("127.0.0.1", 0), IconHandler) as icon_server, ThreadingHTTPServer(("127.0.0.1", 0), IconHandler) as redirect_server, tempfile.TemporaryDirectory() as directory:
             external_server.requests = 0
             icon_server.redirect_target = "/icons/favicon.ico"
+            icon_server.external_port = external_server.server_port
             redirect_server.redirect_target = f"http://127.0.0.1:{external_server.server_port}/favicon.ico"
             servers = [external_server, icon_server, redirect_server]
             threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in servers]
@@ -397,6 +412,7 @@ class DashboardApiTests(unittest.TestCase):
                 {"name": "Icon App", "url": f"http://127.0.0.1:{icon_server.server_port}/"},
                 {"name": "Redirect App", "url": f"http://127.0.0.1:{redirect_server.server_port}/"},
                 {"name": "Remote App", "url": "https://example.invalid/"},
+                {"name": "Metadata App", "url": f"http://127.0.0.1:{icon_server.server_port}/metadata/"},
             ]
             registry.write_text(json.dumps({"apps": apps}))
             try:
@@ -409,6 +425,10 @@ class DashboardApiTests(unittest.TestCase):
                     with urlopen(f"{self.base}/api/apps/icon?name=Redirect%20App") as response:
                         self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
                         self.assertIn(b"<svg", response.read())
+
+                    with urlopen(f"{self.base}/api/apps/icon?name=Metadata%20App") as response:
+                        self.assertEqual(response.headers.get_content_type(), "image/png")
+                        self.assertEqual(response.read(), b"local metadata icon")
                     self.assertEqual(external_server.requests, 0)
 
                     with urlopen(f"{self.base}/api/apps/icon?name=Remote%20App") as response:

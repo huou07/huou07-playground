@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import base64
 import csv
+from html.parser import HTMLParser
 import ipaddress
 import io
 import math
@@ -23,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parent
@@ -701,7 +702,7 @@ def app_registry() -> dict:
 
 
 def app_icon(name: str) -> tuple[str, bytes] | None:
-    """Fetch a small favicon only from the registered app's loopback service."""
+    """Fetch a small icon only from the registered app's loopback service."""
     path = Path(os.environ.get("APPS_FILE", "/var/lib/huou07-playground/apps.json"))
     try:
         apps = validate_app_entries(json.loads(path.read_text()))
@@ -730,14 +731,69 @@ def app_icon(name: str) -> tuple[str, bytes] | None:
                 same_origin = False
             return super().redirect_request(req, fp, code, msg, headers, newurl) if same_origin else None
 
+    allowed_types = {
+        "image/x-icon", "image/vnd.microsoft.icon", "image/svg+xml",
+        "image/png", "image/jpeg", "image/webp",
+    }
     opener = build_opener(ProxyHandler({}), SameOriginRedirect())
-    for extension, allowed_types in (("ico", {"image/x-icon", "image/vnd.microsoft.icon"}), ("svg", {"image/svg+xml"})):
+
+    class IconLinks(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.hrefs: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag.casefold() != "link":
+                return
+            values = {key.casefold(): value or "" for key, value in attrs}
+            rels = {part.casefold() for part in values.get("rel", "").split()}
+            if "icon" in rels and values.get("href"):
+                self.hrefs.append(values["href"])
+
+    # Apps often publish PNG icons through their page metadata instead of
+    # /favicon.ico. Read only a small unauthenticated landing page, then
+    # accept icon URLs that resolve to the same loopback origin.
+    page_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", "", ""))
+    try:
+        request = Request(page_url, headers={"Accept": "text/html"})
+        with opener.open(request, timeout=0.5) as response:
+            if response.status == 200 and response.headers.get_content_type().lower() == "text/html":
+                body = response.read(128 * 1024 + 1)
+                if len(body) <= 128 * 1024:
+                    links = IconLinks()
+                    links.feed(body.decode("utf-8", "replace"))
+                    for href in links.hrefs:
+                        candidate = urlsplit(urljoin(page_url, href))
+                        if (
+                            candidate.scheme != parsed.scheme
+                            or candidate.hostname is None
+                            or candidate.hostname.casefold() != parsed.hostname.casefold()
+                            or (candidate.port or (443 if candidate.scheme == "https" else 80)) != (parsed.port or 80)
+                            or candidate.username is not None
+                            or candidate.password is not None
+                        ):
+                            continue
+                        icon_url = urlunsplit((candidate.scheme, candidate.netloc, candidate.path, candidate.query, ""))
+                        try:
+                            with opener.open(Request(icon_url, headers={"Accept": ",".join(sorted(allowed_types))}), timeout=0.5) as icon_response:
+                                media_type = icon_response.headers.get_content_type().lower()
+                                if icon_response.status != 200 or media_type not in allowed_types:
+                                    continue
+                                data = icon_response.read(128 * 1024 + 1)
+                                if len(data) <= 128 * 1024:
+                                    return media_type, data
+                        except (OSError, URLError, ValueError):
+                            continue
+    except (OSError, URLError, ValueError):
+        pass
+
+    for extension, fallback_types in (("ico", {"image/x-icon", "image/vnd.microsoft.icon"}), ("svg", {"image/svg+xml"})):
         icon_url = urlunsplit((parsed.scheme, parsed.netloc, f"/favicon.{extension}", "", ""))
         try:
             request = Request(icon_url, headers={"Accept": "image/svg+xml,image/x-icon,image/vnd.microsoft.icon"})
             with opener.open(request, timeout=0.5) as response:
                 media_type = response.headers.get_content_type().lower()
-                if response.status != 200 or media_type not in allowed_types:
+                if response.status != 200 or media_type not in fallback_types:
                     continue
                 data = response.read(128 * 1024 + 1)
                 if len(data) <= 128 * 1024:
