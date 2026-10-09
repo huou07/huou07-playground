@@ -144,8 +144,12 @@ run_as_litellm() {
 }
 run_as_litellm /usr/bin/podman info >/dev/null
 run_as_litellm /usr/local/libexec/huou07-litellm/prepare.sh
-run_as_litellm /usr/bin/podman pull docker.io/library/postgres:16
-run_as_litellm /usr/bin/podman pull ghcr.io/berriai/litellm:v1.103.1
+if ! run_as_litellm /usr/bin/podman image exists docker.io/library/postgres:16; then
+  run_as_litellm /usr/bin/podman pull docker.io/library/postgres:16
+fi
+if ! run_as_litellm /usr/bin/podman image exists ghcr.io/berriai/litellm:v1.103.1; then
+  run_as_litellm /usr/bin/podman pull ghcr.io/berriai/litellm:v1.103.1
+fi
 
 systemctl daemon-reload
 systemctl enable --now "$SERVICE-db.service"
