@@ -108,7 +108,20 @@ On 2026-10-09, a 268,435,456-byte random-data file was transferred three times i
 | Upload | 17.116 / 17.439 / 17.783 s | 14.68 MiB/s | 14.40–14.96 MiB/s |
 | Download | 13.146 / 13.012 / 12.864 s | 19.67 MiB/s | 19.47–19.90 MiB/s |
 
-These repeated SSH results are close to the earlier one-run Cockpit Files measurements (14.44 MiB/s upload and 19.37 MiB/s download), but the Cockpit side still needs repeated samples for a like-for-like comparison. The values characterize this SSH route and `/var/tmp` storage at this time only; transfer interruption/resume and peak memory remain unmeasured.
+These repeated SSH results are close to the earlier one-run Cockpit Files measurements (14.44 MiB/s upload and 19.37 MiB/s download). Repeated Cockpit Files samples and an interrupted-upload retry are recorded below. The values characterize this SSH route and local storage at this time only; peak memory during these repeated transfers was not sampled.
+
+## Repeated Cockpit Files transfer and interruption check
+
+On 2026-10-09, a real Chromium browser used Cockpit Files through the SSH recovery tunnel with a disposable non-sudo account. A 268,435,456-byte random file was uploaded three times and downloaded three times. Upload timing ran from clicking Upload through the UI success alert; download timing ran from choosing Download through the completed browser download. Each remote upload and local download had the exact size and SHA-256 `80af0dee6c031bcf6fb11aa1600abf37c7755508bf26f13c2bc39f144392d511`.
+
+| Direction | Three sample times | Median throughput | Throughput range |
+| --- | --- | ---: | ---: |
+| Cockpit upload | 22.355 / 18.142 / 18.154 s | 14.10 MiB/s | 11.45–14.11 MiB/s |
+| Cockpit download | 12.949 / 12.938 / 13.230 s | 19.77 MiB/s | 19.35–19.79 MiB/s |
+
+The upload median was about 3.9% slower than the repeated `scp` median above; the download median was about 0.5% faster. The first UI upload was slower than the next two. This small sample is specific to this tunnel and target storage and includes the browser's upload chooser and success alert in upload timing.
+
+For interruption behavior, the browser was closed about three seconds after selecting a separate 256 MiB upload. The requested filename was absent on the target after disconnect. Reconnecting and uploading that file again from the beginning completed in 18.135 s with matching size and SHA-256. No partial file was available to resume in this run. The disposable account, home directory, uploaded/downloaded files, local payload and password file were removed.
 
 ## Dashboard open/closed resource sample
 
@@ -124,7 +137,7 @@ The page-open sample briefly peaked at 61,485,056 bytes (58.6 MiB) during initia
 ## Still to measure
 
 - Repeated initial-page load samples and longer dashboard-open versus closed CPU/memory samples.
-- Repeat Cockpit Files upload/download throughput and interruption/resume checks. One 256 MiB Cockpit comparison against `scp` and a repeated three-sample `scp` baseline are recorded. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed. The companion Move files page passed no-overwrite and cross-filesystem moves; a 3 MiB file retained its SHA-256 and the source disappeared. A disposable non-sudo account changed its own file mode 0664→0464→0664. The owner's own login and permissions remain unverified.
+- Owner-specific Cockpit login and permission changes remain unverified. Repeated 256 MiB Cockpit Files and `scp` throughput samples passed integrity checks; a browser-disconnected upload left no file with the requested name, and a fresh full retry succeeded. A resumable partial transfer was not available in that run. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed. The companion Move files page passed no-overwrite and cross-filesystem moves; a 3 MiB file retained its SHA-256 and the source disappeared. A disposable non-sudo account changed its own file mode 0664→0464→0664.
 - WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
 - OmniRoute dashboard navigation and API timing through the SSH tunnel after owner login.
