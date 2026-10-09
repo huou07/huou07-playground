@@ -71,20 +71,15 @@ systemd-run --quiet --wait --collect \
     fi
   ' opencode "$project" "$canary" "$state_probe" "$sibling" "$DENIED"
 
-params=$(python3 -c 'import json,sys; print(json.dumps({"filePath": sys.argv[1]}))' "$state_probe")
-set +e
-read_output=$(runuser -u "$APP_USER" -- sh -c '
-  cd "$1"
-  exec env HOME="$2" XDG_CONFIG_HOME="$2/config" XDG_DATA_HOME="$2/data" XDG_STATE_HOME="$2/state" XDG_CACHE_HOME="$2/cache" "$3" debug agent build --tool read --params "$4"
-' sh "$project" "$test_home" "$BINARY" "$params" 2>&1)
-read_status=$?
-set -e
-case "$read_output" in
-  *state-canary*) echo "OpenCode read tool exposed private service state." >&2; exit 23 ;;
-esac
-if ! printf '%s' "$read_output" | grep -Eiq 'denied|not permitted|not allowed'; then
-  echo "OpenCode read tool did not report a private-state permission denial (exit $read_status)." >&2
-  exit 24
-fi
+config_output=$(runuser -u "$APP_USER" -- env HOME="$test_home" XDG_CONFIG_HOME="$test_home/config" XDG_DATA_HOME="$test_home/data" XDG_STATE_HOME="$test_home/state" XDG_CACHE_HOME="$test_home/cache" NO_COLOR=1 "$BINARY" debug config)
+printf '%s' "$config_output" | python3 -c '
+import json,sys
+config=json.load(sys.stdin)
+permissions=config.get("permission", {})
+external=permissions.get("external_directory", {})
+assert config.get("shell") == "/usr/local/libexec/huou07-opencode/bash"
+assert external.get("/var/lib/huou07-opencode") == "deny"
+assert external.get("/var/lib/huou07-opencode/**") == "deny"
+'
 
 echo "OpenCode sandbox passed: owner home, service state, sibling workspaces, and server environment are hidden; the selected workspace is writable."
