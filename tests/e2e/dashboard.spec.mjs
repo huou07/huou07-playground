@@ -7,6 +7,19 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   page.on('console', message => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
+  await page.route('**/api/services', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      available: true,
+      total: 4,
+      services: [
+        { name: 'active-demo.service', description: 'Active demo service', active: 'active', state: 'running' },
+        { name: 'exited-demo.service', description: 'Exited demo service', active: 'active', state: 'exited' },
+        { name: 'stopped-demo.service', description: 'Stopped demo service', active: 'inactive', state: 'dead' },
+        { name: 'failed-demo.service', description: 'Failed demo service', active: 'failed', state: 'failed' },
+      ],
+    }),
+  }));
 
   await page.goto('/#/home');
   const routes = [
@@ -20,6 +33,21 @@ test('navigation, browser preferences, and app launch work end to end', async ({
     await expect(page.locator('[data-view]:visible')).toHaveCount(1);
     await expect(page.locator(`#page-${route} h1`)).toHaveText(title);
   }
+
+  await page.locator('#sidebar [data-route="services"]').click();
+  await expect(page.locator('#service-total')).toHaveText('1 running · 1 exited · 1 inactive · 1 failed');
+  const stoppedService = page.locator('#service-list .service-row').filter({ hasText: 'stopped-demo' });
+  await expect(stoppedService).toBeHidden();
+  await expect(page.locator('#service-list .service-row').filter({ hasText: 'failed-demo' })).toBeVisible();
+  await page.locator('#search').fill('stopped-demo');
+  await expect(stoppedService).toBeVisible();
+  await page.locator('#search').fill('');
+  const inactiveToggle = page.locator('#toggle-inactive-services');
+  await inactiveToggle.click();
+  await expect(stoppedService).toBeVisible();
+  await expect(inactiveToggle).toHaveAttribute('aria-pressed', 'true');
+  await inactiveToggle.click();
+  await expect(stoppedService).toBeHidden();
 
   await page.setViewportSize({ width: 375, height: 812 });
   await page.locator('#menu').click();
