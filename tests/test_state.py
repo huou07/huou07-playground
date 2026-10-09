@@ -63,7 +63,7 @@ class StateArchiveTests(unittest.TestCase):
 
             archive = state.create_backup(config, root / "missing.png", root / "backups", omniroute_env_dir=env_dir, omniroute_data_dir=data_dir)
             self.assertEqual(archive.stat().st_mode & 0o777, 0o600)
-            _, _, _, _, backed_up = state.read_backup(archive)
+            _, _, _, _, backed_up, _ = state.read_backup(archive)
             self.assertEqual(backed_up["omniroute.env"], self.omniroute_environment())
             self.assertEqual(backed_up["app.db"], b"private sqlite snapshot")
             self.assertEqual(backed_up["sessions/session.json"], b'{"messages":[]}')
@@ -138,7 +138,7 @@ class StateArchiveTests(unittest.TestCase):
             dump.write_bytes(b"private database snapshot")
             archive = state.create_backup(config, root / "missing.png", root / "backups", litellm_env_dir=env_dir, litellm_dump=dump)
             self.assertEqual(archive.stat().st_mode & 0o777, 0o600)
-            _, _, _, backed_up, _ = state.read_backup(archive)
+            _, _, _, backed_up, _, _ = state.read_backup(archive)
             self.assertEqual(backed_up["database.dump"], dump.read_bytes())
             self.assertEqual(backed_up["postgres.env"], (env_dir / "postgres.env").read_bytes())
 
@@ -227,6 +227,73 @@ class StateArchiveTests(unittest.TestCase):
             self.assertFalse((opencode / "data" / "opencode" / "new-session.db").exists())
             self.assertEqual((opencode / "data" / "opencode" / "auth.json").stat().st_mode & 0o777, 0o600)
 
+    def test_workspace_backup_restore_round_trip_includes_files_and_empty_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "apps.json"
+            workspace = root / "workspace"
+            config.write_text('{"apps":[]}')
+            (workspace / "project" / "empty").mkdir(parents=True)
+            (workspace / "project" / "README.md").write_text("saved project file")
+            script = workspace / "project" / "run.sh"
+            script.write_text("#!/bin/sh\nexit 0\n")
+            script.chmod(0o755)
+
+            archive = state.create_backup(config, root / "missing.png", root / "backups", workspace_dir=workspace)
+            _, _, _, _, _, workspace_members = state.read_backup(archive)
+            self.assertIn("workspace", workspace_members)
+            self.assertIn("workspace/project/empty", workspace_members)
+
+            (workspace / "project" / "README.md").write_text("changed")
+            (workspace / "project" / "extra.txt").write_text("remove during restore")
+            account = type("Account", (), {"pw_uid": os.geteuid()})()
+            group = type("Group", (), {"gr_gid": os.getegid()})()
+            with mock.patch.object(state.pwd, "getpwnam", return_value=account), mock.patch.object(state.grp, "getgrnam", return_value=group):
+                state.restore_backup(archive, config, root / "branding.png", workspace_dir=workspace)
+
+            self.assertEqual((workspace / "project" / "README.md").read_text(), "saved project file")
+            self.assertEqual((workspace / "project" / "run.sh").stat().st_mode & 0o777, 0o770)
+            self.assertEqual((workspace / "project" / "empty").stat().st_mode & 0o7777, 0o2770)
+            self.assertFalse((workspace / "project" / "extra.txt").exists())
+
+    def test_workspace_backup_rejects_symbolic_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "apps.json"
+            workspace = root / "workspace"
+            config.write_text('{"apps":[]}')
+            workspace.mkdir()
+            outside = root / "outside"
+            outside.write_text("outside workspace")
+            (workspace / "link").symlink_to(outside)
+
+            with self.assertRaisesRegex(ValueError, "workspace contains a symbolic link"):
+                state.create_backup(config, root / "missing.png", root / "backups", workspace_dir=workspace)
+
+    def test_workspace_restore_rejects_traversal_and_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "bad.tar.gz"
+            for name, link in (("workspace/../outside", False), ("workspace/link", True)):
+                with tarfile.open(archive, "w:gz") as tar:
+                    payload = b'{"apps":[]}'
+                    config = tarfile.TarInfo("apps.json")
+                    config.size = len(payload)
+                    tar.addfile(config, io.BytesIO(payload))
+                    workspace = tarfile.TarInfo("workspace")
+                    workspace.type = tarfile.DIRTYPE
+                    tar.addfile(workspace)
+                    member = tarfile.TarInfo(name)
+                    if link:
+                        member.type = tarfile.SYMTYPE
+                        member.linkname = "../../outside"
+                        tar.addfile(member)
+                    else:
+                        member.size = 1
+                        tar.addfile(member, io.BytesIO(b"x"))
+                expected = "unsafe workspace path" if not link else "unsupported workspace file type"
+                with self.assertRaisesRegex(ValueError, expected):
+                    state.read_backup(archive)
+
     def test_backup_preserves_only_the_rootless_podman_state_database(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -238,7 +305,7 @@ class StateArchiveTests(unittest.TestCase):
             config.write_text('{"apps":[]}')
 
             archive = state.create_backup(config, root / "missing.png", root / "backups", opencode)
-            _, _, saved, _, _ = state.read_backup(archive)
+            _, _, saved, _, _, _ = state.read_backup(archive)
             self.assertEqual(saved[".local/share/containers/storage/db.sql"], b"rootless storage metadata")
 
             podman_db.write_bytes(b"changed")

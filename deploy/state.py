@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Back up and restore huou07 playground's private runtime state."""
+"""Back up and restore huou07 playground state and workspace files."""
 
 from __future__ import annotations
 
@@ -23,10 +23,12 @@ from web.app import validate_app_entries
 ROOT = Path("/opt/huou07-playground")
 CONFIG = Path("/var/lib/huou07-playground/apps.json")
 BACKUP_DIR = Path("/var/backups/huou07-playground")
+WORKSPACE_DIR = Path("/srv/huou07-opencode-workspaces")
 MAX_CONFIG_BYTES = 1_000_000
 MAX_BRANDING_BYTES = 5_000_000
 MAX_OPENCODE_BYTES = 1_073_741_824
 MAX_OPENCODE_FILES = 20_000
+MAX_WORKSPACE_FILES = 100_000
 MAX_LITELLM_BYTES = 1_073_741_824
 MAX_LITELLM_ENV_BYTES = 16_384
 MAX_OMNIROUTE_BYTES = 1_073_741_824
@@ -58,6 +60,7 @@ def create_backup(
     litellm_dump: Path | None = None,
     omniroute_env_dir: Path | None = None,
     omniroute_data_dir: Path | None = None,
+    workspace_dir: Path | None = None,
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if directory.is_symlink() or not directory.is_dir() or directory.stat().st_uid != os.geteuid():
@@ -80,6 +83,8 @@ def create_backup(
                 if omniroute_env_dir is None or omniroute_data_dir is None:
                     raise ValueError("OmniRoute backup is incomplete.")
                 add_omniroute_state(archive, omniroute_env_dir, omniroute_data_dir)
+            if workspace_dir is not None:
+                add_workspace_state(archive, workspace_dir)
         os.chmod(temporary, 0o600)
         os.replace(temporary, destination)
     except BaseException:
@@ -249,6 +254,25 @@ def add_opencode_state(archive: tarfile.TarFile, source: Path) -> None:
         archive.add(path, arcname=PurePosixPath("opencode", *relative.parts).as_posix(), recursive=False)
 
 
+def add_workspace_state(archive: tarfile.TarFile, source: Path) -> None:
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("OpenCode workspace directory is missing or unsafe.")
+    archive.add(source, arcname="workspace", recursive=False)
+    count = 0
+    for path in sorted(source.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("OpenCode workspace contains a symbolic link.")
+        if not path.is_dir() and not path.is_file():
+            raise ValueError("OpenCode workspace contains an unsupported file type.")
+        relative = path.relative_to(source)
+        if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+            raise ValueError("OpenCode workspace contains an unexpected path.")
+        count += 1
+        if count > MAX_WORKSPACE_FILES:
+            raise ValueError("OpenCode workspace contains too many files and directories.")
+        archive.add(path, arcname=PurePosixPath("workspace", *relative.parts).as_posix(), recursive=False)
+
+
 def add_state_file(archive: tarfile.TarFile, source: Path, name: str, limit: int, required: bool) -> None:
     if source.is_symlink():
         raise ValueError(f"Refusing to back up a symbolic link: {name}")
@@ -259,11 +283,11 @@ def add_state_file(archive: tarfile.TarFile, source: Path, name: str, limit: int
     archive.add(source, arcname=name, recursive=False)
 
 
-def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes], dict[str, bytes], dict[str, bytes]]:
+def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes], dict[str, bytes], dict[str, bytes], set[str]]:
     with tarfile.open(backup, "r:gz") as archive:
         members = archive.getmembers()
         names = [member.name for member in members]
-        if len(names) > MAX_OPENCODE_FILES + MAX_OMNIROUTE_FILES + 7 or len(set(names)) != len(names) or "apps.json" not in names:
+        if len(names) > MAX_OPENCODE_FILES + MAX_OMNIROUTE_FILES + MAX_WORKSPACE_FILES + 7 or len(set(names)) != len(names) or "apps.json" not in names:
             raise ValueError("Backup contains unexpected files.")
         opencode_members = {}
         total_opencode = 0
@@ -272,6 +296,7 @@ def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes], di
         omniroute_members = set()
         omniroute_data_members = {}
         total_omniroute = 0
+        workspace_members = set()
         for member in members:
             if member.name == "apps.json":
                 limit = MAX_CONFIG_BYTES
@@ -311,9 +336,26 @@ def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes], di
                 omniroute_data_members[member.name] = relative.as_posix()
                 limit = MAX_OMNIROUTE_BYTES
                 total_omniroute += member.size
+            elif member.name == "workspace" and member.isdir():
+                workspace_members.add(member.name)
+                limit = 0
+            elif member.name.startswith("workspace/"):
+                relative_name = member.name.removeprefix("workspace/")
+                relative = PurePosixPath(relative_name)
+                if relative.is_absolute() or not relative.parts or relative.as_posix() != relative_name or any(part in {"", ".", ".."} for part in relative.parts):
+                    raise ValueError("Backup contains an unsafe workspace path.")
+                if member.name in workspace_members:
+                    raise ValueError("Backup contains duplicate workspace paths.")
+                if not (member.isdir() or member.isfile()):
+                    raise ValueError("Backup contains an unsupported workspace file type.")
+                workspace_members.add(member.name)
+                limit = member.size if member.isfile() else 0
             else:
                 raise ValueError("Backup contains unexpected files.")
-            directory_marker = member.name == "omniroute/data" and member.isdir() and member.size == 0
+            workspace_directory = member.isdir() and (member.name == "workspace" or member.name.startswith("workspace/"))
+            directory_marker = member.isdir() and member.size == 0 and (member.name == "omniroute/data" or workspace_directory)
+            if workspace_directory and member.size != 0:
+                raise ValueError("Backup contains an invalid workspace directory entry.")
             if not directory_marker and (not member.isfile() or member.size < 0 or member.size > limit):
                 raise ValueError("Backup contains an unsafe or oversized file.")
         if total_opencode > MAX_OPENCODE_BYTES:
@@ -328,9 +370,13 @@ def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes], di
             raise ValueError("OmniRoute backup is incomplete.")
         if total_omniroute > MAX_OMNIROUTE_BYTES or len(omniroute_data_members) > MAX_OMNIROUTE_FILES:
             raise ValueError("Backup contains too much OmniRoute data.")
+        if len(workspace_members) > MAX_WORKSPACE_FILES + 1:
+            raise ValueError("Backup contains too many workspace files and directories.")
+        if any(name.startswith("workspace/") for name in workspace_members) and "workspace" not in workspace_members:
+            raise ValueError("Backup is missing its workspace root directory.")
         files = {}
         for member in members:
-            if member.isdir():
+            if member.isdir() or member.name in workspace_members:
                 continue
             source = archive.extractfile(member)
             if source is None:
@@ -352,7 +398,7 @@ def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes], di
     if omniroute:
         validate_omniroute_environment(omniroute["omniroute.env"])
         omniroute.update({relative: files[name] for name, relative in omniroute_data_members.items()})
-    return files["apps.json"], files.get("branding.png"), opencode, litellm, omniroute
+    return files["apps.json"], files.get("branding.png"), opencode, litellm, omniroute, workspace_members
 
 
 def restore_backup(
@@ -368,8 +414,13 @@ def restore_backup(
     litellm_env_dir: Path | None = None,
     omniroute_env_dir: Path | None = None,
     omniroute_data_dir: Path | None = None,
+    workspace_dir: Path | None = None,
 ) -> None:
-    config_data, branding_data, opencode_files, litellm_files, omniroute_files = read_backup(backup)
+    config_data, branding_data, opencode_files, litellm_files, omniroute_files, workspace_members = read_backup(backup)
+    if workspace_members:
+        if workspace_dir is None:
+            raise ValueError("Install the OpenCode workspace before restoring its files.")
+        restore_workspace_tree(backup, workspace_dir, workspace_members)
     if litellm_files:
         if litellm_env_dir is None or litellm_env_dir.is_symlink() or not litellm_env_dir.is_dir():
             raise ValueError("Install the LiteLLM integration before restoring its private state.")
@@ -584,6 +635,60 @@ def restore_opencode_tree(files: dict[str, bytes], destination: Path, owner_uid:
         raise
 
 
+def restore_workspace_tree(backup: Path, destination: Path, members: set[str]) -> None:
+    parent = destination.parent
+    if parent.is_symlink() or not parent.is_dir() or destination.is_symlink() or not destination.is_dir():
+        raise ValueError("OpenCode workspace path is unavailable or unsafe.")
+    owner = pwd.getpwnam("huou07-opencode")
+    group_id = grp.getgrnam("huou07-opencode-workspaces").gr_gid
+    staging = Path(tempfile.mkdtemp(prefix=".huou07-workspace-restore-", dir=parent))
+    old = parent / f".{destination.name}.previous-{os.getpid()}"
+    try:
+        os.chown(staging, owner.pw_uid, group_id)
+        os.chmod(staging, 0o2770)
+        with tarfile.open(backup, "r:gz") as archive:
+            for member in archive.getmembers():
+                if member.name == "workspace":
+                    continue
+                if member.name not in members or not member.name.startswith("workspace/"):
+                    continue
+                relative = PurePosixPath(member.name.removeprefix("workspace/"))
+                if relative.is_absolute() or not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+                    raise ValueError("Backup contains an unsafe workspace path.")
+                current = staging
+                for part in relative.parts[:-1] if member.isfile() else relative.parts:
+                    current = current / part
+                    current.mkdir(mode=0o2770, exist_ok=True)
+                    os.chown(current, owner.pw_uid, group_id)
+                    os.chmod(current, 0o2770)
+                if member.isdir():
+                    continue
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ValueError("Backup workspace file could not be read.")
+                output_path = current / relative.parts[-1]
+                fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                with source, os.fdopen(fd, "wb") as output:
+                    shutil.copyfileobj(source, output, length=1024 * 1024)
+                    output.flush()
+                    os.fsync(output.fileno())
+                    os.fchown(output.fileno(), owner.pw_uid, group_id)
+                    os.fchmod(output.fileno(), 0o660 | (member.mode & 0o110))
+        if old.exists() or old.is_symlink():
+            raise ValueError("An earlier workspace restore staging directory exists.")
+        os.replace(destination, old)
+        try:
+            os.replace(staging, destination)
+        except BaseException:
+            os.replace(old, destination)
+            raise
+        shutil.rmtree(old)
+    except BaseException:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+
+
 def atomic_write(destination: Path, data: bytes, mode: int, group_id: int | None = None) -> None:
     fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}-", dir=destination.parent)
     try:
@@ -649,7 +754,7 @@ def dump_litellm_database(destination: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    backup = commands.add_parser("backup", help="Create a private local state archive")
+    backup = commands.add_parser("backup", help="Create a private local state and workspace archive")
     backup.add_argument("--directory", type=Path, default=BACKUP_DIR)
     restore = commands.add_parser("restore", help="Restore an archive created by this tool")
     restore.add_argument("archive", type=Path)
@@ -682,6 +787,7 @@ def main() -> None:
                         dump,
                         OMNIROUTE_ENV_DIR if OMNIROUTE_UNIT.is_file() else None,
                         OMNIROUTE_DATA_DIR if OMNIROUTE_UNIT.is_file() else None,
+                        WORKSPACE_DIR if WORKSPACE_DIR.is_dir() else None,
                     )
             finally:
                 if was_active:
@@ -693,8 +799,8 @@ def main() -> None:
         if CONFIG.parent.is_symlink() or not CONFIG.parent.is_dir():
             raise ValueError("The application configuration directory is missing or unsafe.")
         branding = current_branding()
-        _, _, opencode_files, litellm_files, omniroute_files = read_backup(args.archive)
-        was_active = opencode_service_active() if opencode_files else False
+        _, _, opencode_files, litellm_files, omniroute_files, workspace_members = read_backup(args.archive)
+        was_active = opencode_service_active() if opencode_files or workspace_members else False
         litellm_was_active = litellm_service_active() if litellm_files else False
         omniroute_was_active = omniroute_service_active() if omniroute_files else False
         if litellm_files and not litellm_db_service_active():
@@ -716,6 +822,7 @@ def main() -> None:
                 litellm_env_dir=LITELLM_ENV_DIR if litellm_files else None,
                 omniroute_env_dir=OMNIROUTE_ENV_DIR if omniroute_files else None,
                 omniroute_data_dir=OMNIROUTE_DATA_DIR if omniroute_files else None,
+                workspace_dir=WORKSPACE_DIR if workspace_members else None,
             )
         finally:
             if was_active:
@@ -724,7 +831,7 @@ def main() -> None:
                 subprocess.run(["systemctl", "start", LITELLM_SERVICE], check=True)
             if omniroute_was_active:
                 subprocess.run(["systemctl", "start", OMNIROUTE_SERVICE], check=True)
-        print("Application configuration and branding restored.")
+        print("Workspace, application configuration, and private state restored.")
     except (OSError, subprocess.CalledProcessError, tarfile.TarError, ValueError) as exc:
         parser.error(str(exc))
 
