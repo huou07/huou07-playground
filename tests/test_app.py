@@ -96,11 +96,13 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ["/usr/bin/nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"])
         self.assertFalse(run.call_args.kwargs.get("shell", False))
 
-    def test_nvidia_gpu_metrics_degrade_when_utility_is_missing(self):
+    def test_gpu_metrics_fall_back_to_intel_when_nvidia_tool_is_missing(self):
         with patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value=None):
-            metrics = app.gpu_metrics()
+            with patch("web.app.intel_gpu_metrics", return_value={"available": False, "reason": "No current Intel GPU sample is available."}) as intel:
+                metrics = app.gpu_metrics()
         self.assertFalse(metrics["available"])
-        self.assertIn("nvidia-smi", metrics["reason"])
+        self.assertIn("Intel", metrics["reason"])
+        intel.assert_called_once_with()
 
     def test_process_and_service_endpoints_exclude_command_arguments(self):
         with urlopen(f"{self.base}/api/processes") as response:

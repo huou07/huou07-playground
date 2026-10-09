@@ -1,0 +1,27 @@
+[Unit]
+Description=Read-only Intel GPU sample for huou07 playground
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+SupplementaryGroups=video render
+StateDirectory=huou07-playground-gpu
+StateDirectoryMode=0755
+UMask=0022
+Environment=PATH=/usr/bin:/bin
+ExecStart=/usr/bin/python3 /opt/huou07-playground/current/deploy/gpu.py
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=no
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_PERFMON
+AmbientCapabilities=CAP_PERFMON
+ReadOnlyPaths=/proc /sys

@@ -56,12 +56,12 @@ def cpu_package_power() -> dict:
 
 
 def gpu_metrics() -> dict:
-    """Read NVIDIA utilization, memory and temperature when nvidia-smi is available."""
+    """Read available NVIDIA telemetry or a sanitized Intel GPU collector sample."""
     if platform.system() != "Linux":
         return {"available": False, "reason": "GPU telemetry is available when deployed on Linux."}
     nvidia_smi = shutil.which("nvidia-smi")
     if not nvidia_smi:
-        return {"available": False, "reason": "NVIDIA telemetry is unavailable because nvidia-smi is not installed."}
+        return intel_gpu_metrics()
     try:
         result = subprocess.run(
             [nvidia_smi, "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"],
@@ -93,6 +93,31 @@ def gpu_metrics() -> dict:
         }
     except (OSError, subprocess.TimeoutExpired, csv.Error, ValueError):
         return {"available": False, "reason": "nvidia-smi did not return a valid GPU sample."}
+
+
+def intel_gpu_metrics() -> dict:
+    """Read the short-lived, root-collected Intel i915 utilization sample."""
+    path = Path(os.environ.get("GPU_FILE", "/var/lib/huou07-playground-gpu/sample.json"))
+    try:
+        sample = json.loads(path.read_text())
+        sampled_at = sample.get("sampled_at")
+        age = time.time() - sampled_at if isinstance(sampled_at, (int, float)) and not isinstance(sampled_at, bool) else None
+        if age is None or age < 0 or age > 75:
+            return {"available": False, "reason": "No current Intel GPU sample is available."}
+        if sample.get("available") is True:
+            usage = sample.get("usage_percent")
+            if isinstance(usage, (int, float)) and not isinstance(usage, bool) and math.isfinite(usage) and 0 <= usage <= 100:
+                engines = sample.get("engines")
+                engines = {str(name)[:40]: round(value, 1) for name, value in engines.items() if isinstance(name, str) and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 <= value <= 100} if isinstance(engines, dict) else {}
+                frequency = sample.get("frequency_mhz")
+                frequency = round(frequency) if isinstance(frequency, (int, float)) and not isinstance(frequency, bool) and math.isfinite(frequency) and 0 < frequency <= 10000 else None
+                rc6 = sample.get("rc6_percent")
+                rc6 = round(rc6, 1) if isinstance(rc6, (int, float)) and not isinstance(rc6, bool) and math.isfinite(rc6) and 0 <= rc6 <= 100 else None
+                return {"available": True, "model": "Intel integrated graphics (i915)", "usage_percent": round(usage, 1), "engines": engines, "frequency_mhz": frequency, "rc6_percent": rc6, "measurement": "Busiest GPU engine"}
+        reason = sample.get("reason")
+        return {"available": False, "reason": reason[:160] if isinstance(reason, str) and reason else "Intel GPU telemetry is unavailable."}
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
+        return {"available": False, "reason": "No current Intel GPU sample is available."}
 
 
 def storage_devices(sys_block: Path = Path("/sys/block")) -> list[dict]:

@@ -7,8 +7,8 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Compact responsive dashboard with dark default and persisted light theme.
 - Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, detected physical drive model/type/capacity, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs. Drive health is not queried; serial identifiers are not collected.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps. Network rates display in Kbps/Mbps; cumulative interface totals remain in bytes.
-- The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. SSH tunneling remains the only browser access method.
-- NVIDIA GPU utilization, VRAM and temperature use `nvidia-smi` when available; other adapters and missing driver utilities show an honest `N/A` state. CPU package watts use a separate restricted systemd collector when supported; the dashboard account reads only its recent sanitized sample and never receives MSR access or root privileges.
+- The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. Browser access currently uses SSH tunnels; the requested WireGuard access path is not yet configured.
+- NVIDIA utilization, VRAM, and temperature use `nvidia-smi`. Intel i915 engine busy counters use a separate restricted `intel_gpu_top` sampler. The dashboard labels Intel usage as the busiest engine and does not invent dedicated VRAM or GPU temperature. CPU package watts use a separate restricted systemd collector; the dashboard account reads only recent sanitized samples and never receives hardware-counter access or root privileges.
 - Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be listed in a root-owned server registry with optional bounded health checks. Direct browser access stays disabled; use SSH tunnels.
 
 ## Run locally
@@ -70,6 +70,10 @@ Open Cockpit's terminal, change into a project directory, and run `codex --ask-f
 ## Optional CPU package power telemetry
 
 The dashboard uses `turbostat`'s `PkgWatt` summary when supported. On Debian, `turbostat` is provided by [`linux-cpupower`](https://packages.debian.org/trixie/linux-cpupower). Install it with `sudo apt install linux-cpupower`, then install or upgrade huou07 playground. The installer sets up a separate fixed-purpose systemd sampler with read-only MSR device access and a 15-second timer; it writes only a sanitized sample that the dashboard can read. Unsupported CPUs or unavailable counters remain `N/A`. The web service gets no MSR access, root, or sudo permission. This measures CPU package power, not whole-system wall power.
+
+## Optional Intel GPU telemetry
+
+On Debian 13 systems using Intel's `i915` driver, install [`intel-gpu-tools`](https://packages.debian.org/trixie/intel-gpu-tools) with `sudo apt install intel-gpu-tools`, then install or upgrade huou07 playground. The installer detects i915 and enables a 30-second one-shot collector. It grants only `CAP_PERFMON` and access through the normal `video` and `render` groups. The web service reads the atomic sanitized sample and has no GPU device or performance-counter access. Intel GPU usage is the busiest engine percentage; shared system memory is not reported as dedicated VRAM.
 
 ## Optional SSH terminal and system management
 

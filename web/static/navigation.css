@@ -17,6 +17,7 @@
 .setting-row select{min-width:145px;padding:7px 9px;border:1px solid var(--border);border-radius:7px;background:var(--raised);color:var(--text);font:inherit}
 .file-manager-panel{max-width:780px}
 .file-manager-panel .panel-note{max-width:620px}
+.gpu-engine-row{display:grid;grid-template-columns:minmax(90px,1fr) minmax(70px,2fr) 38px;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}.gpu-engine-row:last-child{border-bottom:0}.gpu-engine-row .bar{margin:0}.gpu-engine-row strong{text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:700px){
   .quick-links{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .quick-links a{padding:11px}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh huou07 playground Intel GPU metrics
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=30s
+AccuracySec=2s
+Unit=huou07-playground-gpu.service
+
+[Install]
+WantedBy=timers.target
