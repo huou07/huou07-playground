@@ -1,0 +1,66 @@
+#!/bin/bash
+set -euo pipefail
+
+readonly WORKSPACE_ROOT=/srv/huou07-opencode-workspaces
+readonly PRIVATE_STATE=/var/lib/huou07-opencode
+
+cwd=$(pwd -P)
+case "$cwd/" in
+  "$WORKSPACE_ROOT/"*) ;;
+  *) echo "OpenCode shell must run inside $WORKSPACE_ROOT." >&2; exit 125 ;;
+esac
+
+project=$(env -i PATH=/usr/bin:/bin HOME=/tmp /usr/bin/git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$cwd")
+project=$(/usr/bin/realpath -e -- "$project")
+case "$project/" in
+  "$WORKSPACE_ROOT/"*) ;;
+  *) echo "OpenCode project must stay inside $WORKSPACE_ROOT." >&2; exit 125 ;;
+esac
+# shortcut: Git worktrees are unavailable until OpenCode worktree sessions are required.
+if [[ -f "$project/.git" ]]; then
+  echo "OpenCode shell sandbox supports project checkouts; Git worktrees are not supported yet." >&2
+  exit 125
+fi
+
+relative_cwd=${cwd#"$project"}
+container_cwd="$project$relative_cwd"
+bwrap_args=(
+  --die-with-parent
+  --new-session
+  --unshare-pid
+  --unshare-ipc
+  --unshare-uts
+  --ro-bind / /
+  --tmpfs "$PRIVATE_STATE"
+  --tmpfs "$WORKSPACE_ROOT"
+)
+
+relative_project=${project#"$WORKSPACE_ROOT"}
+mountpoint=$WORKSPACE_ROOT
+IFS=/ read -r -a parts <<< "$relative_project"
+for part in "${parts[@]}"; do
+  [[ -z "$part" ]] && continue
+  mountpoint="$mountpoint/$part"
+  bwrap_args+=(--dir "$mountpoint")
+done
+bwrap_args+=(--bind "$project" "$project")
+bwrap_args+=(
+  --dev /dev
+  --proc /proc
+  --tmpfs /tmp
+  --clearenv
+  --setenv PATH /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  --setenv HOME /tmp/opencode-home
+  --setenv XDG_CONFIG_HOME /tmp/opencode-home/.config
+  --setenv XDG_CACHE_HOME /tmp/opencode-home/.cache
+  --setenv XDG_DATA_HOME /tmp/opencode-home/.local/share
+  --setenv XDG_STATE_HOME /tmp/opencode-home/.local/state
+  --setenv LANG C.UTF-8
+  --setenv TERM xterm-256color
+  --chdir "$container_cwd"
+  --
+  /bin/bash
+  "$@"
+)
+
+exec /usr/bin/env -i PATH=/usr/bin:/bin TERM=xterm-256color /usr/bin/bwrap "${bwrap_args[@]}"

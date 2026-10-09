@@ -3,7 +3,12 @@
   "permission": {
     "bash": "ask",
     "edit": "ask",
-    "external_directory": "ask",
+    "external_directory": {
+      "*": "ask",
+      "/var/lib/huou07-opencode": "deny",
+      "/var/lib/huou07-opencode/**": "deny"
+    },
     "task": "ask"
-  }
+  },
+  "shell": "/usr/local/libexec/huou07-opencode/bash"
 }
