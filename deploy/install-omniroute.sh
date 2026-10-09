@@ -70,6 +70,11 @@ fi
 
 install -d -o "$SERVICE" -g "$SERVICE" -m 0750 "$STATE_DIR" "$STATE_DIR/data"
 install -d -o root -g root -m 0755 "$CONFIG_DIR" "$LIBEXEC_DIR"
+if [ -e "$STATE_DIR/.config" ] && { [ -L "$STATE_DIR/.config" ] || [ ! -d "$STATE_DIR/.config" ]; }; then
+  echo "The dedicated OmniRoute config path is not a real directory; refusing to replace it." >&2
+  exit 1
+fi
+install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$STATE_DIR/.config"
 install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$STATE_DIR/.config/containers"
 containers_config="$STATE_DIR/.config/containers/containers.conf"
 if [ -e "$containers_config" ]; then
