@@ -66,22 +66,13 @@ On a host with rootless Podman configured, run `sh deploy/check-rootless-sandbox
 
 Before uninstalling or making a risky change, run `sudo python3 /opt/huou07-playground/current/deploy/state.py backup`. The archive is written with mode `0600` under `/var/backups/huou07-playground/`, outside the repository. It contains the app registry, files under the OpenCode workspace, OpenCode's private config/sessions/provider auth, LiteLLM's database dump and private environment files when installed, OmniRoute's database/session data and private environment when installed, and the private turtle image when present. Workspace symlinks and special files are rejected; up to 100,000 workspace files and directories are supported, with file contents streamed without an application size cap. The archive is not encrypted; treat it as a credential file and store copies only on trusted storage. Backup briefly stops OpenCode and OmniRoute to snapshot their state, while LiteLLM uses an online PostgreSQL dump; stopped services are started again afterward. Restore validates the archive before replacing state, replaces the OpenCode workspace contents with the archived copy, and restarts the services whose data is included: `sudo python3 /opt/huou07-playground/current/deploy/state.py restore /var/backups/huou07-playground/<archive>.tar.gz`. Each AI service's private state is limited to 1 GiB per archive. Backups stay local unless you copy them to trusted storage yourself.
 
-To open the dashboard from a computer that can SSH to the server, create a local tunnel:
+To open the dashboard and its configured web apps from a computer that can SSH to the server, run this from the checkout:
 
 ```sh
-ssh \
-  -L 8765:127.0.0.1:8765 \
-  -L 9090:127.0.0.1:9090 \
-  -L 4000:127.0.0.1:4000 \
-  -L 51821:127.0.0.1:51821 \
-  -L 14096:127.0.0.1:4096 \
-  -L 20128:127.0.0.1:20128 \
-  -L 20129:127.0.0.1:20129 \
-  -L 20132:127.0.0.1:20132 \
-  <your-ssh-alias>
+./tools/huou07-ssh-tunnel <your-ssh-alias>
 ```
 
-Then open `http://127.0.0.1:8765` on that computer. This tunnel forwards the dashboard and every configured web app link, including the AI services and wg-easy setup page. The app services still listen only on server loopback. On a phone, configure the same local-to-server forwards in its SSH client before opening the dashboard; this remains the recovery access method. After wg-easy setup, open the dashboard at the server's private WireGuard address on port `8765`. The dashboard relays the installed Cockpit, OpenCode, LiteLLM, OmniRoute, and wg-easy web interfaces on their documented ports, while their own services remain loopback-only. Relay sockets accept traffic only on `wg0`; active UFW hosts receive matching interface-scoped TCP rules. In each client, set `Allowed IPs` to only the server's WireGuard address (or explicitly needed private subnets); do not use `0.0.0.0/0` or `::/0`, and do not set client DNS. Verify the dashboard handshake, normal Internet, and local-LAN routes before relying on the peer. Keep SSH available independently. The dashboard binds only to loopback and the exact private `wg0` address. Restart `huou07-playground.service` over SSH if the `wg0` address changes.
+Then open `http://127.0.0.1:8765`. The helper forwards the dashboard, Cockpit, LiteLLM, wg-easy, OpenCode Web, and OmniRoute to this computer's loopback only. It stays in the foreground; press Ctrl+C to close it. SSH host-key verification remains controlled by your normal SSH configuration. On a phone, configure the same local-to-server forwards in its SSH client before opening the dashboard; this remains the recovery access method. After wg-easy setup, open the dashboard at the server's private WireGuard address on port `8765`. The dashboard relays the installed Cockpit, OpenCode, LiteLLM, OmniRoute, and wg-easy web interfaces on their documented ports, while their own services remain loopback-only. Relay sockets accept traffic only on `wg0`; active UFW hosts receive matching interface-scoped TCP rules. In each client, set `Allowed IPs` to only the server's WireGuard address (or explicitly needed private subnets); do not use `0.0.0.0/0` or `::/0`, and do not set client DNS. Verify the dashboard handshake, normal Internet, and local-LAN routes before relying on the peer. Keep SSH available independently. The dashboard binds only to loopback and the exact private `wg0` address. Restart `huou07-playground.service` over SSH if the `wg0` address changes.
 
 ### Private WireGuard setup
 
