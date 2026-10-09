@@ -60,9 +60,31 @@ The endpoint and `/sys/block` both found zero ZRAM devices. `vm.swappiness` was 
 
 The live i915 sample reported 0% engine utilization while idle. For an active check, an 8-second, 1280×720, 30 fps VAAPI encode to FFmpeg's null output ran in a temporary systemd unit as the unprivileged dashboard account. The unit had only the `video` and `render` supplementary groups, access to `/dev/dri/renderD128`, no network sockets, a 50% CPU quota, a 256 MiB memory cap, and a 12-second runtime limit. FFmpeg exited successfully; the existing restricted GPU collector sampled Video at 3.8%, with Blitter, Render/3D, and VideoEnhance at 0%. A follow-up sample returned all engines to 0.0%. This verifies active Video-engine telemetry; a Render/3D workload remains untested. No GPU temperature interface was reported. The restricted CPU package collector reported 6.5 W for `PkgWatt`. Network rates were 26.3/40.8 Kbps from the endpoint and 20.6/26.9 Kbps from an independent two-second physical-interface counter sample. That short comparison is noisy because the API and direct sample windows differ; repeat it over longer intervals before drawing a rate-accuracy conclusion.
 
+## Current dashboard and navigation sample
+
+On 2026-10-09, dashboard release `20261009072037-136357` from source commit `873895f3758167267b049a90c03adb15aba350ad` was measured with no coding workload. The server sample used eight loopback requests per route and a 10-second `/proc/stat` interval. The browser sample ran Chromium on the Mac through an SSH tunnel to the dashboard; a test hostname was mapped to the local tunnel so link rewriting for a private host could be observed. The browser was opened once in a fresh context. The route timing measured each sidebar click to the next animation frame, across three visits to all nine views.
+
+| Measurement | Result |
+| --- | ---: |
+| Host CPU busy, 10 seconds | 0.90% |
+| Available system memory | 12,770,545,664 bytes (about 11.9 GiB) |
+| Disk swap used/total | 4,307,304,448 / 16,852,709,376 bytes |
+| Listed huou07 service memory, including Cockpit socket | 1,321,598,976 bytes (1,260.4 MiB) |
+| Dashboard service memory | 50,782,208 bytes (48.4 MiB) |
+| `/` loopback, first / warm median of 7 | 21.01 / 0.72 ms |
+| `/api/health` loopback, first / warm median of 7 | 0.31 / 0.30 ms |
+| `/api/metrics` loopback, first / warm median of 7 | 67.76 / 1.90 ms |
+| `/api/apps` loopback, first / warm median of 7 | 33.42 / 14.49 ms |
+| `/api/vpn` loopback, first / warm median of 7 | 18.41 / 36.53 ms |
+| Browser navigation to next frame, 27 clicks | 16.4 ms median (1.5–25.2 ms) |
+| Browser navigation response end / DOM ready / load event | 18.8 / 55.9 / 83.0 ms |
+| Browser transferred resource bytes | 137,933 bytes |
+
+The real browser loaded all nine routes, reported no console warnings, and had no horizontal overflow at 375 px. Private-service links rewrote to their fixed relay ports. This simulated the private-host name through an SSH tunnel; it was not an external WireGuard client test. Loopback API timings omit WAN or VPN latency. The short sample does not measure application launch, provider inference, or file transfer.
+
 ## Still to measure
 
-- Rendered page load and navigation interaction time through the SSH tunnel, with repeated browser runs.
+- Repeated initial-page browser load samples and dashboard-open versus closed CPU/memory over longer intervals.
 - CPU and memory with the dashboard open versus closed over longer samples.
 - File upload and download throughput, including a test larger than available RAM, through Cockpit Files after the owner signs in.
 - WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
