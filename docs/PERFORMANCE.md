@@ -44,11 +44,11 @@ On 2026-10-09, dashboard release `20261009063618-110298` (source assets match `f
 
 | Route | Response bytes | First request | Warm median |
 | --- | ---: | ---: | ---: |
-| `/` | 19,728 | 26.8 ms | 13.6 ms |
-| `/api/health` | 11 | 12.0 ms | 11.5 ms |
-| `/api/metrics` | 1,400 | 108.6 ms | 15.6 ms |
-| `/api/apps` | 1,235 | 32.9 ms | 31.8 ms |
-| `/api/vpn` | 224 | 53.4 ms | 50.8 ms |
+| `/` | 19,728 | 14.3 ms | 13.3 ms |
+| `/api/health` | 11 | 12.5 ms | 12.1 ms |
+| `/api/metrics` | 1,404 | 97.2 ms | 15.7 ms |
+| `/api/apps` | 1,234 | 36.2 ms | 33.7 ms |
+| `/api/vpn` | 224 | 54.7 ms | 48.4 ms |
 
 At the same sample, systemd cgroups for the dashboard, OpenCode Web, LiteLLM, OmniRoute, and wg-easy reported 1,313,619,968 bytes (about 1.22 GiB) combined. Each unit was active. This is the listed huou07 service set only; it excludes Cockpit, host services, and unrelated workloads. The API medians include SSH forwarding and local network round-trip time, unlike the earlier server-loopback measurements.
 
