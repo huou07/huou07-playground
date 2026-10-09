@@ -56,14 +56,14 @@ Before uninstalling or making a risky change, run `sudo python3 /opt/huou07-play
 To open the dashboard from a computer that can SSH to the server, create a local tunnel:
 
 ```sh
-ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 -L 4096:127.0.0.1:4096 <your-ssh-alias>
+ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 -L 14096:127.0.0.1:4096 <your-ssh-alias>
 ```
 
 Then open `http://127.0.0.1:8765` on that computer. This is a private access method over SSH; direct LAN/VPN browser access is not enabled yet. Keep the SSH tunnel running while using the dashboard.
 
 ### OpenCode CLI and web interface
 
-Install OpenCode for the SSH owner's account with the official installer: `curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.35 --no-modify-path`. Then run `sh deploy/install-opencode-launcher.sh` as that same account. The launcher keeps OpenCode's own configuration, authentication, sessions, and cache under `~/.opencode`, separate from other tools. The owner must sign in with `opencode auth login`; do not copy credentials from another machine. From the intended project directory, run `opencode web --hostname 127.0.0.1 --port 4096` and open `http://127.0.0.1:4096` through the SSH tunnel above. OpenCode's permission rules are separate from the managed Codex profile; isolated, tested coding-agent execution is still required before using it for unattended work.
+Install OpenCode CLI for the SSH owner's account from the official source, then run `sh deploy/install-opencode-launcher.sh` as that account. To enable the web workspace, run `sudo ./deploy/install-opencode-web.sh` from a trusted checkout. The installer copies only the CLI executable into a separate, restricted `huou07-opencode` system account, creates an empty shared workspace at `/srv/huou07-opencode-workspaces`, and starts a loopback-only web service with HTTP Basic Authentication. It does not copy any project or provider credentials. The systemd unit hides user home directories, limits writes to its private state and workspace, and caps memory at 4 GiB and CPU at two cores. OpenCode's default policy asks before shell commands, edits, and subagents. The owner must sign in to providers manually in the web UI; their credentials and sessions are stored in the service's private state at `/var/lib/huou07-opencode`. That state is not yet included in dashboard backups. Add the SSH owner's account to the workspace group via the installer, then start a new SSH session before managing workspace files. Forward local port 14096 to server loopback port 4096 and open `http://127.0.0.1:14096`; retrieve the generated web password with `sudo cat /etc/huou07-playground/opencode-web.env`. Keep the server bound to loopback and use the SSH tunnel. Do not use unattended mode; native authentication and an authenticated coding run still require owner setup.
 
 ### Codex CLI on the server
 
