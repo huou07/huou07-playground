@@ -71,7 +71,7 @@ systemd-run --quiet --wait --collect \
     fi
   ' opencode "$project" "$canary" "$state_probe" "$sibling" "$DENIED"
 
-config_output=$(runuser -u "$APP_USER" -- env HOME="$test_home" XDG_CONFIG_HOME="$test_home/config" XDG_DATA_HOME="$test_home/data" XDG_STATE_HOME="$test_home/state" XDG_CACHE_HOME="$test_home/cache" NO_COLOR=1 "$BINARY" debug config)
+config_output=$(cd "$project" && runuser -u "$APP_USER" -- env HOME="$test_home" XDG_CONFIG_HOME="$test_home/config" XDG_DATA_HOME="$test_home/data" XDG_STATE_HOME="$test_home/state" XDG_CACHE_HOME="$test_home/cache" NO_COLOR=1 "$BINARY" debug config)
 printf '%s' "$config_output" | python3 -c '
 import json,sys
 config=json.load(sys.stdin)
