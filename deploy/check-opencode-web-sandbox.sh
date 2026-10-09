@@ -137,7 +137,7 @@ systemd-run --quiet --wait --collect \
     test "$(git show HEAD:worktree-write)" = worktree-ok
   ' opencode "$worktree" "$canary" "$state_probe" "$sibling"
 
-if denial=$(systemd-run --quiet --wait --collect \
+if denial=$(systemd-run --quiet --pipe --wait --collect \
   --unit="huou07-opencode-external-git-boundary-$$" \
   --uid="$APP_USER" \
   --gid="$APP_USER" \
