@@ -14,6 +14,12 @@
 .settings-integrations{grid-column:1/-1}
 .settings-integrations .info-row{padding:8px 0;border-bottom:1px solid var(--border)}
 .settings-integrations .info-row strong{font-size:12px;font-weight:550}
+.metric-preferences{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:13px 0 0;padding:0;border:0}
+.metric-preferences label{display:flex;align-items:center;gap:8px;color:var(--text);font-size:12px;cursor:pointer}
+.metric-preferences input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+.subtle-button{border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);padding:5px 9px;font-size:11px;cursor:pointer}
+.subtle-button:hover{color:var(--text);background:var(--raised)}
+.metric-card[hidden]{display:none}
 .setting-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:7px 0;color:var(--muted);font-size:13px}
 .setting-row select{min-width:145px;padding:7px 9px;border:1px solid var(--border);border-radius:7px;background:var(--raised);color:var(--text);font:inherit}
 .file-manager-panel{max-width:780px}

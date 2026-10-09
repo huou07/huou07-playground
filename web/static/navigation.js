@@ -74,3 +74,38 @@ refreshSetting.addEventListener('change', () => {
   localStorage.setItem('metricsRefreshMs', refreshSetting.value);
   window.dispatchEvent(new CustomEvent('metrics-refresh-change', { detail: Number(refreshSetting.value) }));
 });
+
+const metricSettings = [...document.querySelectorAll('[data-metric-setting]')];
+const metricIds = metricSettings.map(setting => setting.dataset.metricSetting);
+const defaultVisibleMetrics = new Set(metricIds);
+let visibleMetrics = defaultVisibleMetrics;
+try {
+  const savedMetrics = JSON.parse(localStorage.getItem('dashboardVisibleMetrics') || 'null');
+  if (Array.isArray(savedMetrics) && savedMetrics.every(metric => metricIds.includes(metric))) {
+    visibleMetrics = new Set(savedMetrics);
+  }
+} catch {
+  // An invalid browser preference falls back to showing every metric.
+}
+
+function renderMetricPreferences() {
+  for (const setting of metricSettings) {
+    const visible = visibleMetrics.has(setting.dataset.metricSetting);
+    setting.checked = visible;
+    document.querySelector(`[data-metric="${setting.dataset.metricSetting}"]`).hidden = !visible;
+  }
+}
+
+function saveMetricPreferences() {
+  visibleMetrics = new Set(metricSettings.filter(setting => setting.checked).map(setting => setting.dataset.metricSetting));
+  localStorage.setItem('dashboardVisibleMetrics', JSON.stringify([...visibleMetrics]));
+  renderMetricPreferences();
+}
+
+metricSettings.forEach(setting => setting.addEventListener('change', saveMetricPreferences));
+document.getElementById('metrics-reset').addEventListener('click', () => {
+  visibleMetrics = new Set(defaultVisibleMetrics);
+  localStorage.setItem('dashboardVisibleMetrics', JSON.stringify([...visibleMetrics]));
+  renderMetricPreferences();
+});
+renderMetricPreferences();
