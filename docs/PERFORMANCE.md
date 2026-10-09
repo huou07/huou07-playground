@@ -34,6 +34,10 @@ After LiteLLM Gateway was installed on 2026-10-09, five authenticated local requ
 
 At the same sample, systemd reported 611.6 MiB current memory for the gateway (2 GiB cap, two CPU quota cores) and 87.6 MiB for PostgreSQL (1 GiB cap, one CPU quota core). The full pod's memory, idle CPU, and storage-write rate have not been benchmarked separately.
 
+## OmniRoute idle sample
+
+After OmniRoute `3.8.51` was installed on 2026-10-09, five server-loopback health checks returned HTTP 200 with a 6.20 ms median. Five unauthenticated `/v1/models` checks on the separate API listener returned HTTP 401 with a 7.07 ms median, confirming key enforcement before the owner configures a provider. These local timings omit SSH forwarding and browser rendering and do not measure inference. The service cgroup used 406,159,360 bytes (387.4 MiB) against its 10 GiB memory cap after a same-snapshot restore. Idle CPU and longer-term cache/storage write rates have not been measured.
+
 ## Still to measure
 
 - Initial page load and navigation interaction time through the SSH tunnel, with repeated runs.
@@ -41,6 +45,7 @@ At the same sample, systemd reported 611.6 MiB current memory for the gateway (2
 - File upload and download throughput, including a test larger than available RAM, through Cockpit Files after the owner signs in.
 - VPN latency and throughput; direct VPN browser access is disabled by the SSH-only access choice.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
+- OmniRoute dashboard navigation and API timing through the SSH tunnel after owner login.
 - LiteLLM admin UI navigation, provider setup, and model management after owner sign-in.
 
 Repeat the measurements after material changes and record the exact commit, target state, sample length, and whether the browser was open.
