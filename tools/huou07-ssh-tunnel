@@ -2,25 +2,39 @@
 set -eu
 
 mode=all
-case "$#" in
-  1) host=$1 ;;
-  2)
-    if [ "$1" != "--omniroute-only" ]; then
-      echo "Usage: $0 [--omniroute-only] <ssh-host-alias-or-destination>" >&2
-      exit 2
-    fi
-    mode=omniroute
-    host=$2
-    ;;
-  *)
-    echo "Usage: $0 [--omniroute-only] <ssh-host-alias-or-destination>" >&2
-    exit 2
-    ;;
+dashboard_port=8765
+host=
+usage() {
+  echo "Usage: $0 [--dashboard-port <local-port>] [--omniroute-only] <ssh-host-alias-or-destination>" >&2
+}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dashboard-port)
+      if [ "$#" -lt 2 ]; then usage; exit 2; fi
+      dashboard_port=$2
+      shift 2
+      ;;
+    --omniroute-only)
+      if [ "$mode" != all ]; then usage; exit 2; fi
+      mode=omniroute
+      shift
+      ;;
+    *)
+      if [ -n "$host" ] || [ "${1#-}" != "$1" ]; then usage; exit 2; fi
+      host=$1
+      shift
+      ;;
+  esac
+done
+case "$dashboard_port" in
+  ''|*[!0-9]*) usage; exit 2 ;;
 esac
-if [ -z "$host" ] || [ "${host#-}" != "$host" ]; then
-  echo "Usage: $0 [--omniroute-only] <ssh-host-alias-or-destination>" >&2
+if [ "${#dashboard_port}" -gt 5 ] || [ "$dashboard_port" -lt 1 ] || [ "$dashboard_port" -gt 65535 ]; then
+  usage
   exit 2
 fi
+if [ "$mode" = omniroute ] && [ "$dashboard_port" != 8765 ]; then usage; exit 2; fi
+if [ -z "$host" ]; then usage; exit 2; fi
 
 if [ "$mode" = omniroute ]; then
   set -- \
@@ -30,7 +44,7 @@ if [ "$mode" = omniroute ]; then
     "$host"
 else
   set -- \
-    -L 127.0.0.1:8765:127.0.0.1:8765 \
+    -L "127.0.0.1:$dashboard_port:127.0.0.1:8765" \
     -L 127.0.0.1:9090:127.0.0.1:9090 \
     -L 127.0.0.1:4000:127.0.0.1:4000 \
     -L 127.0.0.1:51821:127.0.0.1:51821 \

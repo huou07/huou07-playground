@@ -65,8 +65,36 @@ class SshTunnelTests(unittest.TestCase):
             "127.0.0.1:20132:127.0.0.1:20132",
         ))
 
+    def test_full_mode_allows_a_custom_local_dashboard_port(self):
+        result = self.run_tunnel("--dashboard-port", "18765", "an3-dell")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = json.loads(self.args_file.read_text())
+        self.assert_forwards(args, (
+            "127.0.0.1:18765:127.0.0.1:8765",
+            "127.0.0.1:9090:127.0.0.1:9090",
+            "127.0.0.1:4000:127.0.0.1:4000",
+            "127.0.0.1:51821:127.0.0.1:51821",
+            "127.0.0.1:14096:127.0.0.1:4096",
+            "127.0.0.1:20128:127.0.0.1:20128",
+            "127.0.0.1:20129:127.0.0.1:20129",
+            "127.0.0.1:20132:127.0.0.1:20132",
+        ))
+
+    def test_dashboard_port_must_be_valid_and_does_not_apply_to_omniroute_only(self):
+        for args in (
+            ("--dashboard-port", "0", "an3-dell"),
+            ("--dashboard-port", "65536", "an3-dell"),
+            ("--dashboard-port", "bad", "an3-dell"),
+            ("--dashboard-port", "18765", "--omniroute-only", "an3-dell"),
+        ):
+            with self.subTest(args=args):
+                self.args_file.unlink(missing_ok=True)
+                result = self.run_tunnel(*args)
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse(self.args_file.exists())
+
     def test_invalid_arguments_fail_before_running_ssh(self):
-        for args in ((), ("--bad", "an3-dell"), ("--omniroute-only",), ("-host",)):
+        for args in ((), ("--bad", "an3-dell"), ("--omniroute-only",), ("-host",), ("--dashboard-port", "an3-dell")):
             with self.subTest(args=args):
                 result = self.run_tunnel(*args)
                 self.assertEqual(result.returncode, 2)
