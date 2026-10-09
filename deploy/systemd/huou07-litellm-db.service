@@ -1,0 +1,46 @@
+[Unit]
+Description=huou07 LiteLLM PostgreSQL database
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=huou07-litellm
+Group=huou07-litellm
+WorkingDirectory=/var/lib/huou07-litellm
+Environment=HOME=/var/lib/huou07-litellm
+Environment=XDG_RUNTIME_DIR=/run/huou07-litellm
+EnvironmentFile=/etc/huou07-litellm/postgres.env
+RuntimeDirectory=huou07-litellm
+RuntimeDirectoryMode=0700
+ExecStartPre=/usr/local/libexec/huou07-litellm/prepare.sh
+ExecStart=/usr/bin/podman run --replace --rm --name huou07-litellm-db --network huou07-litellm --network-alias huou07-litellm-db --volume huou07-litellm-postgres:/var/lib/postgresql/data --security-opt=no-new-privileges --log-driver=journald --env POSTGRES_USER --env POSTGRES_PASSWORD --env POSTGRES_DB docker.io/library/postgres:16
+ExecStartPost=/usr/local/libexec/huou07-litellm/wait-postgres.sh
+ExecStop=/usr/bin/podman stop --time 30 huou07-litellm-db
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/huou07-litellm /run/huou07-litellm
+MemoryMax=1G
+CPUQuota=100%
+TasksMax=256
+LimitNOFILE=4096
+Delegate=yes
+
+[Install]
+WantedBy=multi-user.target

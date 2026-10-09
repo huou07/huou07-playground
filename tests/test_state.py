@@ -6,12 +6,82 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from deploy import state
 
 
 class StateArchiveTests(unittest.TestCase):
+    def test_litellm_backup_restore_round_trip_keeps_secrets_private(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "apps.json"
+            config.write_text('{"apps":[]}')
+            env_dir = root / "litellm"
+            env_dir.mkdir()
+            password = "a" * 64
+            (env_dir / "postgres.env").write_text(
+                f"POSTGRES_USER=litellm\nPOSTGRES_PASSWORD={password}\nPOSTGRES_DB=litellm\n"
+            )
+            (env_dir / "litellm.env").write_text(
+                "LITELLM_MASTER_KEY=sk-master0123456789\n"
+                "LITELLM_SALT_KEY=sk-salt0123456789\n"
+                f"DATABASE_URL=postgresql://litellm:{password}@huou07-litellm-db:5432/litellm\n"
+            )
+            dump = root / "database.dump"
+            dump.write_bytes(b"private database snapshot")
+            archive = state.create_backup(config, root / "missing.png", root / "backups", litellm_env_dir=env_dir, litellm_dump=dump)
+            self.assertEqual(archive.stat().st_mode & 0o777, 0o600)
+            _, _, _, backed_up = state.read_backup(archive)
+            self.assertEqual(backed_up["database.dump"], dump.read_bytes())
+            self.assertEqual(backed_up["postgres.env"], (env_dir / "postgres.env").read_bytes())
+
+            (env_dir / "postgres.env").write_text("old database settings\n")
+            with mock.patch.object(state, "LITELLM_UNIT", root / "proxy.service"), \
+                 mock.patch.object(state, "LITELLM_DB_UNIT", root / "database.service"), \
+                 mock.patch.object(state, "litellm_db_service_active", return_value=True), \
+                 mock.patch.object(state, "restore_litellm_database") as restore_db:
+                state.LITELLM_UNIT.touch()
+                state.LITELLM_DB_UNIT.touch()
+                state.restore_backup(archive, config, root / "branding.png", litellm_env_dir=env_dir)
+
+            self.assertEqual(restore_db.call_args.args, (b"private database snapshot", password))
+            self.assertEqual((env_dir / "postgres.env").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((env_dir / "postgres.env").read_bytes(), backed_up["postgres.env"])
+
+    def test_litellm_backup_rejects_inconsistent_credentials_and_partial_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "apps.json"
+            config.write_text('{"apps":[]}')
+            env_dir = root / "litellm"
+            env_dir.mkdir()
+            (env_dir / "postgres.env").write_text(
+                f"POSTGRES_USER=litellm\nPOSTGRES_PASSWORD={'a' * 64}\nPOSTGRES_DB=litellm\n"
+            )
+            (env_dir / "litellm.env").write_text(
+                "LITELLM_MASTER_KEY=sk-master0123456789\n"
+                "LITELLM_SALT_KEY=sk-salt0123456789\n"
+                "DATABASE_URL=postgresql://litellm:wrong@huou07-litellm-db:5432/litellm\n"
+            )
+            dump = root / "database.dump"
+            dump.write_bytes(b"snapshot")
+            with self.assertRaisesRegex(ValueError, "credentials do not match"):
+                state.create_backup(config, root / "missing.png", root / "backups", litellm_env_dir=env_dir, litellm_dump=dump)
+
+            archive = root / "partial.tar.gz"
+            with tarfile.open(archive, "w:gz") as tar:
+                payload = b'{"apps":[]}'
+                config_member = tarfile.TarInfo("apps.json")
+                config_member.size = len(payload)
+                tar.addfile(config_member, io.BytesIO(payload))
+                member = tarfile.TarInfo("litellm/litellm.env")
+                member.size = 1
+                tar.addfile(member, io.BytesIO(b"x"))
+            with self.assertRaisesRegex(ValueError, "LiteLLM backup is incomplete"):
+                state.read_backup(archive)
+
     def test_backup_restore_round_trip_preserves_private_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
