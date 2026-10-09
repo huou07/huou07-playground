@@ -79,6 +79,11 @@ fi
 
 install -d -o "$SERVICE" -g "$SERVICE" -m 0750 "$STATE_DIR"
 install -d -o root -g root -m 0755 "$CONFIG_DIR" "$LIBEXEC_DIR"
+if [ -L "$CONFIG_DIR/config.yaml" ]; then
+  echo "The LiteLLM base config must not be a symbolic link." >&2
+  exit 1
+fi
+install -o root -g root -m 0644 "$SOURCE/deploy/litellm-config.yaml" "$CONFIG_DIR/config.yaml"
 install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$STATE_DIR/.config/containers"
 containers_config="$STATE_DIR/.config/containers/containers.conf"
 if [ -e "$containers_config" ]; then
