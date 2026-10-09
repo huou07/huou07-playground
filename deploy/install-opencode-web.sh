@@ -33,6 +33,10 @@ if [ ! -d /etc/huou07-playground ]; then
   echo "Install huou07 playground before its OpenCode web integration." >&2
   exit 1
 fi
+if [ ! -f /var/lib/huou07-playground/apps.json ] || [ -L /var/lib/huou07-playground/apps.json ]; then
+  echo "The huou07 application registry is missing; install the dashboard first." >&2
+  exit 1
+fi
 if ! command -v bwrap >/dev/null 2>&1; then
   echo "Install bubblewrap before enabling the isolated OpenCode web shell." >&2
   exit 1
@@ -108,6 +112,13 @@ if systemctl is-active --quiet huou07-opencode-web.service; then
 else
   systemctl enable --now huou07-opencode-web.service
 fi
+APPS_FILE=/var/lib/huou07-playground/apps.json python3 "$SOURCE/deploy/register_app.py" \
+  --name "OpenCode Web" \
+  --url http://127.0.0.1:14096/ \
+  --category "Coding Agents" \
+  --description "Private OpenCode coding workspace." \
+  --health-url http://127.0.0.1:4096/ \
+  --management-url http://127.0.0.1:14096/
 echo "OpenCode web is running as $SERVICE on 127.0.0.1:4096."
 echo "Only $WORKSPACE_DIR is shared with the SSH owner; the service cannot see user home directories."
 echo "OpenCode shell commands run with bubblewrap and can write only to the selected project."

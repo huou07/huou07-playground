@@ -218,26 +218,13 @@ if [ "$attempt" -ge 320 ]; then
   exit 1
 fi
 
-PYTHONPATH="$SOURCE" APPS_FILE=/var/lib/huou07-playground/apps.json python3 - <<'PY'
-from web.app import mutate_app_registry, validate_app_entries
-import json
-from pathlib import Path
-
-path = Path("/var/lib/huou07-playground/apps.json")
-apps = validate_app_entries(json.loads(path.read_text()))
-name = "OmniRoute"
-app = {
-    "name": name,
-    "url": "http://127.0.0.1:20128/",
-    "description": "Self-hosted free-model gateway. Sign in to add providers and API keys.",
-    "category": "AI Gateway",
-    "health_url": "http://127.0.0.1:20128/healthz",
-    "health_method": "GET",
-    "management_url": "http://127.0.0.1:20128/",
-}
-action = "update" if any(item["name"].casefold() == name.casefold() for item in apps) else "add"
-mutate_app_registry({"action": action, "name": name, "app": app})
-PY
+APPS_FILE=/var/lib/huou07-playground/apps.json python3 "$SOURCE/deploy/register_app.py" \
+  --name "OmniRoute" \
+  --url http://127.0.0.1:20128/ \
+  --category "AI Gateway" \
+  --description "Self-hosted free-model gateway. Sign in to add providers and API keys." \
+  --health-url http://127.0.0.1:20128/healthz \
+  --management-url http://127.0.0.1:20128/
 
 echo "OmniRoute is running on loopback ports 20128, 20129, and 20132."
 echo "The owner login password is stored in $CONFIG_DIR/omniroute.env."

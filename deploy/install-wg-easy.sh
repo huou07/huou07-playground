@@ -74,26 +74,13 @@ if [ "$attempt" -ge 80 ]; then
   exit 1
 fi
 
-PYTHONPATH="$SOURCE" APPS_FILE=/var/lib/huou07-playground/apps.json python3 - <<'PY'
-from web.app import mutate_app_registry, validate_app_entries
-import json
-from pathlib import Path
-
-path = Path("/var/lib/huou07-playground/apps.json")
-apps = validate_app_entries(json.loads(path.read_text()))
-name = "WireGuard Easy"
-app = {
-    "name": name,
-    "url": "http://127.0.0.1:51821/",
-    "description": "Manage private WireGuard peers through WireGuard or the SSH recovery tunnel.",
-    "category": "Network & VPN",
-    "health_url": "http://127.0.0.1:51821/",
-    "health_method": "GET",
-    "management_url": "http://127.0.0.1:51821/",
-}
-action = "update" if any(item["name"].casefold() == name.casefold() for item in apps) else "add"
-mutate_app_registry({"action": action, "name": name, "app": app})
-PY
+APPS_FILE=/var/lib/huou07-playground/apps.json python3 "$SOURCE/deploy/register_app.py" \
+  --name "WireGuard Easy" \
+  --url http://127.0.0.1:51821/ \
+  --category "Network & VPN" \
+  --description "Manage private WireGuard peers through WireGuard or the SSH recovery tunnel." \
+  --health-url http://127.0.0.1:51821/ \
+  --management-url http://127.0.0.1:51821/
 
 echo "wg-easy is running on 127.0.0.1:51821."
 echo "Open it through the private dashboard or forward the admin port over SSH to finish owner setup. The separate status collector exposes no keys or peer addresses."

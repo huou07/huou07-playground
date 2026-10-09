@@ -36,7 +36,7 @@ The suite checks all nine routes, mobile navigation, persistent theme/refresh/me
 
 ### Application registry
 
-Add and edit links on the Settings page. The installer seeds `/var/lib/huou07-playground/apps.json` from [`config/apps.example.json`](config/apps.example.json) and preserves it on upgrades. Existing installs migrate the registry from `/etc/huou07-playground/apps.json`. The dashboard can write only this validated, non-executable registry; application secrets stay under the root-managed `/etc/huou07-playground` directory. The registry is out of Git; do not put credentials or tokens in it. Health checks are optional, use GET or HEAD, and can target only `localhost`, `127.0.0.1`, or `::1`, which prevents the dashboard from probing other hosts. Example:
+Add and edit links on the Settings page. The installer seeds `/var/lib/huou07-playground/apps.json` from [`config/apps.example.json`](config/apps.example.json) and preserves it on upgrades. Component installers add their launch link after the service is ready, without overwriting an existing Settings entry. Existing installs migrate the registry from `/etc/huou07-playground/apps.json`. The dashboard can write only this validated, non-executable registry; application secrets stay under the root-managed `/etc/huou07-playground` directory. The registry is out of Git; do not put credentials or tokens in it. Health checks are optional, use GET or HEAD, and can target only `localhost`, `127.0.0.1`, or `::1`, which prevents the dashboard from probing other hosts. Example:
 
 ```json
 {
