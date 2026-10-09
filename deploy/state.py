@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web.app import validate_app_entries
 
 ROOT = Path("/opt/huou07-playground")
-CONFIG = Path("/etc/huou07-playground/apps.json")
+CONFIG = Path("/var/lib/huou07-playground/apps.json")
 BACKUP_DIR = Path("/var/backups/huou07-playground")
 MAX_CONFIG_BYTES = 1_000_000
 MAX_BRANDING_BYTES = 5_000_000

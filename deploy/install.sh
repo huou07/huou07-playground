@@ -8,6 +8,10 @@ POWER_TIMER=huou07-playground-power.timer
 GPU_SERVICE=huou07-playground-gpu.service
 GPU_TIMER=huou07-playground-gpu.timer
 ACCOUNT=huou07-playground
+CONFIG_DIR=/etc/huou07-playground
+STATE_DIR=/var/lib/huou07-playground
+LEGACY_APPS_FILE=$CONFIG_DIR/apps.json
+APPS_FILE=$STATE_DIR/apps.json
 SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -57,16 +61,31 @@ else
 fi
 
 install -d -o root -g root -m 0755 "$ROOT/releases"
-if [ -L /etc/huou07-playground/apps.json ]; then
+if [ -L "$CONFIG_DIR" ] || [ -L "$STATE_DIR" ] || [ -L "$LEGACY_APPS_FILE" ] || [ -L "$APPS_FILE" ]; then
   echo "The application registry must not be a symbolic link." >&2
   exit 1
 fi
-install -d -o root -g "$ACCOUNT" -m 0770 /etc/huou07-playground
-if [ ! -e /etc/huou07-playground/apps.json ]; then
-  install -o root -g "$ACCOUNT" -m 0660 "$SOURCE/config/apps.example.json" /etc/huou07-playground/apps.json
+if { [ -e "$STATE_DIR" ] && [ ! -d "$STATE_DIR" ]; } || { [ -e "$LEGACY_APPS_FILE" ] && [ ! -f "$LEGACY_APPS_FILE" ]; }; then
+  echo "The application registry path is not a regular file or directory." >&2
+  exit 1
 fi
-chown root:"$ACCOUNT" /etc/huou07-playground/apps.json
-chmod 0660 /etc/huou07-playground/apps.json
+if [ -e "$APPS_FILE" ] && [ ! -f "$APPS_FILE" ]; then
+  echo "The application registry path is not a regular file." >&2
+  exit 1
+fi
+install -d -o root -g root -m 0755 "$CONFIG_DIR"
+install -d -o "$ACCOUNT" -g "$ACCOUNT" -m 0750 "$STATE_DIR"
+chown "$ACCOUNT":"$ACCOUNT" "$STATE_DIR"
+chmod 0750 "$STATE_DIR"
+if [ ! -e "$APPS_FILE" ]; then
+  if [ -f "$LEGACY_APPS_FILE" ]; then
+    install -o "$ACCOUNT" -g "$ACCOUNT" -m 0660 "$LEGACY_APPS_FILE" "$APPS_FILE"
+  else
+    install -o "$ACCOUNT" -g "$ACCOUNT" -m 0660 "$SOURCE/config/apps.example.json" "$APPS_FILE"
+  fi
+fi
+chown "$ACCOUNT":"$ACCOUNT" "$APPS_FILE"
+chmod 0660 "$APPS_FILE"
 release="$ROOT/releases/$(date -u +%Y%m%d%H%M%S)-$$"
 previous=$(readlink "$ROOT/current" 2>/dev/null || true)
 rollback() {

@@ -9,7 +9,7 @@ Group=huou07-playground
 WorkingDirectory=/opt/huou07-playground/current/web
 Environment=HOST=127.0.0.1
 Environment=PORT=8765
-Environment=APPS_FILE=/etc/huou07-playground/apps.json
+Environment=APPS_FILE=/var/lib/huou07-playground/apps.json
 ExecStart=/usr/bin/python3 /opt/huou07-playground/current/web/app.py
 Restart=on-failure
 RestartSec=2s
@@ -25,8 +25,9 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+StateDirectory=huou07-playground
+StateDirectoryMode=0750
 ReadOnlyPaths=/proc /sys
-ReadWritePaths=/etc/huou07-playground
 
 [Install]
 WantedBy=multi-user.target

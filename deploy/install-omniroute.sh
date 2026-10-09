@@ -17,7 +17,7 @@ if [ ! -x /usr/bin/podman ] || [ ! -x /usr/bin/slirp4netns ] || [ ! -x /usr/bin/
   echo "A running systemd installation with Podman and slirp4netns is required." >&2
   exit 1
 fi
-if [ ! -f /etc/huou07-playground/apps.json ] || [ ! -d /opt/huou07-playground/current ]; then
+if [ ! -f /var/lib/huou07-playground/apps.json ] || [ ! -d /opt/huou07-playground/current ]; then
   echo "Install huou07 playground before the OmniRoute integration." >&2
   exit 1
 fi
@@ -218,12 +218,12 @@ if [ "$attempt" -ge 320 ]; then
   exit 1
 fi
 
-PYTHONPATH="$SOURCE" APPS_FILE=/etc/huou07-playground/apps.json python3 - <<'PY'
+PYTHONPATH="$SOURCE" APPS_FILE=/var/lib/huou07-playground/apps.json python3 - <<'PY'
 from web.app import mutate_app_registry, validate_app_entries
 import json
 from pathlib import Path
 
-path = Path("/etc/huou07-playground/apps.json")
+path = Path("/var/lib/huou07-playground/apps.json")
 apps = validate_app_entries(json.loads(path.read_text()))
 name = "OmniRoute"
 app = {

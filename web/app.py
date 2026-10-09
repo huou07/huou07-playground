@@ -632,7 +632,7 @@ def validate_app_entries(config: object) -> list[dict]:
 def save_app_registry(config: object) -> None:
     """Atomically save the non-executable app list in the service-owned config dir."""
     apps = validate_app_entries(config)
-    path = Path(os.environ.get("APPS_FILE", "/etc/huou07-playground/apps.json"))
+    path = Path(os.environ.get("APPS_FILE", "/var/lib/huou07-playground/apps.json"))
     if path.parent.is_symlink() or not path.parent.is_dir() or path.is_symlink() or not path.is_file():
         raise OSError("Application registry path is unavailable.")
     group_id = path.stat().st_gid
@@ -652,7 +652,7 @@ def save_app_registry(config: object) -> None:
 
 
 def app_registry() -> dict:
-    path = Path(os.environ.get("APPS_FILE", "/etc/huou07-playground/apps.json"))
+    path = Path(os.environ.get("APPS_FILE", "/var/lib/huou07-playground/apps.json"))
     try:
         apps = validate_app_entries(json.loads(path.read_text()))
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError):
@@ -669,7 +669,7 @@ def app_registry() -> dict:
 def mutate_app_registry(change: object) -> None:
     if not isinstance(change, dict):
         raise ValueError
-    path = Path(os.environ.get("APPS_FILE", "/etc/huou07-playground/apps.json"))
+    path = Path(os.environ.get("APPS_FILE", "/var/lib/huou07-playground/apps.json"))
     current = validate_app_entries(json.loads(path.read_text()))
     action = change.get("action")
     name = change.get("name")
