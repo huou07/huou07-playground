@@ -13,6 +13,7 @@ import pwd
 import re
 import subprocess
 import shutil
+import socket
 import tempfile
 import threading
 import time
@@ -775,6 +776,20 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+class InterfaceBoundHTTPServer(HTTPServer):
+    """HTTP listener limited to traffic arriving through one device."""
+    def __init__(self, server_address: tuple[str, int], handler: type[BaseHTTPRequestHandler], interface: str):
+        self.interface = interface
+        super().__init__(server_address, handler)
+
+    def server_bind(self) -> None:
+        option = getattr(socket, "SO_BINDTODEVICE", None)
+        if option is None:
+            raise OSError("Interface-bound listeners are not supported on this platform.")
+        self.socket.setsockopt(socket.SOL_SOCKET, option, self.interface.encode("ascii") + b"\0")
+        super().server_bind()
+
+
 def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     if host not in {"127.0.0.1", "::1", "localhost"}:
@@ -785,7 +800,7 @@ def main() -> None:
     print(f"huou07 playground loopback listener ready on port {port}")
     for address in wireguard_interface_addresses():
         try:
-            server = HTTPServer((address, port), Handler)
+            server = InterfaceBoundHTTPServer((address, port), Handler, "wg0")
         except OSError:
             print("WireGuard dashboard listener unavailable; loopback access remains active.")
             continue

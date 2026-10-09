@@ -63,6 +63,15 @@ class DashboardApiTests(unittest.TestCase):
         with patch.object(app.shutil, "which", return_value="/usr/sbin/ip"), patch.object(app.subprocess, "run", return_value=result):
             self.assertEqual(app.wireguard_interface_addresses(), [])
 
+    def test_interface_bound_listener_binds_socket_to_exact_device(self):
+        server = object.__new__(app.InterfaceBoundHTTPServer)
+        server.interface = "wg0"
+        fake_socket = Mock()
+        with patch.object(app.socket, "SO_BINDTODEVICE", 25, create=True), patch.object(app.HTTPServer, "server_bind"):
+            server.socket = fake_socket
+            app.InterfaceBoundHTTPServer.server_bind(server)
+        fake_socket.setsockopt.assert_called_once_with(app.socket.SOL_SOCKET, 25, b"wg0\0")
+
     def test_health_endpoint(self):
         with urlopen(f"{self.base}/api/health") as response:
             self.assertEqual(response.status, 200)
