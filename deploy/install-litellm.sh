@@ -21,11 +21,21 @@ if [ ! -f /etc/huou07-playground/apps.json ] || [ ! -d /opt/huou07-playground/cu
   echo "Install huou07 playground before the LiteLLM integration." >&2
   exit 1
 fi
-if [ -e "/etc/systemd/system/$SERVICE.service" ] && ! grep -Fq "ExecStart=/usr/bin/podman run --replace --rm --name $SERVICE-proxy" "/etc/systemd/system/$SERVICE.service"; then
+proxy_unit="/etc/systemd/system/$SERVICE.service"
+if [ -e "$proxy_unit" ] && {
+  ! grep -Fqx "Description=huou07 LiteLLM gateway" "$proxy_unit" ||
+  ! grep -Fq -- "--name $SERVICE-proxy" "$proxy_unit" ||
+  ! grep -Fq "ghcr.io/berriai/litellm:v1.103.1" "$proxy_unit"
+}; then
   echo "An unrelated $SERVICE.service unit already exists; refusing to replace it." >&2
   exit 1
 fi
-if [ -e "/etc/systemd/system/$SERVICE-db.service" ] && ! grep -Fq "ExecStart=/usr/bin/podman run --replace --rm --name $SERVICE-db" "/etc/systemd/system/$SERVICE-db.service"; then
+database_unit="/etc/systemd/system/$SERVICE-db.service"
+if [ -e "$database_unit" ] && {
+  ! grep -Fqx "Description=huou07 LiteLLM PostgreSQL database" "$database_unit" ||
+  ! grep -Fq -- "--name $SERVICE-db" "$database_unit" ||
+  ! grep -Fq "docker.io/library/postgres:16" "$database_unit"
+}; then
   echo "An unrelated $SERVICE-db.service unit already exists; refusing to replace it." >&2
   exit 1
 fi
