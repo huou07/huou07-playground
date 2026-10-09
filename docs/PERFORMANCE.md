@@ -38,12 +38,26 @@ At the same sample, systemd reported 611.6 MiB current memory for the gateway (2
 
 After OmniRoute `3.8.51` was installed on 2026-10-09, five server-loopback health checks returned HTTP 200 with a 6.20 ms median. Five unauthenticated `/v1/models` checks on the separate API listener returned HTTP 401 with a 7.07 ms median, confirming key enforcement before the owner configures a provider. These local timings omit SSH forwarding and browser rendering and do not measure inference. The service cgroup used 406,159,360 bytes (387.4 MiB) against its 10 GiB memory cap after a same-snapshot restore. Idle CPU and longer-term cache/storage write rates have not been measured.
 
+## SSH-forwarded dashboard and current service memory
+
+On 2026-10-09, the dashboard was sampled from the Mac through a verified SSH tunnel to the Dell. Eight requests per route were measured; the first request is reported separately and the warm median uses the remaining seven. Each response returned HTTP 200. The browser was not used for this timing sample, so render and interaction time are excluded.
+
+| Route | Response bytes | First request | Warm median |
+| --- | ---: | ---: | ---: |
+| `/` | 19,728 | 26.8 ms | 13.6 ms |
+| `/api/health` | 11 | 12.0 ms | 11.5 ms |
+| `/api/metrics` | 1,400 | 108.6 ms | 15.6 ms |
+| `/api/apps` | 1,235 | 32.9 ms | 31.8 ms |
+| `/api/vpn` | 224 | 53.4 ms | 50.8 ms |
+
+At the same sample, systemd cgroups for the dashboard, OpenCode Web, LiteLLM, OmniRoute, and wg-easy reported 1,313,619,968 bytes (about 1.22 GiB) combined. Each unit was active. This is the listed huou07 service set only; it excludes Cockpit, host services, and unrelated workloads. The API medians include SSH forwarding and local network round-trip time, unlike the earlier server-loopback measurements.
+
 ## Still to measure
 
-- Initial page load and navigation interaction time through the SSH tunnel, with repeated runs.
+- Rendered page load and navigation interaction time through the SSH tunnel, with repeated browser runs.
 - CPU and memory with the dashboard open versus closed over longer samples.
 - File upload and download throughput, including a test larger than available RAM, through Cockpit Files after the owner signs in.
-- WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled by the owner's SSH-tunnel choice.
+- WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
 - OmniRoute dashboard navigation and API timing through the SSH tunnel after owner login.
 - LiteLLM admin UI navigation, provider setup, and model management after owner sign-in.

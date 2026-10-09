@@ -7,10 +7,10 @@ A private, single-user Linux workspace dashboard. The first implementation unit 
 - Compact responsive dashboard with dark default and persisted light theme.
 - Live CPU utilization, logical/physical core counts, frequency and temperature where exposed, RAM, root filesystem, detected physical drive model/type/capacity, swap/ZRAM, host identity, uptime, and physical network byte counters from Linux procfs and sysfs. Drive health is not queried; serial identifiers are not collected.
 - Process owner, PID, CPU and memory data come from procfs. Service state comes from systemd; searches and sorting run in the browser. CPU, process and network rates use successive samples and return to unavailable/sampling states after long gaps. Network rates display in Kbps/Mbps; cumulative interface totals remain in bytes.
-- The VPN indicator reflects the Tailscale client's running state and omits private peer names and addresses. Browser access currently uses SSH tunnels; the requested WireGuard access path is not yet configured.
+- WireGuard is the intended primary private access path, with SSH tunnels retained as an independent recovery route. The installed wg-easy setup still needs the owner's endpoint, UDP mapping, and first peer before a real external handshake can be verified. Tailscale status omits private peer names and addresses; Tailscale Serve remains disabled.
 - LiteLLM Gateway is installed as a separate rootless Podman service with a private PostgreSQL database. The proxy binds to server loopback on port 4000; its dashboard and API are available through an SSH tunnel. Provider credentials and model configuration remain owner-controlled and have not been entered.
 - NVIDIA utilization, VRAM, and temperature use `nvidia-smi`. Intel i915 engine busy counters use a separate restricted `intel_gpu_top` sampler. The dashboard labels Intel usage as the busiest engine and does not invent dedicated VRAM or GPU temperature. CPU package watts use a separate restricted systemd collector; the dashboard account reads only recent sanitized samples and never receives hardware-counter access or root privileges.
-- Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be managed from Settings, with optional server-local health checks. Direct browser access stays disabled; use SSH tunnels.
+- Service and process views are read-only. Cockpit provides a separate browser terminal and host management UI. Applications can be managed from Settings, with optional server-local health checks. Until WireGuard passes an external handshake and private-service checks, use SSH tunnels; dashboard services remain loopback-only.
 
 ## Run locally
 
@@ -60,7 +60,7 @@ To open the dashboard from a computer that can SSH to the server, create a local
 ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 -L 14096:127.0.0.1:4096 <your-ssh-alias>
 ```
 
-Then open `http://127.0.0.1:8765` on that computer. This is a private access method over SSH; direct LAN/VPN browser access is not enabled yet. Keep the SSH tunnel running while using the dashboard.
+Then open `http://127.0.0.1:8765` on that computer. This is the current recovery access method. WireGuard is intended to become the primary path after the owner completes wg-easy setup and an external client passes handshake, private-service, LAN, and ordinary Internet checks. Keep SSH available independently until those checks pass. Dashboard listeners remain loopback-only.
 
 To reach LiteLLM through the same private tunnel, add `-L 4000:127.0.0.1:4000` and open `http://127.0.0.1:4000/ui`. Sign in as `admin` using the gateway master key from `/etc/huou07-litellm/litellm.env` on the server. Keep that key on the server and enter provider credentials yourself in LiteLLM after signing in. The master key is also included in local state backups, which must be handled as credentials.
 
