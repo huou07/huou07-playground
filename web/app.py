@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 WG_EASY_SERVICE = "huou07-wg-easy.service"
 WG_EASY_UNIT = Path("/etc/systemd/system") / WG_EASY_SERVICE
+WG_STATUS_FILE = Path("/var/lib/huou07-wg-easy-status/status.json")
 _prev_cpu: tuple[int, int, float] | None = None
 _prev_net: tuple[float, dict[str, tuple[int, int]]] | None = None
 _prev_processes: dict[int, tuple[int, int]] = {}
@@ -432,6 +433,31 @@ def wg_easy_needs_setup() -> bool:
         return False
 
 
+def wg_status_sample() -> dict | None:
+    try:
+        sample = json.loads(Path(os.environ.get("WG_STATUS_FILE", str(WG_STATUS_FILE))).read_text())
+        now = time.time()
+        sampled_at = sample.get("sampled_at")
+        peer_count = sample.get("peer_count")
+        handshake = sample.get("latest_handshake_at")
+        if (
+            sample.get("available") is not True
+            or not isinstance(sampled_at, (int, float))
+            or isinstance(sampled_at, bool)
+            or not math.isfinite(sampled_at)
+            or now - sampled_at < 0
+            or now - sampled_at > 90
+            or not isinstance(peer_count, int)
+            or isinstance(peer_count, bool)
+            or not 0 <= peer_count <= 65535
+            or (handshake is not None and (not isinstance(handshake, int) or isinstance(handshake, bool) or not 0 < handshake <= now + 30))
+        ):
+            return None
+        return {"peer_count": peer_count, "latest_handshake_at": handshake}
+    except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+        return None
+
+
 def vpn_status() -> dict:
     if platform.system() != "Linux":
         unavailable = {"available": False, "connected": False, "state": "Unavailable"}
@@ -455,40 +481,27 @@ def vpn_status() -> dict:
             service = subprocess.run(["systemctl", "is-active", "--quiet", WG_EASY_SERVICE], capture_output=True, text=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
         except (OSError, subprocess.TimeoutExpired):
             service = None
-        wg = shutil.which("wg")
-        if service is None or service.returncode != 0 or not wg:
+        if service is None or service.returncode != 0:
             wireguard = {"available": False, "connected": False, "state": "Stopped", "peer_count": 0}
         else:
-            try:
-                result = subprocess.run([wg, "show", "wg0", "latest-handshakes"], capture_output=True, text=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
-                peers = []
-                if result.returncode == 0:
-                    for line in result.stdout.splitlines():
-                        fields = line.split()
-                        if len(fields) == 2:
-                            try:
-                                peers.append(int(fields[1]))
-                            except ValueError:
-                                pass
-                if result.returncode != 0:
-                    setup_required = wg_easy_needs_setup()
-                    wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Status unavailable", "peer_count": 0}
-                elif not peers:
-                    setup_required = wg_easy_needs_setup()
-                    wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Waiting for peer", "peer_count": 0}
-                else:
-                    latest = max(peers)
-                    age = max(0, int(time.time()) - latest) if latest else None
-                    connected = age is not None and age <= 180
-                    wireguard = {
-                        "available": True,
-                        "connected": connected,
-                        "state": "Connected" if connected else "Waiting for peer",
-                        "peer_count": len(peers),
-                        "last_handshake_seconds": age,
-                    }
-            except (OSError, subprocess.TimeoutExpired):
-                wireguard = {"available": False, "connected": False, "state": "Unavailable", "peer_count": 0}
+            sample = wg_status_sample()
+            if sample is None:
+                setup_required = wg_easy_needs_setup()
+                wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Status unavailable", "peer_count": 0}
+            elif sample["peer_count"] == 0:
+                setup_required = wg_easy_needs_setup()
+                wireguard = {"available": True, "connected": False, "state": "Needs owner setup" if setup_required else "Waiting for peer", "peer_count": 0}
+            else:
+                latest = sample["latest_handshake_at"]
+                age = max(0, int(time.time()) - latest) if latest else None
+                connected = age is not None and age <= 180
+                wireguard = {
+                    "available": True,
+                    "connected": connected,
+                    "state": "Connected" if connected else "Waiting for peer",
+                    "peer_count": sample["peer_count"],
+                    "last_handshake_seconds": age,
+                }
     return {"available": wireguard["available"], "connected": wireguard["connected"], "state": wireguard["state"], "wireguard": wireguard, "tailscale": tailnet}
 
 

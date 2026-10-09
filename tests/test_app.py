@@ -194,13 +194,13 @@ class DashboardApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / "huou07-wg-easy.service"
             unit.touch()
-            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", side_effect=lambda name: "/usr/bin/tailscale" if name == "tailscale" else None), patch("web.app.subprocess.run", return_value=result) as run:
+            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", side_effect=lambda name: "/usr/bin/tailscale" if name == "tailscale" else None), patch("web.app.wg_status_sample", return_value=None), patch("web.app.wg_easy_needs_setup", return_value=False), patch("web.app.subprocess.run", return_value=result) as run:
                 with urlopen(f"{self.base}/api/vpn") as response:
                     payload = response.read().decode()
         data = json.loads(payload)
         self.assertEqual(data["tailscale"], {"available": True, "connected": True, "state": "Connected"})
-        self.assertEqual(data["wireguard"], {"available": False, "connected": False, "state": "Stopped", "peer_count": 0})
-        self.assertEqual(data["state"], "Stopped")
+        self.assertEqual(data["wireguard"], {"available": True, "connected": False, "state": "Status unavailable", "peer_count": 0})
+        self.assertEqual(data["state"], "Status unavailable")
         self.assertNotIn("100.64.0.1", payload)
         self.assertNotIn("private.example.invalid", payload)
         self.assertEqual(run.call_args.args[0], ["systemctl", "is-active", "--quiet", app.WG_EASY_SERVICE])
@@ -208,16 +208,29 @@ class DashboardApiTests(unittest.TestCase):
     def test_vpn_status_reports_wireguard_setup_without_peer_details(self):
         tailnet = app.subprocess.CompletedProcess([], 0, stdout=json.dumps({"BackendState": "Stopped"}))
         active = app.subprocess.CompletedProcess([], 0, stdout="")
-        no_peers = app.subprocess.CompletedProcess([], 0, stdout="")
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / "huou07-wg-easy.service"
             unit.touch()
-            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", side_effect=lambda name: {"tailscale": "/usr/bin/tailscale", "wg": "/usr/bin/wg"}.get(name)), patch("web.app.wg_easy_needs_setup", return_value=True), patch("web.app.subprocess.run", side_effect=[tailnet, active, no_peers]):
+            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value="/usr/bin/tailscale"), patch("web.app.wg_status_sample", return_value={"peer_count": 0, "latest_handshake_at": None}), patch("web.app.wg_easy_needs_setup", return_value=True), patch("web.app.subprocess.run", side_effect=[tailnet, active]):
                 with urlopen(f"{self.base}/api/vpn") as response:
                     data = json.load(response)
         self.assertEqual(data["wireguard"], {"available": True, "connected": False, "state": "Needs owner setup", "peer_count": 0})
         self.assertEqual(data["tailscale"]["state"], "Disconnected")
         self.assertEqual(data["state"], "Needs owner setup")
+
+    def test_vpn_status_reports_recent_wireguard_handshake_without_peer_identity(self):
+        tailnet = app.subprocess.CompletedProcess([], 0, stdout=json.dumps({"BackendState": "Stopped"}))
+        active = app.subprocess.CompletedProcess([], 0, stdout="")
+        now = 1700000010
+        with tempfile.TemporaryDirectory() as directory:
+            unit = Path(directory) / "huou07-wg-easy.service"
+            unit.touch()
+            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value="/usr/bin/tailscale"), patch("web.app.wg_status_sample", return_value={"peer_count": 2, "latest_handshake_at": now - 10}), patch("web.app.subprocess.run", side_effect=[tailnet, active]), patch("web.app.time.time", return_value=now):
+                with urlopen(f"{self.base}/api/vpn") as response:
+                    payload = response.read().decode()
+        data = json.loads(payload)
+        self.assertEqual(data["wireguard"], {"available": True, "connected": True, "state": "Connected", "peer_count": 2, "last_handshake_seconds": 10})
+        self.assertNotIn("public-key", payload)
 
     def test_vpn_status_degrades_when_clients_are_unavailable(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -243,6 +256,15 @@ class DashboardApiTests(unittest.TestCase):
             self.assertTrue(app.wg_easy_needs_setup())
         with patch("web.app.build_opener", side_effect=lambda *args: Opener("/login")):
             self.assertFalse(app.wg_easy_needs_setup())
+
+    def test_wg_status_sample_rejects_stale_data_and_returns_only_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "status.json"
+            path.write_text(json.dumps({"available": True, "peer_count": 1, "latest_handshake_at": 1700000000, "sampled_at": 1700000000, "public_key": "private-peer-key"}))
+            with patch.dict(os.environ, {"WG_STATUS_FILE": str(path)}), patch("web.app.time.time", return_value=1700000010):
+                self.assertEqual(app.wg_status_sample(), {"peer_count": 1, "latest_handshake_at": 1700000000})
+            with patch.dict(os.environ, {"WG_STATUS_FILE": str(path)}), patch("web.app.time.time", return_value=1700000100):
+                self.assertIsNone(app.wg_status_sample())
 
     def test_app_registry_checks_configured_health_and_hides_probe_url(self):
         with tempfile.TemporaryDirectory() as directory:

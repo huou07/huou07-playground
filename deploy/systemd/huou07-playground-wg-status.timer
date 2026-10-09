@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh huou07 playground WireGuard status
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=15s
+AccuracySec=2s
+Unit=huou07-playground-wg-status.service
+
+[Install]
+WantedBy=timers.target
