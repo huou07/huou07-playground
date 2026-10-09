@@ -23,6 +23,8 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
+WG_EASY_SERVICE = "huou07-wg-easy.service"
+WG_EASY_UNIT = Path("/etc/systemd/system") / WG_EASY_SERVICE
 _prev_cpu: tuple[int, int, float] | None = None
 _prev_net: tuple[float, dict[str, tuple[int, int]]] | None = None
 _prev_processes: dict[int, tuple[int, int]] = {}
@@ -416,17 +418,60 @@ def cockpit_files_status() -> dict:
 
 def vpn_status() -> dict:
     if platform.system() != "Linux":
-        return {"available": False, "connected": False, "reason": "VPN status is available when deployed on Linux."}
+        unavailable = {"available": False, "connected": False, "state": "Unavailable"}
+        return {**unavailable, "wireguard": unavailable, "tailscale": unavailable}
     client = shutil.which("tailscale")
     if not client:
-        return {"available": False, "connected": False, "reason": "No supported VPN client was found."}
-    try:
-        result = subprocess.run([client, "status", "--json"], capture_output=True, text=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
-        data = json.loads(result.stdout) if result.returncode == 0 else {}
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        data = {}
-    connected = data.get("BackendState") == "Running"
-    return {"available": True, "connected": connected, "state": "Connected" if connected else "Disconnected"}
+        tailnet = {"available": False, "connected": False, "state": "Unavailable"}
+    else:
+        try:
+            result = subprocess.run([client, "status", "--json"], capture_output=True, text=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            data = json.loads(result.stdout) if result.returncode == 0 else {}
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            data = {}
+        connected = data.get("BackendState") == "Running"
+        tailnet = {"available": True, "connected": connected, "state": "Connected" if connected else "Disconnected"}
+
+    if not WG_EASY_UNIT.is_file():
+        wireguard = {"available": False, "connected": False, "state": "Not installed", "peer_count": 0}
+    else:
+        try:
+            service = subprocess.run(["systemctl", "is-active", "--quiet", WG_EASY_SERVICE], capture_output=True, text=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+        except (OSError, subprocess.TimeoutExpired):
+            service = None
+        wg = shutil.which("wg")
+        if service is None or service.returncode != 0 or not wg:
+            wireguard = {"available": False, "connected": False, "state": "Stopped", "peer_count": 0}
+        else:
+            try:
+                result = subprocess.run([wg, "show", "wg0", "latest-handshakes"], capture_output=True, text=True, timeout=2, check=False, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+                peers = []
+                if result.returncode == 0:
+                    for line in result.stdout.splitlines():
+                        fields = line.split()
+                        if len(fields) == 2:
+                            try:
+                                peers.append(int(fields[1]))
+                            except ValueError:
+                                pass
+                if result.returncode != 0:
+                    wireguard = {"available": False, "connected": False, "state": "Waiting for setup", "peer_count": 0}
+                elif not peers:
+                    wireguard = {"available": True, "connected": False, "state": "Needs owner setup", "peer_count": 0}
+                else:
+                    latest = max(peers)
+                    age = max(0, int(time.time()) - latest) if latest else None
+                    connected = age is not None and age <= 180
+                    wireguard = {
+                        "available": True,
+                        "connected": connected,
+                        "state": "Connected" if connected else "Waiting for peer",
+                        "peer_count": len(peers),
+                        "last_handshake_seconds": age,
+                    }
+            except (OSError, subprocess.TimeoutExpired):
+                wireguard = {"available": False, "connected": False, "state": "Unavailable", "peer_count": 0}
+    return {"available": wireguard["available"], "connected": wireguard["connected"], "state": wireguard["state"], "wireguard": wireguard, "tailscale": tailnet}
 
 
 def valid_app_url(value: object) -> bool:

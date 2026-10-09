@@ -191,20 +191,44 @@ class DashboardApiTests(unittest.TestCase):
 
     def test_vpn_status_reports_tailnet_connection_without_private_details(self):
         result = app.subprocess.CompletedProcess([], 0, stdout=json.dumps({"BackendState": "Running", "Self": {"Online": True, "TailscaleIPs": ["100.64.0.1"]}, "Peer": {"private-host": {"DNSName": "private.example.invalid"}}}))
-        with patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value="/usr/bin/tailscale"), patch("web.app.subprocess.run", return_value=result) as run:
-            with urlopen(f"{self.base}/api/vpn") as response:
-                payload = response.read().decode()
-            self.assertEqual(json.loads(payload), {"available": True, "connected": True, "state": "Connected"})
-            self.assertNotIn("100.64.0.1", payload)
-            self.assertNotIn("private.example.invalid", payload)
-            self.assertEqual(run.call_args.args[0], ["/usr/bin/tailscale", "status", "--json"])
+        with tempfile.TemporaryDirectory() as directory:
+            unit = Path(directory) / "huou07-wg-easy.service"
+            unit.touch()
+            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", side_effect=lambda name: "/usr/bin/tailscale" if name == "tailscale" else None), patch("web.app.subprocess.run", return_value=result) as run:
+                with urlopen(f"{self.base}/api/vpn") as response:
+                    payload = response.read().decode()
+        data = json.loads(payload)
+        self.assertEqual(data["tailscale"], {"available": True, "connected": True, "state": "Connected"})
+        self.assertEqual(data["wireguard"], {"available": False, "connected": False, "state": "Stopped", "peer_count": 0})
+        self.assertEqual(data["state"], "Stopped")
+        self.assertNotIn("100.64.0.1", payload)
+        self.assertNotIn("private.example.invalid", payload)
+        self.assertEqual(run.call_args.args[0], ["systemctl", "is-active", "--quiet", app.WG_EASY_SERVICE])
 
-    def test_vpn_status_degrades_when_client_is_unavailable(self):
-        with patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value=None):
-            with urlopen(f"{self.base}/api/vpn") as response:
-                payload = json.load(response)
+    def test_vpn_status_reports_wireguard_setup_without_peer_details(self):
+        tailnet = app.subprocess.CompletedProcess([], 0, stdout=json.dumps({"BackendState": "Stopped"}))
+        active = app.subprocess.CompletedProcess([], 0, stdout="")
+        no_peers = app.subprocess.CompletedProcess([], 0, stdout="")
+        with tempfile.TemporaryDirectory() as directory:
+            unit = Path(directory) / "huou07-wg-easy.service"
+            unit.touch()
+            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", side_effect=lambda name: {"tailscale": "/usr/bin/tailscale", "wg": "/usr/bin/wg"}.get(name)), patch("web.app.subprocess.run", side_effect=[tailnet, active, no_peers]):
+                with urlopen(f"{self.base}/api/vpn") as response:
+                    data = json.load(response)
+        self.assertEqual(data["wireguard"], {"available": True, "connected": False, "state": "Needs owner setup", "peer_count": 0})
+        self.assertEqual(data["tailscale"]["state"], "Disconnected")
+        self.assertEqual(data["state"], "Needs owner setup")
+
+    def test_vpn_status_degrades_when_clients_are_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            unit = Path(directory) / "missing.service"
+            with patch("web.app.WG_EASY_UNIT", unit), patch("web.app.platform.system", return_value="Linux"), patch("web.app.shutil.which", return_value=None):
+                with urlopen(f"{self.base}/api/vpn") as response:
+                    payload = json.load(response)
         self.assertFalse(payload["available"])
         self.assertFalse(payload["connected"])
+        self.assertEqual(payload["wireguard"]["state"], "Not installed")
+        self.assertEqual(payload["tailscale"]["state"], "Unavailable")
 
     def test_app_registry_checks_configured_health_and_hides_probe_url(self):
         with tempfile.TemporaryDirectory() as directory:
