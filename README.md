@@ -73,7 +73,7 @@ The dashboard uses `turbostat`'s `PkgWatt` summary when supported. On Debian, `t
 
 ## Optional Intel GPU telemetry
 
-On Debian 13 systems using Intel's `i915` driver, install [`intel-gpu-tools`](https://packages.debian.org/trixie/intel-gpu-tools) with `sudo apt install intel-gpu-tools`, then install or upgrade huou07 playground. The installer detects i915 and enables a 30-second one-shot collector. It grants only `CAP_PERFMON` and access through the normal `video` and `render` groups. The web service reads the atomic sanitized sample and has no GPU device or performance-counter access. Intel GPU usage is the busiest engine percentage; shared system memory is not reported as dedicated VRAM.
+On Debian 13 systems using Intel's `i915` driver, install [`intel-gpu-tools`](https://packages.debian.org/trixie/intel-gpu-tools) with `sudo apt install intel-gpu-tools`, then install or upgrade huou07 playground. The installer detects i915 and enables a 30-second one-shot collector. This kernel's system-wide i915 metrics require privileged access, so the fixed collector runs as a bounded system service with only `CAP_SYS_ADMIN`, no network, restricted namespaces, and mount/module/reboot/swap syscalls blocked. It accesses the GPU through the normal `video` and `render` groups. The web service reads only the atomic sanitized sample and has no GPU device or performance-counter access. Intel GPU usage is the busiest engine percentage; shared system memory is not reported as dedicated VRAM.
 
 ## Optional SSH terminal and system management
 
