@@ -118,6 +118,21 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await popup.close();
 
   await page.locator('#sidebar [data-route="settings"]').click();
+  await page.locator('#app-form input[name="name"]').fill('Setup Acceptance App');
+  await page.locator('#app-form input[name="url"]').fill(`${process.env.HUOU07_E2E_APP_URL}setup/1`);
+  await page.locator('#app-form input[name="description"]').fill('Temporary application with a first-run setup wizard.');
+  await page.locator('#app-form input[name="health_url"]').fill(`${process.env.HUOU07_E2E_APP_URL}setup-health`);
+  await page.locator('#app-save').click();
+  await page.locator('#sidebar [data-route="apps"]').click();
+  const setupCard = page.locator('.app-card').filter({ hasText: 'Setup Acceptance App' });
+  await expect(setupCard.locator('.app-state')).toHaveText('Owner setup required');
+  const setupPopupPromise = page.waitForEvent('popup');
+  await setupCard.getByRole('link', { name: 'Open Setup Acceptance App' }).click();
+  const setupPopup = await setupPopupPromise;
+  await expect(setupPopup.getByRole('heading', { name: 'Complete owner setup' })).toBeVisible();
+  await setupPopup.close();
+
+  await page.locator('#sidebar [data-route="settings"]').click();
   await page.locator('#app-form input[name="name"]').fill('Fallback Icon App');
   await page.locator('#app-form input[name="url"]').fill('https://not-used.example.invalid/');
   await page.locator('#app-save').click();
@@ -133,6 +148,9 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   const appRow = page.locator('.app-registry-row').filter({ hasText: 'Browser Acceptance App' });
   await appRow.getByRole('button', { name: 'Remove' }).click();
   await expect(appRow).toHaveCount(0);
+  const setupRow = page.locator('.app-registry-row').filter({ hasText: 'Setup Acceptance App' });
+  await setupRow.getByRole('button', { name: 'Remove' }).click();
+  await expect(setupRow).toHaveCount(0);
   await expect(pageErrors).toEqual([]);
   await expect(consoleErrors).toEqual([]);
 });

@@ -447,12 +447,19 @@ class DashboardApiTests(unittest.TestCase):
         with patch("web.app.build_opener", return_value=opener):
             self.assertEqual(app.app_health("http://127.0.0.1:4096/", "GET"), "authentication_required")
 
-    def test_app_health_reports_redirecting_setup_page_as_available(self):
-        error = HTTPError("http://127.0.0.1:51821/", 307, "Temporary Redirect", {}, None)
+    def test_app_health_reports_setup_redirect_as_owner_setup_required(self):
+        error = HTTPError("http://127.0.0.1:51821/", 307, "Temporary Redirect", {"Location": "/setup/1"}, None)
         opener = Mock()
         opener.open.side_effect = error
         with patch("web.app.build_opener", return_value=opener):
-            self.assertEqual(app.app_health("http://127.0.0.1:51821/", "GET"), "available")
+            self.assertEqual(app.app_health("http://127.0.0.1:51821/", "GET"), "setup_required")
+
+    def test_app_health_keeps_non_setup_redirects_available(self):
+        error = HTTPError("http://127.0.0.1:4000/", 302, "Temporary Redirect", {"Location": "/login"}, None)
+        opener = Mock()
+        opener.open.side_effect = error
+        with patch("web.app.build_opener", return_value=opener):
+            self.assertEqual(app.app_health("http://127.0.0.1:4000/", "GET"), "available")
 
     def test_app_registry_rejects_script_urls(self):
         with tempfile.TemporaryDirectory() as directory:

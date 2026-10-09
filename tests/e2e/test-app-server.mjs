@@ -12,6 +12,16 @@ const server = http.createServer((request, response) => {
     response.end('{"ok":true}');
     return;
   }
+  if (request.url === '/setup-health') {
+    response.writeHead(307, { location: '/setup/1' });
+    response.end();
+    return;
+  }
+  if (request.url === '/setup/1') {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<!doctype html><title>Owner setup</title><h1>Complete owner setup</h1>');
+    return;
+  }
   if (request.url === '/') {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end('<!doctype html><title>Acceptance app</title><h1>Acceptance app launched</h1>');

@@ -627,6 +627,8 @@ def app_health(url: str, method: str) -> str:
             response.close()
     except HTTPError as error:
         if 300 <= error.code < 400:
+            if urlsplit(error.headers.get("Location", "")).path.startswith("/setup/"):
+                return "setup_required"
             return "available"
         return "authentication_required" if error.code == 401 else "unavailable"
     except (OSError, URLError, ValueError):
