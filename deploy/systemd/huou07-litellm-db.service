@@ -30,7 +30,6 @@ ProtectSystem=strict
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-ProtectHostname=yes
 ProtectClock=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
