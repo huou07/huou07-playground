@@ -56,10 +56,14 @@ Before uninstalling or making a risky change, run `sudo python3 /opt/huou07-play
 To open the dashboard from a computer that can SSH to the server, create a local tunnel:
 
 ```sh
-ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 <your-ssh-alias>
+ssh -L 8765:127.0.0.1:8765 -L 9090:127.0.0.1:9090 -L 4096:127.0.0.1:4096 <your-ssh-alias>
 ```
 
 Then open `http://127.0.0.1:8765` on that computer. This is a private access method over SSH; direct LAN/VPN browser access is not enabled yet. Keep the SSH tunnel running while using the dashboard.
+
+### OpenCode CLI and web interface
+
+Install OpenCode for the SSH owner's account with the official installer: `curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.35 --no-modify-path`. Then run `sh deploy/install-opencode-launcher.sh` as that same account. The launcher keeps OpenCode's own configuration, authentication, sessions, and cache under `~/.opencode`, separate from other tools. The owner must sign in with `opencode auth login`; do not copy credentials from another machine. From the intended project directory, run `opencode web --hostname 127.0.0.1 --port 4096` and open `http://127.0.0.1:4096` through the SSH tunnel above. OpenCode's permission rules are separate from the managed Codex profile; isolated, tested coding-agent execution is still required before using it for unattended work.
 
 ### Codex CLI on the server
 
