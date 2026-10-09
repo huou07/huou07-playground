@@ -196,12 +196,16 @@ class DashboardApiTests(unittest.TestCase):
     def test_files_endpoint_reports_installed_package_and_cockpit_availability(self):
         with patch("web.app.platform.system", return_value="Linux"), patch.object(app.Path, "is_file", return_value=True), patch("web.app.subprocess.run", return_value=app.subprocess.CompletedProcess([], 0)):
             with urlopen(f"{self.base}/api/files") as response:
-                self.assertEqual(json.load(response), {"available": True, "installed": True})
+                self.assertEqual(json.load(response), {"available": True, "installed": True, "move_available": True})
+        with patch("web.app.platform.system", return_value="Linux"), patch.object(app.Path, "is_file", autospec=True, side_effect=lambda path: str(path).endswith("/files/manifest.json")), patch("web.app.subprocess.run", return_value=app.subprocess.CompletedProcess([], 0)):
+            with urlopen(f"{self.base}/api/files") as response:
+                self.assertEqual(json.load(response), {"available": True, "installed": True, "move_available": False})
         with patch("web.app.platform.system", return_value="Linux"), patch.object(app.Path, "is_file", return_value=False):
             with urlopen(f"{self.base}/api/files") as response:
                 result = json.load(response)
             self.assertEqual(result["available"], False)
             self.assertEqual(result["installed"], False)
+            self.assertFalse(result["move_available"])
             self.assertIn("not installed", result["reason"])
 
     def test_app_registry_mutations_require_local_same_origin(self):

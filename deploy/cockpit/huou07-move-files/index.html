@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Move files</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="../base1/cockpit.js"></script>
+  <script src="index.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Move files</h1>
+    <p>Move one file or directory to an existing directory. The destination must not already contain an item with the same name. Your Linux account permissions apply.</p>
+    <form id="move-form">
+      <label for="source-path">Source path</label>
+      <input id="source-path" name="source" type="text" autocomplete="off" spellcheck="false" placeholder="/home/you/Downloads/report.pdf" required>
+      <label for="destination-path">Destination directory</label>
+      <input id="destination-path" name="destination" type="text" autocomplete="off" spellcheck="false" placeholder="/home/you/Documents" required>
+      <button id="move-button" type="submit">Move</button>
+    </form>
+    <p id="move-status" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "version": 0,
+  "menu": {
+    "index": {
+      "label": "Move files",
+      "path": "index.html",
+      "order": 90
+    }
+  }
+}

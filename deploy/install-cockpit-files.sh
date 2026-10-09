@@ -1,5 +1,18 @@
 #!/bin/sh
 set -eu
+SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+MOVE_PACKAGE=$SOURCE/deploy/cockpit/huou07-move-files
+
+install_move_package() {
+  if [ ! -f "$MOVE_PACKAGE/manifest.json" ] || [ ! -f "$MOVE_PACKAGE/move" ]; then
+    echo "The Cockpit Move files are missing from this checkout." >&2
+    exit 1
+  fi
+  install -d -o root -g root -m 0755 /usr/share/cockpit/huou07-move-files /usr/libexec
+  install -o root -g root -m 0644 "$MOVE_PACKAGE/index.html" "$MOVE_PACKAGE/index.js" "$MOVE_PACKAGE/style.css" /usr/share/cockpit/huou07-move-files/
+  install -o root -g root -m 0755 "$MOVE_PACKAGE/move" /usr/libexec/huou07-move-files
+  install -o root -g root -m 0644 "$MOVE_PACKAGE/manifest.json" /usr/share/cockpit/huou07-move-files/manifest.json
+}
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run this script as root (for example: sudo ./deploy/install-cockpit-files.sh)." >&2
@@ -21,7 +34,8 @@ fi
 if dpkg-query -W -f='${Status}' cockpit-files 2>/dev/null | grep -q 'install ok installed'; then
   installed=$(dpkg-query -W -f='${Version}' cockpit-files)
   test -f /usr/share/cockpit/files/manifest.json || { echo "Cockpit Files is installed without its expected package manifest." >&2; exit 1; }
-  echo "Cockpit Files $installed is already installed."
+  install_move_package
+  echo "Cockpit Files $installed is installed; Move files support is available."
   exit 0
 fi
 
@@ -32,4 +46,5 @@ if printf '%s\n' "$simulation" | grep -q '^Remv '; then
 fi
 apt-get -y -t "$suite" --no-install-recommends install "cockpit-files=$version"
 test -f /usr/share/cockpit/files/manifest.json || { echo "Cockpit Files installed without its expected package manifest." >&2; exit 1; }
-echo "Installed Cockpit Files $version. Reload Cockpit to use the file browser."
+install_move_package
+echo "Installed Cockpit Files $version and Move files support. Reload Cockpit to use the file browser."

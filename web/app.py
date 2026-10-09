@@ -459,14 +459,18 @@ def cockpit_status() -> dict:
 def cockpit_files_status() -> dict:
     """Report whether the system-wide Cockpit Files package is installed and usable."""
     if platform.system() != "Linux":
-        return {"available": False, "installed": False, "reason": "Cockpit Files is available when deployed on Linux."}
+        return {"available": False, "installed": False, "move_available": False, "reason": "Cockpit Files is available when deployed on Linux."}
     package = any((Path(root) / "files" / "manifest.json").is_file() for root in ("/usr/share/cockpit", "/usr/local/share/cockpit"))
+    move_package = (
+        any((Path(root) / "huou07-move-files" / "manifest.json").is_file() for root in ("/usr/share/cockpit", "/usr/local/share/cockpit"))
+        and Path("/usr/libexec/huou07-move-files").is_file()
+    )
     if not package:
-        return {"available": False, "installed": False, "reason": "Cockpit Files is not installed."}
+        return {"available": False, "installed": False, "move_available": move_package, "reason": "Cockpit Files is not installed."}
     cockpit = cockpit_status()
     if not cockpit["available"]:
-        return {"available": False, "installed": True, "reason": "Cockpit Files is installed, but Cockpit is unavailable."}
-    return {"available": True, "installed": True}
+        return {"available": False, "installed": True, "move_available": move_package, "reason": "Cockpit Files is installed, but Cockpit is unavailable."}
+    return {"available": True, "installed": True, "move_available": move_package}
 
 
 def wg_easy_needs_setup() -> bool:

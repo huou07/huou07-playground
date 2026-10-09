@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+fail() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
+
+[ "$#" -eq 2 ] || fail "Provide a source path and destination directory."
+source=$1
+destination=$2
+case "$source" in /*) ;; *) fail "Source path must be absolute." ;; esac
+case "$destination" in /*) ;; *) fail "Destination directory must be absolute." ;; esac
+source_name=${source##*/}
+[ -n "$source_name" ] && [ "$source_name" != . ] && [ "$source_name" != .. ] || fail "Choose a file or directory, not the filesystem root."
+source_parent_input=${source%/*}
+[ -n "$source_parent_input" ] || source_parent_input=/
+source_parent=$(CDPATH= cd -P "$source_parent_input" 2>/dev/null && pwd -P) || fail "The source directory does not exist or is not accessible."
+destination_dir=$(CDPATH= cd -P "$destination" 2>/dev/null && pwd -P) || fail "The destination directory does not exist or is not accessible."
+[ -d "$destination_dir" ] || fail "The destination must be a directory."
+source_path=$source_parent/$source_name
+[ -e "$source_path" ] || [ -L "$source_path" ] || fail "The source does not exist or is not accessible."
+destination_path=$destination_dir/$source_name
+[ "$source_path" != "$destination_path" ] || fail "The source is already in that directory."
+[ ! -e "$destination_path" ] && [ ! -L "$destination_path" ] || fail "An item with that name already exists in the destination."
+if [ -d "$source_path" ]; then
+  case "$destination_dir/" in "$source_path/"*) fail "A directory cannot be moved into itself." ;; esac
+fi
+mv -n "$source_path" "$destination_dir"
+if [ -e "$source_path" ] || [ -L "$source_path" ]; then
+  fail "The move did not complete; the source is still in place."
+fi
+[ -e "$destination_path" ] || [ -L "$destination_path" ] || fail "The move could not be verified."
+printf '%s\n' "$destination_path"

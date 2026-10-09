@@ -90,7 +90,7 @@ On 2026-10-09, a real Chromium session connected to Cockpit Files through the SS
 
 - Repeated initial-page browser load samples and dashboard-open versus closed CPU/memory over longer intervals.
 - CPU and memory with the dashboard open versus closed over longer samples.
-- Exact Cockpit Files upload/download throughput and behavior after interruption or resume. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed; the UI exposes no Move or Cut action, and owner-specific permissions plus actual permission changes remain unverified.
+- Exact Cockpit Files upload/download throughput and behavior after interruption or resume. The 16-GiB integrity run completed through a disposable account. A small copy/paste and download check passed, and the companion Move files page passed file-move and collision-safety checks. Owner-specific permissions and actual permission changes remain unverified.
 - WireGuard latency and throughput after owner setup and an external handshake. Tailscale Serve remains disabled.
 - Provider request latency and memory under authenticated LiteLLM / OmniRoute traffic.
 - OmniRoute dashboard navigation and API timing through the SSH tunnel after owner login.
