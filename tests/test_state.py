@@ -13,6 +13,13 @@ from deploy import state
 
 
 class StateArchiveTests(unittest.TestCase):
+    def test_litellm_podman_uses_the_service_account_home_as_working_directory(self):
+        account = type("Account", (), {"pw_dir": "/var/lib/huou07-litellm"})()
+        with mock.patch.object(state.pwd, "getpwnam", return_value=account), \
+             mock.patch.object(state.subprocess, "run") as run:
+            state.run_litellm_podman(["ps"])
+        self.assertEqual(run.call_args.kwargs["cwd"], account.pw_dir)
+
     def test_litellm_backup_restore_round_trip_keeps_secrets_private(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

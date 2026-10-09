@@ -299,7 +299,7 @@ def run_litellm_podman(args: list[str], stdin=None, stdout=None) -> subprocess.C
         f"HOME={account.pw_dir}", "XDG_RUNTIME_DIR=/run/huou07-litellm",
         "/usr/bin/podman", *args,
     ]
-    return subprocess.run(command, stdin=stdin, stdout=stdout, check=True)
+    return subprocess.run(command, stdin=stdin, stdout=stdout, check=True, cwd=account.pw_dir)
 
 
 def restore_litellm_database(dump: bytes, postgres_password: str) -> None:
