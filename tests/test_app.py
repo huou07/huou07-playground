@@ -211,6 +211,11 @@ class DashboardApiTests(unittest.TestCase):
             urlopen(request)
         self.assertEqual(error.exception.code, 403)
 
+    def test_app_registry_mutations_allow_same_origin_on_the_bound_wireguard_address(self):
+        self.assertTrue(app.dashboard_same_origin_request_allowed("http://10.77.0.1:8765", "10.77.0.1:8765", "10.77.0.1"))
+        self.assertFalse(app.dashboard_same_origin_request_allowed("http://attacker.invalid:8765", "attacker.invalid:8765", "10.77.0.1"))
+        self.assertFalse(app.dashboard_same_origin_request_allowed("http://10.77.0.2:8765", "10.77.0.2:8765", "10.77.0.1"))
+
     def test_app_registry_update_preserves_health_probe_and_limits_it_to_loopback(self):
         with tempfile.TemporaryDirectory() as directory:
             registry = Path(directory) / "apps.json"

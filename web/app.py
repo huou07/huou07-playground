@@ -577,6 +577,31 @@ def valid_health_url(value: object) -> bool:
         return False
 
 
+def dashboard_same_origin_request_allowed(origin_header: str, host_header: str, bind_address: str) -> bool:
+    """Allow mutations only from the origin used to reach this exact listener."""
+    origin = urlsplit(origin_header)
+    try:
+        request = urlsplit(f"http://{host_header}")
+    except ValueError:
+        return False
+    request_host = request.hostname
+    if (
+        origin.scheme not in {"http", "https"}
+        or origin.netloc.casefold() != host_header.casefold()
+        or request_host is None
+        or request.username is not None
+        or request.password is not None
+        or request.path
+        or request.query
+        or request.fragment
+    ):
+        return False
+    loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+    if bind_address in loopback_hosts:
+        return request_host in loopback_hosts
+    return request_host == bind_address
+
+
 def app_health(url: str, method: str) -> str:
     class NoRedirect(HTTPRedirectHandler):
         def redirect_request(self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str) -> None:
@@ -745,14 +770,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/api/apps":
             self.send_error(404)
             return
-        origin = urlsplit(self.headers.get("Origin", ""))
         host_header = self.headers.get("Host", "")
-        try:
-            request_host = urlsplit(f"http://{host_header}").hostname
-        except ValueError:
-            request_host = None
-        if origin.scheme not in {"http", "https"} or origin.netloc.casefold() != host_header.casefold() or request_host not in {"127.0.0.1", "localhost", "::1"}:
-            self.send_json(403, {"error": "Application changes must come from this local dashboard."})
+        bind_address = self.server.server_address[0]
+        if not dashboard_same_origin_request_allowed(self.headers.get("Origin", ""), host_header, bind_address):
+            self.send_json(403, {"error": "Application changes must come from this dashboard."})
             return
         if self.headers.get_content_type() != "application/json":
             self.send_json(415, {"error": "Send application/json."})
