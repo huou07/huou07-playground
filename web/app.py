@@ -709,11 +709,25 @@ def app_icon(name: str) -> tuple[str, bytes] | None:
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError, StopIteration):
         return None
 
-    class NoRedirect(HTTPRedirectHandler):
-        def redirect_request(self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str) -> None:
-            return None
+    class SameOriginRedirect(HTTPRedirectHandler):
+        max_redirections = 3
+        max_repeats = 2
 
-    opener = build_opener(ProxyHandler({}), NoRedirect())
+        def redirect_request(self, req: Request, fp: object, code: int, msg: str, headers: object, newurl: str) -> Request | None:
+            try:
+                target = urlsplit(newurl)
+                same_origin = (
+                    target.scheme == parsed.scheme
+                    and target.hostname is not None
+                    and target.hostname.casefold() == parsed.hostname.casefold()
+                    and (target.port or (443 if target.scheme == "https" else 80)) == (parsed.port or (443 if parsed.scheme == "https" else 80))
+                    and target.username is None and target.password is None
+                )
+            except ValueError:
+                same_origin = False
+            return super().redirect_request(req, fp, code, msg, headers, newurl) if same_origin else None
+
+    opener = build_opener(ProxyHandler({}), SameOriginRedirect())
     for extension, allowed_types in (("ico", {"image/x-icon", "image/vnd.microsoft.icon"}), ("svg", {"image/svg+xml"})):
         icon_url = urlunsplit((parsed.scheme, parsed.netloc, f"/favicon.{extension}", "", ""))
         try:

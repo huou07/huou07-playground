@@ -346,7 +346,18 @@ class DashboardApiTests(unittest.TestCase):
     def test_app_icon_uses_only_a_registered_loopback_favicon_and_falls_back_cleanly(self):
         class IconHandler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/favicon.svg":
+                if self.path == "/favicon.ico":
+                    self.send_response(302)
+                    self.send_header("Location", self.server.redirect_target)
+                    self.end_headers()
+                elif self.path == "/icons/favicon.ico":
+                    body = b"local icon"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/x-icon")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/favicon.svg":
                     body = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1H0z"/></svg>'
                     self.send_response(200)
                     self.send_header("Content-Type", "image/svg+xml")
@@ -359,25 +370,51 @@ class DashboardApiTests(unittest.TestCase):
             def log_message(self, fmt, *args):
                 pass
 
-        with ThreadingHTTPServer(("127.0.0.1", 0), IconHandler) as icon_server, tempfile.TemporaryDirectory() as directory:
-            icon_thread = threading.Thread(target=icon_server.serve_forever, daemon=True)
-            icon_thread.start()
+        class ExternalIconHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.server.requests += 1
+                self.send_response(200)
+                self.send_header("Content-Type", "image/x-icon")
+                self.end_headers()
+
+            def log_message(self, fmt, *args):
+                pass
+
+        with ThreadingHTTPServer(("127.0.0.1", 0), ExternalIconHandler) as external_server, ThreadingHTTPServer(("127.0.0.1", 0), IconHandler) as icon_server, ThreadingHTTPServer(("127.0.0.1", 0), IconHandler) as redirect_server, tempfile.TemporaryDirectory() as directory:
+            external_server.requests = 0
+            icon_server.redirect_target = "/icons/favicon.ico"
+            redirect_server.redirect_target = f"http://127.0.0.1:{external_server.server_port}/favicon.ico"
+            servers = [external_server, icon_server, redirect_server]
+            threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in servers]
+            for thread in threads:
+                thread.start()
             registry = Path(directory) / "apps.json"
-            registry.write_text(json.dumps({"apps": [{"name": "Icon App", "url": f"http://127.0.0.1:{icon_server.server_port}/"}]}))
+            apps = [
+                {"name": "Icon App", "url": f"http://127.0.0.1:{icon_server.server_port}/"},
+                {"name": "Redirect App", "url": f"http://127.0.0.1:{redirect_server.server_port}/"},
+                {"name": "Remote App", "url": "https://example.invalid/"},
+            ]
+            registry.write_text(json.dumps({"apps": apps}))
             try:
                 with patch.dict(os.environ, {"APPS_FILE": str(registry)}):
                     with urlopen(f"{self.base}/api/apps/icon?name=Icon%20App") as response:
-                        self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
+                        self.assertEqual(response.headers.get_content_type(), "image/x-icon")
                         self.assertEqual(response.headers["Content-Security-Policy"], "default-src 'none'; sandbox")
-                        self.assertIn(b"<svg", response.read())
+                        self.assertEqual(response.read(), b"local icon")
 
-                    registry.write_text(json.dumps({"apps": [{"name": "Remote App", "url": "https://example.invalid/"}]}))
+                    with urlopen(f"{self.base}/api/apps/icon?name=Redirect%20App") as response:
+                        self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
+                        self.assertIn(b"<svg", response.read())
+                    self.assertEqual(external_server.requests, 0)
+
                     with urlopen(f"{self.base}/api/apps/icon?name=Remote%20App") as response:
                         self.assertEqual(response.headers.get_content_type(), "image/gif")
                         self.assertEqual(response.read(), app.APP_ICON_PLACEHOLDER)
             finally:
-                icon_server.shutdown()
-                icon_thread.join(timeout=2)
+                for server in servers:
+                    server.shutdown()
+                for thread in threads:
+                    thread.join(timeout=2)
 
     def test_app_health_reports_authentication_required(self):
         error = HTTPError("http://127.0.0.1:4096/", 401, "Unauthorized", {}, None)
