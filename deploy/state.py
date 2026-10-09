@@ -8,10 +8,12 @@ import datetime
 import grp
 import json
 import os
+import shutil
 import sys
+import subprocess
 import tarfile
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web.app import validate_app_entries
@@ -21,9 +23,14 @@ CONFIG = Path("/etc/huou07-playground/apps.json")
 BACKUP_DIR = Path("/var/backups/huou07-playground")
 MAX_CONFIG_BYTES = 1_000_000
 MAX_BRANDING_BYTES = 5_000_000
+MAX_OPENCODE_BYTES = 1_073_741_824
+MAX_OPENCODE_FILES = 20_000
+OPENCODE_STATE = Path("/var/lib/huou07-opencode")
+OPENCODE_SERVICE = "huou07-opencode-web.service"
+OPENCODE_UNIT = Path("/etc/systemd/system") / OPENCODE_SERVICE
 
 
-def create_backup(config: Path, branding: Path, directory: Path) -> Path:
+def create_backup(config: Path, branding: Path, directory: Path, opencode_state: Path = OPENCODE_STATE) -> Path:
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if directory.is_symlink() or not directory.is_dir() or directory.stat().st_uid != os.geteuid():
         raise ValueError("Backup destination must be a real directory.")
@@ -36,12 +43,41 @@ def create_backup(config: Path, branding: Path, directory: Path) -> Path:
         with tarfile.open(temporary, "w:gz") as archive:
             add_state_file(archive, config, "apps.json", MAX_CONFIG_BYTES, required=True)
             add_state_file(archive, branding, "branding.png", MAX_BRANDING_BYTES, required=False)
+            add_opencode_state(archive, opencode_state)
         os.chmod(temporary, 0o600)
         os.replace(temporary, destination)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
     return destination
+
+
+def add_opencode_state(archive: tarfile.TarFile, source: Path) -> None:
+    if source.is_symlink():
+        raise ValueError("Refusing to back up a symbolic link: OpenCode state")
+    if not source.exists():
+        return
+    if not source.is_dir():
+        raise ValueError("OpenCode state is not a directory.")
+    files = []
+    total = 0
+    allowed_roots = {"config", "data", "state", "cache"}
+    for path in sorted(source.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("OpenCode state contains a symbolic link.")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError("OpenCode state contains an unsupported file type.")
+        relative = path.relative_to(source)
+        if not relative.parts or relative.parts[0] not in allowed_roots or any(part in {".", ".."} for part in relative.parts):
+            raise ValueError("OpenCode state contains an unexpected path.")
+        total += path.stat().st_size
+        files.append((path, relative))
+        if len(files) > MAX_OPENCODE_FILES or total > MAX_OPENCODE_BYTES:
+            raise ValueError("OpenCode state exceeds the private backup limit.")
+    for path, relative in files:
+        archive.add(path, arcname=PurePosixPath("opencode", *relative.parts).as_posix(), recursive=False)
 
 
 def add_state_file(archive: tarfile.TarFile, source: Path, name: str, limit: int, required: bool) -> None:
@@ -54,16 +90,35 @@ def add_state_file(archive: tarfile.TarFile, source: Path, name: str, limit: int
     archive.add(source, arcname=name, recursive=False)
 
 
-def read_backup(backup: Path) -> tuple[bytes, bytes | None]:
+def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes]]:
     with tarfile.open(backup, "r:gz") as archive:
         members = archive.getmembers()
         names = [member.name for member in members]
-        if len(names) not in (1, 2) or len(set(names)) != len(names) or "apps.json" not in names or set(names) - {"apps.json", "branding.png"}:
+        if len(names) > MAX_OPENCODE_FILES + 2 or len(set(names)) != len(names) or "apps.json" not in names:
             raise ValueError("Backup contains unexpected files.")
+        opencode_members = {}
+        total_opencode = 0
         for member in members:
-            limit = MAX_CONFIG_BYTES if member.name == "apps.json" else MAX_BRANDING_BYTES
+            if member.name == "apps.json":
+                limit = MAX_CONFIG_BYTES
+            elif member.name == "branding.png":
+                limit = MAX_BRANDING_BYTES
+            elif member.name.startswith("opencode/"):
+                relative_name = member.name.removeprefix("opencode/")
+                relative = PurePosixPath(relative_name)
+                if relative.is_absolute() or not relative.parts or relative.as_posix() != relative_name or any(part in {"", ".", ".."} for part in relative.parts) or relative.parts[0] not in {"config", "data", "state", "cache"}:
+                    raise ValueError("Backup contains an unsafe OpenCode path.")
+                if member.name in opencode_members:
+                    raise ValueError("Backup contains duplicate OpenCode paths.")
+                opencode_members[member.name] = relative.as_posix()
+                limit = MAX_OPENCODE_BYTES
+                total_opencode += member.size
+            else:
+                raise ValueError("Backup contains unexpected files.")
             if not member.isfile() or member.size < 0 or member.size > limit:
                 raise ValueError("Backup contains an unsafe or oversized file.")
+        if total_opencode > MAX_OPENCODE_BYTES:
+            raise ValueError("Backup contains too much OpenCode state.")
         files = {}
         for member in members:
             source = archive.extractfile(member)
@@ -78,16 +133,85 @@ def read_backup(backup: Path) -> tuple[bytes, bytes | None]:
         validate_app_entries(json.loads(files["apps.json"]))
     except (UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
         raise ValueError("Backup contains an invalid application registry.") from exc
-    return files["apps.json"], files.get("branding.png")
+    opencode = {opencode_members[name]: files[name] for name in opencode_members}
+    return files["apps.json"], files.get("branding.png"), opencode
 
 
-def restore_backup(backup: Path, config: Path, branding: Path, group_id: int | None = None) -> None:
-    config_data, branding_data = read_backup(backup)
+def restore_backup(
+    backup: Path,
+    config: Path,
+    branding: Path,
+    group_id: int | None = None,
+    opencode_state: Path | None = None,
+    opencode_uid: int | None = None,
+    opencode_gid: int | None = None,
+    opencode_config_gid: int | None = None,
+    opencode_config_uid: int = 0,
+) -> None:
+    config_data, branding_data, opencode_files = read_backup(backup)
+    if opencode_files:
+        if opencode_state is None or not opencode_state.is_dir() or opencode_state.is_symlink():
+            raise ValueError("Install the OpenCode web service before restoring its private state.")
+        state_stat = opencode_state.stat()
+        config_dir = opencode_state / "config"
+        if opencode_uid is None:
+            opencode_uid = state_stat.st_uid
+        if opencode_gid is None:
+            opencode_gid = state_stat.st_gid
+        if opencode_config_gid is None:
+            opencode_config_gid = config_dir.stat().st_gid if config_dir.is_dir() else opencode_gid
+        restore_opencode_tree(opencode_files, opencode_state, opencode_uid, opencode_gid, opencode_config_gid, opencode_config_uid)
     atomic_write(config, config_data, 0o660, group_id)
     if branding_data is None:
         branding.unlink(missing_ok=True)
     else:
         atomic_write(branding, branding_data, 0o644)
+
+
+def restore_opencode_tree(files: dict[str, bytes], destination: Path, owner_uid: int, owner_gid: int, config_gid: int, config_uid: int = 0) -> None:
+    parent = destination.parent
+    if parent.is_symlink() or not parent.is_dir() or destination.is_symlink() or not destination.is_dir():
+        raise ValueError("OpenCode state path is unavailable or unsafe.")
+    staging = Path(tempfile.mkdtemp(prefix=".huou07-opencode-restore-", dir=parent))
+    old = parent / f".{destination.name}.previous-{os.getpid()}"
+    try:
+        os.chown(staging, owner_uid, owner_gid)
+        os.chmod(staging, 0o700)
+        for relative, data in sorted(files.items()):
+            parts = PurePosixPath(relative).parts
+            if not parts or parts[0] not in {"config", "data", "state", "cache"} or any(part in {"", ".", ".."} for part in parts):
+                raise ValueError("OpenCode backup contains an unsafe path.")
+            config_file = parts[0] == "config"
+            directory_owner = config_uid if config_file else owner_uid
+            directory_group = config_gid if config_file else owner_gid
+            directory_mode = 0o750 if config_file else 0o700
+            current = staging
+            for part in parts[:-1]:
+                current = current / part
+                current.mkdir(mode=directory_mode, exist_ok=True)
+                os.chown(current, directory_owner, directory_group)
+                os.chmod(current, directory_mode)
+            output_path = current / parts[-1]
+            fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640 if config_file else 0o600)
+            with os.fdopen(fd, "wb") as output:
+                output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
+                os.fchown(output.fileno(), directory_owner, directory_group)
+                os.fchmod(output.fileno(), 0o640 if config_file else 0o600)
+        if old.exists() or old.is_symlink():
+            raise ValueError("An earlier OpenCode restore staging directory exists.")
+        os.replace(destination, old)
+        try:
+            os.replace(staging, destination)
+        except BaseException:
+            os.replace(old, destination)
+            raise
+        shutil.rmtree(old)
+    except BaseException:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
 
 
 def atomic_write(destination: Path, data: bytes, mode: int, group_id: int | None = None) -> None:
@@ -118,6 +242,12 @@ def require_root() -> None:
         raise PermissionError("Run this command as root through sudo.")
 
 
+def opencode_service_active() -> bool:
+    if not OPENCODE_UNIT.is_file():
+        return False
+    return subprocess.run(["systemctl", "is-active", "--quiet", OPENCODE_SERVICE], check=False).returncode == 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -129,16 +259,31 @@ def main() -> None:
     try:
         require_root()
         if args.command == "backup":
-            path = create_backup(CONFIG, current_branding(), args.directory)
+            was_active = opencode_service_active()
+            if was_active:
+                subprocess.run(["systemctl", "stop", OPENCODE_SERVICE], check=True)
+            try:
+                path = create_backup(CONFIG, current_branding(), args.directory, OPENCODE_STATE)
+            finally:
+                if was_active:
+                    subprocess.run(["systemctl", "start", OPENCODE_SERVICE], check=True)
             print(path)
             return
         if CONFIG.parent.is_symlink() or not CONFIG.parent.is_dir():
             raise ValueError("The application configuration directory is missing or unsafe.")
         branding = current_branding()
-        group_id = grp.getgrnam("huou07-playground").gr_gid
-        restore_backup(args.archive, CONFIG, branding, group_id)
+        _, _, opencode_files = read_backup(args.archive)
+        was_active = opencode_service_active() if opencode_files else False
+        if was_active:
+            subprocess.run(["systemctl", "stop", OPENCODE_SERVICE], check=True)
+        try:
+            group_id = grp.getgrnam("huou07-playground").gr_gid
+            restore_backup(args.archive, CONFIG, branding, group_id, OPENCODE_STATE if opencode_files else None)
+        finally:
+            if was_active:
+                subprocess.run(["systemctl", "start", OPENCODE_SERVICE], check=True)
         print("Application configuration and branding restored.")
-    except (OSError, tarfile.TarError, ValueError) as exc:
+    except (OSError, subprocess.CalledProcessError, tarfile.TarError, ValueError) as exc:
         parser.error(str(exc))
 
 
