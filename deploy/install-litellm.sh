@@ -204,7 +204,22 @@ fi
 systemctl daemon-reload
 systemctl enable --now "$SERVICE-db.service"
 systemctl enable --now "$SERVICE.service"
-if ! systemctl is-active --quiet "$SERVICE-db.service" || ! systemctl is-active --quiet "$SERVICE.service"; then
+attempt=0
+while [ "$attempt" -lt 120 ]; do
+  db_state=$(systemctl show --property=ActiveState --value "$SERVICE-db.service")
+  gateway_state=$(systemctl show --property=ActiveState --value "$SERVICE.service")
+  if [ "$db_state" = active ] && [ "$gateway_state" = active ] && \
+     python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:4000/health/liveliness", timeout=2).read()' >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$db_state" = failed ] || [ "$gateway_state" = failed ]; then
+    echo "LiteLLM or PostgreSQL failed to start; inspect their systemd journals." >&2
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+if [ "$attempt" -ge 120 ]; then
   echo "LiteLLM or PostgreSQL did not become active." >&2
   exit 1
 fi
