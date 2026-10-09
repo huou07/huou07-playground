@@ -26,7 +26,13 @@ form {
   margin-top: 1.5rem;
 }
 
-input {
+.path-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .5rem;
+}
+
+.path-field input {
   box-sizing: border-box;
   width: 100%;
   padding: .65rem;
@@ -47,6 +53,12 @@ button {
   cursor: pointer;
 }
 
+button.secondary {
+  color: inherit;
+  background: transparent;
+  border: 1px solid #8a8d90;
+}
+
 button:disabled {
   opacity: .6;
   cursor: wait;
@@ -56,9 +68,43 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+dialog {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: min(85vh, 48rem);
+  padding: 1rem;
+  color: inherit;
+  background: Canvas;
+  border: 1px solid #8a8d90;
+  border-radius: 8px;
+}
+
+dialog::backdrop { background: #0008; }
+.dialog-heading,.browse-location { display: flex; align-items: center; gap: .65rem; }
+.dialog-heading { justify-content: space-between; }
+.dialog-heading h2 { margin: 0; font-size: 1.15rem; }
+.browse-location { margin-top: 1rem; }
+#browse-path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#browse-status { min-height: 1.5em; margin: .6rem 0; }
+#browse-entries { max-height: 55vh; overflow: auto; list-style: none; padding: 0; margin: 0; border-top: 1px solid #8a8d90; }
+#browse-entries li { display: flex; align-items: center; gap: .5rem; padding: .25rem 0; border-bottom: 1px solid #ddd; }
+#browse-entries button { margin: 0; min-height: 2.5rem; }
+.entry-name { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.entry-name:disabled { opacity: .8; cursor: default; }
+.entry-action { flex: none; }
+
 @media (prefers-color-scheme: dark) {
   body { color: #f0f0f0; background: #1b1d21; }
   p { color: #c5c8cc; }
-  input { color: inherit; background: #26292f; border-color: #6a6e76; }
+  .path-field input { color: inherit; background: #26292f; border-color: #6a6e76; }
   button { background: #0066cc; }
+  button.secondary { color: inherit; background: transparent; border-color: #6a6e76; }
+  #browse-entries li { border-bottom-color: #474b52; }
+}
+
+@media (max-width: 520px) {
+  main { margin-top: 1.25rem; }
+  .browse-location { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  #browse-path { grid-column: 1 / -1; grid-row: 2; }
+  #browse-current { grid-column: 1 / -1; }
+  #browse-entries { max-height: 50vh; }
 }

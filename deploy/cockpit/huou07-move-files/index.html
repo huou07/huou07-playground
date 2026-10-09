@@ -14,12 +14,18 @@
     <p>Move one file or directory to an existing directory. The destination must not already contain an item with the same name. Your Linux account permissions apply.</p>
     <form id="move-form">
       <label for="source-path">Source path</label>
-      <input id="source-path" name="source" type="text" autocomplete="off" spellcheck="false" placeholder="/home/you/Downloads/report.pdf" required>
+      <div class="path-field"><input id="source-path" name="source" type="text" autocomplete="off" spellcheck="false" placeholder="Choose a file or folder" required><button id="browse-source" class="secondary" type="button">Browse</button></div>
       <label for="destination-path">Destination directory</label>
-      <input id="destination-path" name="destination" type="text" autocomplete="off" spellcheck="false" placeholder="/home/you/Documents" required>
+      <div class="path-field"><input id="destination-path" name="destination" type="text" autocomplete="off" spellcheck="false" placeholder="Choose a destination folder" required><button id="browse-destination" class="secondary" type="button">Browse</button></div>
       <button id="move-button" type="submit">Move</button>
     </form>
     <p id="move-status" role="status" aria-live="polite"></p>
   </main>
+  <dialog id="browse-dialog" aria-labelledby="browse-title">
+    <div class="dialog-heading"><h2 id="browse-title">Choose a file or folder</h2><button id="browse-close" class="secondary" type="button">Close</button></div>
+    <div class="browse-location"><button id="browse-up" class="secondary" type="button">Up</button><code id="browse-path">/</code><button id="browse-current" type="button">Use this folder</button></div>
+    <p id="browse-status" role="status" aria-live="polite"></p>
+    <ul id="browse-entries" aria-label="Directory contents"></ul>
+  </dialog>
 </body>
 </html>

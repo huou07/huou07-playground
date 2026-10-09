@@ -4,13 +4,14 @@ SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 MOVE_PACKAGE=$SOURCE/deploy/cockpit/huou07-move-files
 
 install_move_package() {
-  if [ ! -f "$MOVE_PACKAGE/manifest.json" ] || [ ! -f "$MOVE_PACKAGE/move" ]; then
+  if [ ! -f "$MOVE_PACKAGE/manifest.json" ] || [ ! -f "$MOVE_PACKAGE/move" ] || [ ! -f "$MOVE_PACKAGE/list" ]; then
     echo "The Cockpit Move files are missing from this checkout." >&2
     exit 1
   fi
   install -d -o root -g root -m 0755 /usr/share/cockpit/huou07-move-files /usr/libexec
   install -o root -g root -m 0644 "$MOVE_PACKAGE/index.html" "$MOVE_PACKAGE/index.js" "$MOVE_PACKAGE/style.css" /usr/share/cockpit/huou07-move-files/
   install -o root -g root -m 0755 "$MOVE_PACKAGE/move" /usr/libexec/huou07-move-files
+  install -o root -g root -m 0755 "$MOVE_PACKAGE/list" /usr/libexec/huou07-list-files
   install -o root -g root -m 0644 "$MOVE_PACKAGE/manifest.json" /usr/share/cockpit/huou07-move-files/manifest.json
 }
 

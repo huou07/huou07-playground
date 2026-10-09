@@ -1,0 +1,33 @@
+#!/usr/bin/python3
+import json
+import os
+import sys
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise ValueError("Choose a directory to browse.")
+    path = sys.argv[1]
+    if not os.path.isabs(path) or len(path) > 4096 or any(ord(char) < 32 or ord(char) == 127 for char in path):
+        raise ValueError("Directory path must be absolute and contain no control characters.")
+    path = os.path.realpath(path)
+    entries = []
+    with os.scandir(path) as items:
+        for item in items:
+            try:
+                directory = item.is_dir(follow_symlinks=True)
+                symlink = item.is_symlink()
+            except OSError:
+                directory = False
+                symlink = False
+            entries.append({"name": item.name, "directory": directory, "symlink": symlink})
+    entries.sort(key=lambda item: (not item["directory"], item["name"].casefold(), item["name"]))
+    print(json.dumps({"path": path, "entries": entries}, ensure_ascii=True))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1)
