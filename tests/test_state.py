@@ -227,6 +227,29 @@ class StateArchiveTests(unittest.TestCase):
             self.assertFalse((opencode / "data" / "opencode" / "new-session.db").exists())
             self.assertEqual((opencode / "data" / "opencode" / "auth.json").stat().st_mode & 0o777, 0o600)
 
+    def test_backup_preserves_only_the_rootless_podman_state_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "apps.json"
+            opencode = root / "opencode-state"
+            podman_db = opencode / ".local/share/containers/storage/db.sql"
+            podman_db.parent.mkdir(parents=True)
+            podman_db.write_bytes(b"rootless storage metadata")
+            config.write_text('{"apps":[]}')
+
+            archive = state.create_backup(config, root / "missing.png", root / "backups", opencode)
+            _, _, saved, _, _ = state.read_backup(archive)
+            self.assertEqual(saved[".local/share/containers/storage/db.sql"], b"rootless storage metadata")
+
+            podman_db.write_bytes(b"changed")
+            state.restore_backup(archive, config, root / "missing.png", opencode_state=opencode)
+            self.assertEqual(podman_db.read_bytes(), b"rootless storage metadata")
+            self.assertEqual(podman_db.stat().st_mode & 0o777, 0o600)
+
+            (opencode / ".local/share/containers/auth.json").write_text("unexpected")
+            with self.assertRaisesRegex(ValueError, "unexpected path"):
+                state.create_backup(config, root / "missing.png", root / "backups", opencode)
+
     def test_backup_rejects_unsafe_members_and_invalid_registry(self):
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "bad.tar.gz"

@@ -225,6 +225,7 @@ def add_opencode_state(archive: tarfile.TarFile, source: Path) -> None:
     files = []
     total = 0
     allowed_roots = {"config", "data", "state", "cache"}
+    podman_state_path = ".local/share/containers/storage/db.sql"
     generated_shell_files = {".bash_logout", ".bashrc", ".profile"}
     for path in sorted(source.rglob("*")):
         if path.is_symlink():
@@ -236,7 +237,9 @@ def add_opencode_state(archive: tarfile.TarFile, source: Path) -> None:
         relative = path.relative_to(source)
         if len(relative.parts) == 1 and relative.name in generated_shell_files:
             continue
-        if not relative.parts or relative.parts[0] not in allowed_roots or any(part in {".", ".."} for part in relative.parts):
+        if not relative.parts or any(part in {".", ".."} for part in relative.parts):
+            raise ValueError("OpenCode state contains an unexpected path.")
+        if relative.parts[0] not in allowed_roots and relative.as_posix() != podman_state_path:
             raise ValueError("OpenCode state contains an unexpected path.")
         total += path.stat().st_size
         files.append((path, relative))
@@ -277,7 +280,9 @@ def read_backup(backup: Path) -> tuple[bytes, bytes | None, dict[str, bytes], di
             elif member.name.startswith("opencode/"):
                 relative_name = member.name.removeprefix("opencode/")
                 relative = PurePosixPath(relative_name)
-                if relative.is_absolute() or not relative.parts or relative.as_posix() != relative_name or any(part in {"", ".", ".."} for part in relative.parts) or relative.parts[0] not in {"config", "data", "state", "cache"}:
+                safe_root = relative.parts[0] in {"config", "data", "state", "cache"} if relative.parts else False
+                safe_podman_state = relative_name == ".local/share/containers/storage/db.sql"
+                if relative.is_absolute() or not relative.parts or relative.as_posix() != relative_name or any(part in {"", ".", ".."} for part in relative.parts) or not (safe_root or safe_podman_state):
                     raise ValueError("Backup contains an unsafe OpenCode path.")
                 if member.name in opencode_members:
                     raise ValueError("Backup contains duplicate OpenCode paths.")
@@ -542,7 +547,9 @@ def restore_opencode_tree(files: dict[str, bytes], destination: Path, owner_uid:
         os.chmod(staging, 0o700)
         for relative, data in sorted(files.items()):
             parts = PurePosixPath(relative).parts
-            if not parts or parts[0] not in {"config", "data", "state", "cache"} or any(part in {"", ".", ".."} for part in parts):
+            safe_root = bool(parts) and parts[0] in {"config", "data", "state", "cache"}
+            safe_podman_state = str(PurePosixPath(*parts)) == ".local/share/containers/storage/db.sql"
+            if not parts or any(part in {"", ".", ".."} for part in parts) or not (safe_root or safe_podman_state):
                 raise ValueError("OpenCode backup contains an unsafe path.")
             config_file = parts[0] == "config"
             directory_owner = config_uid if config_file else owner_uid
