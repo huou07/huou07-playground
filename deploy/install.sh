@@ -13,12 +13,14 @@ STATE_DIR=/var/lib/huou07-playground
 LEGACY_APPS_FILE=$CONFIG_DIR/apps.json
 APPS_FILE=$STATE_DIR/apps.json
 SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+DASHBOARD_PORT=$(/usr/bin/python3 "$SOURCE/web/private_services.py" --port dashboard backend_port)
+export DASHBOARD_PORT
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer as root (for example: sudo ./deploy/install.sh)." >&2
   exit 1
 fi
-if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ] || [ ! -f "$SOURCE/deploy/power.py" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_TIMER" ] || [ ! -f "$SOURCE/deploy/gpu.py" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_TIMER" ] || [ ! -f "$SOURCE/deploy/state.py" ]; then
+if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/private-services.json" ] || [ ! -f "$SOURCE/deploy/private_firewall.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ] || [ ! -f "$SOURCE/deploy/power.py" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_TIMER" ] || [ ! -f "$SOURCE/deploy/gpu.py" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_TIMER" ] || [ ! -f "$SOURCE/deploy/state.py" ]; then
   echo "Run the installer from a complete huou07-playground checkout." >&2
   exit 1
 fi
@@ -74,6 +76,7 @@ if [ -e "$APPS_FILE" ] && [ ! -f "$APPS_FILE" ]; then
   exit 1
 fi
 install -d -o root -g root -m 0755 "$CONFIG_DIR"
+install -o root -g root -m 0644 "$SOURCE/deploy/private-services.json" "$CONFIG_DIR/private-services.json"
 install -d -o "$ACCOUNT" -g "$ACCOUNT" -m 0750 "$STATE_DIR"
 chown "$ACCOUNT":"$ACCOUNT" "$STATE_DIR"
 chmod 0750 "$STATE_DIR"
@@ -91,12 +94,14 @@ previous=$(readlink "$ROOT/current" 2>/dev/null || true)
 wait_for_dashboard() {
   /usr/bin/python3 -c '
 import json
+import os
 import time
 from urllib.request import urlopen
 
 for _ in range(30):
     try:
-        with urlopen("http://127.0.0.1:8765/api/health", timeout=0.5) as response:
+        url = "http://127.0.0.1:" + os.environ.get("DASHBOARD_PORT", "8765") + "/api/health"
+        with urlopen(url, timeout=0.5) as response:
             if response.status == 200 and json.load(response) == {"ok": True}:
                 break
     except (OSError, ValueError):
@@ -134,6 +139,7 @@ install -d -o root -g root -m 0755 "$release/deploy"
 install -o root -g root -m 0644 "$SOURCE/deploy/state.py" "$release/deploy/state.py"
 install -o root -g root -m 0644 "$SOURCE/deploy/power.py" "$release/deploy/power.py"
 install -o root -g root -m 0644 "$SOURCE/deploy/gpu.py" "$release/deploy/gpu.py"
+install -o root -g root -m 0644 "$SOURCE/deploy/private-services.json" "$release/deploy/private-services.json"
 if [ ! -f "$release/web/static/branding.png" ]; then
   for branding in "$ROOT"/releases/*/web/static/branding.png; do
     if [ -f "$branding" ]; then
@@ -193,5 +199,5 @@ if [ -x "$SOURCE/deploy/configure-wg-udp-access.sh" ]; then
   "$SOURCE/deploy/configure-wg-udp-access.sh" || echo "Warning: the WireGuard UDP endpoint firewall rule was not configured." >&2
 fi
 trap - EXIT HUP INT TERM
-echo "Installed and running at http://127.0.0.1:8765"
-echo "Use an SSH tunnel to open it remotely: ssh -L 8765:127.0.0.1:8765 <your-ssh-alias>"
+echo "Installed and running at http://127.0.0.1:$DASHBOARD_PORT"
+echo "Use an SSH tunnel to open it remotely: ssh -L $DASHBOARD_PORT:127.0.0.1:$DASHBOARD_PORT <your-ssh-alias>"

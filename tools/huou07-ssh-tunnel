@@ -2,7 +2,7 @@
 set -eu
 
 mode=all
-dashboard_port=8765
+dashboard_port=$(python3 "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/web/private_services.py" --port dashboard backend_port)
 host=
 usage() {
   echo "Usage: $0 [--dashboard-port <local-port>] [--omniroute-only] <ssh-host-alias-or-destination>" >&2
@@ -33,29 +33,19 @@ if [ "${#dashboard_port}" -gt 5 ] || [ "$dashboard_port" -lt 1 ] || [ "$dashboar
   usage
   exit 2
 fi
-if [ "$mode" = omniroute ] && [ "$dashboard_port" != 8765 ]; then usage; exit 2; fi
+if [ "$mode" = omniroute ] && [ "$dashboard_port" != "$(python3 "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/web/private_services.py" --port dashboard backend_port)" ]; then usage; exit 2; fi
 if [ -z "$host" ]; then usage; exit 2; fi
 
-if [ "$mode" = omniroute ]; then
-  set -- \
-    -L 127.0.0.1:20128:127.0.0.1:20128 \
-    -L 127.0.0.1:20129:127.0.0.1:20129 \
-    -L 127.0.0.1:20132:127.0.0.1:20132 \
-    "$host"
-else
-  set -- \
-    -L "127.0.0.1:$dashboard_port:127.0.0.1:8765" \
-    -L 127.0.0.1:9090:127.0.0.1:9090 \
-    -L 127.0.0.1:4000:127.0.0.1:4000 \
-    -L 127.0.0.1:51821:127.0.0.1:51821 \
-    -L 127.0.0.1:14096:127.0.0.1:4096 \
-    -L 127.0.0.1:3080:127.0.0.1:3080 \
-    -L 127.0.0.1:20128:127.0.0.1:20128 \
-    -L 127.0.0.1:20129:127.0.0.1:20129 \
-    -L 127.0.0.1:20132:127.0.0.1:20132 \
-    "$host"
-fi
-
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+forward_specs=$(python3 "$root/web/private_services.py" --ssh-forwards "$mode" --dashboard-port "$dashboard_port")
+set --
+while IFS=: read -r local_port remote_port; do
+  [ -n "$local_port" ] || continue
+  set -- "$@" -L "127.0.0.1:$local_port:127.0.0.1:$remote_port"
+done <<EOF_PORTS
+$forward_specs
+EOF_PORTS
+set -- "$@" "$host"
 exec ssh -N -T \
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \

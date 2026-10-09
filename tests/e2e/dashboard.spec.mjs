@@ -34,6 +34,10 @@ test('navigation, browser preferences, and app launch work end to end', async ({
     contentType: 'application/json',
     body: JSON.stringify({ available: true }),
   }));
+  await page.route('**/api/private-service-ports', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ ports: [8765, 9090, 3080, 51821] }),
+  }));
 
   await page.goto('/#/home');
   const brand = page.locator('.brand img');
@@ -46,6 +50,11 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await expect(page.locator('#page-system')).toContainText('ZRAM device');
   await expect(page.locator('#page-system')).toContainText('actual memory occupied by compressed pages');
   await page.locator('#sidebar [data-route="home"]').click();
+  const applicationLinkSetting = page.locator('#application-link-setting');
+  await expect(applicationLinkSetting).toHaveValue('new-tab');
+  const staticShortcut = page.locator('#wg-easy-link');
+  await expect(staticShortcut).toHaveAttribute('target', '_blank');
+  await expect(staticShortcut).toHaveAttribute('rel', 'noopener noreferrer');
   const routes = [
     ['home', 'Home'], ['apps', 'Applications'], ['system', 'System'],
     ['services', 'Services & Processes'], ['files', 'Files'], ['ssh', 'SSH'],
@@ -92,6 +101,13 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await expect(page.locator('#sidebar')).toHaveClass(/open/);
   await page.locator('#sidebar [data-route="settings"]').click();
   await expect(page.locator('#sidebar')).not.toHaveClass(/open/);
+  await applicationLinkSetting.selectOption('current');
+  await expect(staticShortcut).not.toHaveAttribute('target', /.+/);
+  await page.reload();
+  await expect(applicationLinkSetting).toHaveValue('current');
+  await expect(staticShortcut).not.toHaveAttribute('target', /.+/);
+  await applicationLinkSetting.selectOption('new-tab');
+  await expect(staticShortcut).toHaveAttribute('target', '_blank');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 
   const gpuSetting = page.locator('[data-metric-setting="gpu"]');
@@ -118,8 +134,18 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   const appCard = page.locator('.app-card').filter({ hasText: 'Browser Acceptance App' });
   await expect(appCard.locator('.app-state')).toHaveText(/Available/);
   await expect.poll(() => appCard.locator('.app-icon').evaluate(icon => icon.naturalWidth)).toBeGreaterThan(0);
+  const appOpenLink = appCard.getByRole('link', { name: 'Open Browser Acceptance App' });
+  await expect(appOpenLink).toHaveAttribute('target', '_blank');
+  await page.locator('#sidebar [data-route="settings"]').click();
+  await applicationLinkSetting.selectOption('current');
+  await page.locator('#sidebar [data-route="apps"]').click();
+  await expect(appOpenLink).not.toHaveAttribute('target', /.+/);
+  await page.locator('#sidebar [data-route="settings"]').click();
+  await applicationLinkSetting.selectOption('new-tab');
+  await page.locator('#sidebar [data-route="apps"]').click();
+  await expect(appOpenLink).toHaveAttribute('target', '_blank');
   const popupPromise = page.waitForEvent('popup');
-  await appCard.getByRole('link', { name: 'Open Browser Acceptance App' }).click();
+  await appOpenLink.click();
   const popup = await popupPromise;
   await expect(popup.getByRole('heading', { name: 'Acceptance app launched' })).toBeVisible();
   await popup.close();

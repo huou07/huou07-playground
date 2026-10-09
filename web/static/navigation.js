@@ -66,6 +66,22 @@ themeSetting.addEventListener('change', () => {
   if (themeSetting.value !== document.documentElement.dataset.theme) themeButton.click();
 });
 
+const applicationLinkSetting = document.getElementById('application-link-setting');
+const savedApplicationLinkBehavior = localStorage.getItem('applicationLinkBehavior');
+applicationLinkSetting.value = savedApplicationLinkBehavior === 'current' ? 'current' : 'new-tab';
+window.applyApplicationLinkTargets = (root = document) => {
+  for (const link of root.querySelectorAll('[data-app-shortcut][href]')) {
+    if (applicationLinkSetting.value === 'current') link.removeAttribute('target');
+    else link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
+};
+window.applyApplicationLinkTargets();
+applicationLinkSetting.addEventListener('change', () => {
+  localStorage.setItem('applicationLinkBehavior', applicationLinkSetting.value);
+  window.applyApplicationLinkTargets();
+});
+
 const refreshSetting = document.getElementById('refresh-interval');
 const allowedIntervals = ['5000', '10000', '15000', '30000'];
 const savedInterval = localStorage.getItem('metricsRefreshMs');

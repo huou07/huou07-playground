@@ -37,11 +37,11 @@ class SshTunnelTests(unittest.TestCase):
         self.assertEqual(args.count("-L"), len(expected))
         forwards = [args[index + 1] for index, value in enumerate(args[:-1]) if value == "-L"]
         self.assertEqual(forwards, list(expected))
-        self.assertEqual(args[-1], "an3-dell")
+        self.assertEqual(args[-1], "test-host")
         self.assertNotIn("StrictHostKeyChecking=no", args)
 
     def test_full_mode_forwards_all_dashboard_and_application_ports(self):
-        result = self.run_tunnel("an3-dell")
+        result = self.run_tunnel("test-host")
         self.assertEqual(result.returncode, 0, result.stderr)
         args = json.loads(self.args_file.read_text())
         self.assert_forwards(args, (
@@ -57,7 +57,7 @@ class SshTunnelTests(unittest.TestCase):
         ))
 
     def test_omniroute_mode_adds_only_its_ports(self):
-        result = self.run_tunnel("--omniroute-only", "an3-dell")
+        result = self.run_tunnel("--omniroute-only", "test-host")
         self.assertEqual(result.returncode, 0, result.stderr)
         args = json.loads(self.args_file.read_text())
         self.assert_forwards(args, (
@@ -67,7 +67,7 @@ class SshTunnelTests(unittest.TestCase):
         ))
 
     def test_full_mode_allows_a_custom_local_dashboard_port(self):
-        result = self.run_tunnel("--dashboard-port", "18765", "an3-dell")
+        result = self.run_tunnel("--dashboard-port", "18765", "test-host")
         self.assertEqual(result.returncode, 0, result.stderr)
         args = json.loads(self.args_file.read_text())
         self.assert_forwards(args, (
@@ -84,10 +84,10 @@ class SshTunnelTests(unittest.TestCase):
 
     def test_dashboard_port_must_be_valid_and_does_not_apply_to_omniroute_only(self):
         for args in (
-            ("--dashboard-port", "0", "an3-dell"),
-            ("--dashboard-port", "65536", "an3-dell"),
-            ("--dashboard-port", "bad", "an3-dell"),
-            ("--dashboard-port", "18765", "--omniroute-only", "an3-dell"),
+            ("--dashboard-port", "0", "test-host"),
+            ("--dashboard-port", "65536", "test-host"),
+            ("--dashboard-port", "bad", "test-host"),
+            ("--dashboard-port", "18765", "--omniroute-only", "test-host"),
         ):
             with self.subTest(args=args):
                 self.args_file.unlink(missing_ok=True)
@@ -96,7 +96,7 @@ class SshTunnelTests(unittest.TestCase):
                 self.assertFalse(self.args_file.exists())
 
     def test_invalid_arguments_fail_before_running_ssh(self):
-        for args in ((), ("--bad", "an3-dell"), ("--omniroute-only",), ("-host",), ("--dashboard-port", "an3-dell")):
+        for args in ((), ("--bad", "test-host"), ("--omniroute-only",), ("-host",), ("--dashboard-port", "test-host")):
             with self.subTest(args=args):
                 result = self.run_tunnel(*args)
                 self.assertEqual(result.returncode, 2)

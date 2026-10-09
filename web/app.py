@@ -29,6 +29,21 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
+try:
+    from .private_services import load_services
+except ImportError:
+    from private_services import load_services
+
+try:
+    PRIVATE_SERVICES = load_services()
+except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+    PRIVATE_SERVICES = []
+
+
+def configured_port(service_id: str, field: str = "backend_port", default: int = 0) -> int:
+    return next((item[field] for item in PRIVATE_SERVICES if item["id"] == service_id), default)
+
+
 WG_EASY_SERVICE = "huou07-wg-easy.service"
 WG_EASY_UNIT = Path("/etc/systemd/system") / WG_EASY_SERVICE
 WG_STATUS_FILE = Path("/var/lib/huou07-wg-easy-status/status.json")
@@ -37,16 +52,11 @@ _prev_net: tuple[float, dict[str, tuple[int, int]]] | None = None
 _prev_processes: dict[int, tuple[int, int]] = {}
 _prev_process_total: int | None = None
 _prev_process_time: float | None = None
-PRIVATE_WG_PORTS = (
-    (9090, 9090),   # Cockpit, including Cockpit Files
-    (4000, 4000),   # LiteLLM
-    (51821, 51821), # wg-easy administration
-    (14096, 4096),  # OpenCode Web
-    (3080, 3080),   # DeepSeek Harness Web, loopback only on the host
-    (20128, 20128), # OmniRoute web UI
-    (20129, 20129), # OmniRoute API
-    (20132, 20132), # OmniRoute live updates
+PRIVATE_WG_PORTS = tuple(
+    (item["wireguard_port"], item["backend_port"])
+    for item in PRIVATE_SERVICES if item["relay"]
 )
+PRIVATE_SERVICE_PORTS = tuple(item["wireguard_port"] for item in PRIVATE_SERVICES)
 DSH_URL_FILE = Path(os.environ.get("DSH_URL_FILE", "/run/huou07-dsh-link/url"))
 _private_proxy_slots = threading.BoundedSemaphore(32)
 APP_ICON_PLACEHOLDER = base64.b64decode("R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=")
@@ -80,10 +90,10 @@ def dsh_launch_url(token_path: str | None, request_host: str | None) -> str | No
             except ValueError:
                 return None
         if not is_loopback:
-            if authority.port != 8765 or host not in wireguard_interface_addresses():
+            if authority.port != configured_port("dashboard", "wireguard_port", 8765) or host not in wireguard_interface_addresses():
                 return None
         target_host = f"[{host}]" if ":" in host else host
-        return f"http://{target_host}:3080{token_path}"
+        return f"http://{target_host}:{configured_port('dsh', 'wireguard_port', 3080)}{token_path}"
     except ValueError:
         return None
 
@@ -895,6 +905,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/vpn":
             self.send_json(200, vpn_status())
             return
+        if self.path == "/api/private-service-ports":
+            self.send_json(200, {"ports": PRIVATE_SERVICE_PORTS})
+            return
         if self.path.startswith("/api/apps/launch?"):
             try:
                 query = parse_qs(urlsplit(self.path).query, max_num_fields=2)
@@ -1090,7 +1103,7 @@ def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     if host not in {"127.0.0.1", "::1", "localhost"}:
         raise SystemExit("Only loopback binding is supported until authentication and private-network access controls are implemented.")
-    port = int(os.environ.get("PORT", "8765"))
+    port = int(os.environ.get("PORT", str(configured_port("dashboard", default=8765))))
     servers = [HTTPServer((host, port), Handler)]
     wg_servers = []
     print(f"huou07 playground loopback listener ready on port {port}")

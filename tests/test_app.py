@@ -32,15 +32,15 @@ class DashboardApiTests(unittest.TestCase):
     def test_wireguard_listener_discovers_only_private_wg0_ipv4_addresses(self):
         result = app.subprocess.CompletedProcess([], 0, stdout=json.dumps([
             {"ifname": "wg0", "addr_info": [
-                {"family": "inet", "scope": "global", "local": "10.77.0.1", "prefixlen": 24},
+                {"family": "inet", "scope": "global", "local": "198.51.100.10", "prefixlen": 24},
                 {"family": "inet", "scope": "global", "local": "8.8.8.8", "prefixlen": 24},
             ]},
             {"ifname": "wg1", "addr_info": [
-                {"family": "inet", "scope": "global", "local": "10.88.0.1", "prefixlen": 24},
+                {"family": "inet", "scope": "global", "local": "203.0.113.5", "prefixlen": 24},
             ]},
         ]))
         with patch.object(app.shutil, "which", return_value="/usr/sbin/ip"), patch.object(app.subprocess, "run", return_value=result) as run:
-            self.assertEqual(app.wireguard_interface_addresses(), ["10.77.0.1"])
+            self.assertEqual(app.wireguard_interface_addresses(), ["198.51.100.10"])
         self.assertEqual(run.call_args.args[0], ["/usr/sbin/ip", "-j", "-4", "addr", "show", "dev", "wg0"])
 
     def test_wireguard_listener_falls_back_to_loopback_when_interface_is_unavailable(self):
@@ -67,10 +67,10 @@ class DashboardApiTests(unittest.TestCase):
         path = "/?token=" + "aBc123_-" * 5 + "xyz"
         self.assertEqual(app.dsh_launch_url(path, "127.0.0.1:8765"), f"http://127.0.0.1:3080{path}")
         self.assertEqual(app.dsh_launch_url(path, "127.0.0.1:18765"), f"http://127.0.0.1:3080{path}")
-        with patch.object(app, "wireguard_interface_addresses", return_value=["10.8.0.1"]):
-            self.assertEqual(app.dsh_launch_url(path, "10.8.0.1:8765"), f"http://10.8.0.1:3080{path}")
-            self.assertIsNone(app.dsh_launch_url(path, "10.8.0.1:18765"))
-            self.assertIsNone(app.dsh_launch_url(path, "192.168.1.10:8765"))
+        with patch.object(app, "wireguard_interface_addresses", return_value=["198.51.100.42"]):
+            self.assertEqual(app.dsh_launch_url(path, "198.51.100.42:8765"), f"http://198.51.100.42:3080{path}")
+            self.assertIsNone(app.dsh_launch_url(path, "198.51.100.42:18765"))
+            self.assertIsNone(app.dsh_launch_url(path, "192.0.2.10:8765"))
         self.assertIsNone(app.dsh_launch_url("/../etc/", "127.0.0.1:8765"))
         self.assertIsNone(app.dsh_launch_url("/token?target=https://example.test", "127.0.0.1:8765"))
         self.assertIsNone(app.dsh_launch_url("/?token=short", "127.0.0.1:8765"))
@@ -104,6 +104,13 @@ class DashboardApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(json.load(response), {"ok": True})
             self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_private_service_port_endpoint_uses_shared_port_config(self):
+        with urlopen(f"{self.base}/api/private-service-ports") as response:
+            self.assertEqual(response.status, 200)
+            ports = json.load(response)["ports"]
+        self.assertIn(3080, ports)
+        self.assertIn(8765, ports)
 
     def test_metrics_report_supported_host_or_explicit_reason(self):
         with urlopen(f"{self.base}/api/metrics") as response:
@@ -232,9 +239,9 @@ class DashboardApiTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 403)
 
     def test_app_registry_mutations_allow_same_origin_on_the_bound_wireguard_address(self):
-        self.assertTrue(app.dashboard_same_origin_request_allowed("http://10.77.0.1:8765", "10.77.0.1:8765", "10.77.0.1"))
-        self.assertFalse(app.dashboard_same_origin_request_allowed("http://attacker.invalid:8765", "attacker.invalid:8765", "10.77.0.1"))
-        self.assertFalse(app.dashboard_same_origin_request_allowed("http://10.77.0.2:8765", "10.77.0.2:8765", "10.77.0.1"))
+        self.assertTrue(app.dashboard_same_origin_request_allowed("http://198.51.100.10:8765", "198.51.100.10:8765", "198.51.100.10"))
+        self.assertFalse(app.dashboard_same_origin_request_allowed("http://attacker.invalid:8765", "attacker.invalid:8765", "198.51.100.10"))
+        self.assertFalse(app.dashboard_same_origin_request_allowed("http://198.51.100.11:8765", "198.51.100.11:8765", "198.51.100.10"))
 
     def test_app_registry_update_preserves_health_probe_and_limits_it_to_loopback(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -249,7 +256,7 @@ class DashboardApiTests(unittest.TestCase):
                 self.assertNotIn("health_url", data["apps"][0])
                 stored = json.loads(registry.read_text())["apps"][0]
                 self.assertEqual(stored["health_url"], "http://127.0.0.1:9/health")
-                invalid = {"action": "add", "name": "Other", "app": {"name": "Other", "url": "http://127.0.0.1:3000", "health_url": "http://192.168.1.1:3000"}}
+                invalid = {"action": "add", "name": "Other", "app": {"name": "Other", "url": "http://127.0.0.1:3000", "health_url": "http://192.0.2.1:3000"}}
                 request = Request(f"{self.base}/api/apps", data=json.dumps(invalid).encode(), headers={"Origin": self.base, "Content-Type": "application/json"})
                 with self.assertRaises(HTTPError) as error:
                     urlopen(request)

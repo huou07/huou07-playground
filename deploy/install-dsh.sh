@@ -13,6 +13,7 @@ DSH_VERSION=0.2.0-rc.2
 ADAPTER_VERSION=0.2.0-rc.2.9
 CODEX_ACP_VERSION=2.1.1
 PNPM_VERSION=11.7.0
+DSH_PORT=$(/usr/bin/python3 "$SOURCE/web/private_services.py" --port dsh backend_port)
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer as root (for example: sudo ./deploy/install-dsh.sh)." >&2
@@ -35,8 +36,11 @@ if ! getent group huou07-dsh-link >/dev/null; then
 fi
 usermod -a -G huou07-dsh-link huou07-playground
 install -d -o root -g root -m 0755 "$APP_DIR" "$APP_DIR/app" "$APP_DIR/downloads"
+install -d -o root -g root -m 0755 /etc/huou07-playground
+install -o root -g root -m 0644 "$SOURCE/deploy/private-services.json" /etc/huou07-playground/private-services.json
 install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$STATE_DIR" "$STATE_DIR/config" "$STATE_DIR/data" "$STATE_DIR/state" "$STATE_DIR/cache"
 install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$DSH_HOME_DIR"
+install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$STATE_DIR/.codex"
 install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$WORKSPACE_DIR"
 
 if [ ! -x "$APP_DIR/node/bin/node" ]; then
@@ -90,13 +94,13 @@ systemctl restart huou07-playground.service
 
 APPS_FILE=/var/lib/huou07-playground/apps.json python3 "$SOURCE/deploy/register_app.py" \
   --name "DeepSeek Harness" \
-  --url http://127.0.0.1:3080/ \
+  --url "http://127.0.0.1:$DSH_PORT/" \
   --category "Coding Agents" \
   --description "Private agent workspace with native ACP integrations." \
-  --health-url http://127.0.0.1:3080/favicon.svg \
+  --health-url "http://127.0.0.1:$DSH_PORT/favicon.svg" \
   --health-method GET \
-  --migrate-health-from http://127.0.0.1:3080/
+  --migrate-health-from "http://127.0.0.1:$DSH_PORT/"
 
 echo "DSH $DSH_VERSION is installed as $SERVICE with the pinned ACP adapter and Codex ACP runtime."
-echo "Service is loopback-only on port 3080; allowed writes are limited to its private state and workspace."
+echo "Service is loopback-only on port $DSH_PORT; allowed writes are limited to its private state and workspace."
 echo "Owner sign-in and provider configuration remain manual."

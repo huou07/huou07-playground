@@ -145,3 +145,35 @@ This section supersedes earlier status entries that described DSH as disabled or
 
 - DSH remains developer-preview software without an upstream security audit. Its built-in `workspace-write` policy governs filesystem effects, not reads, network use, process visibility, or all system calls. The host service is rootless at the application process and systemd restricts writable paths, but DSH and ACP subprocesses share the DSH service account. If an owner signs into Codex/OpenCode inside DSH, native auth state stored in that account may be readable by an approved shell command. Keep “Ask each time” enabled and do not treat approval as an OS boundary. The browser launch token is kept outside the DSH child process and denied by the current canary.
 - The workspace allowlist is a small local patch against the exact pinned DSH policy package. The installer fails closed on an unrecognized upstream source; review and re-test the patch before changing the pinned DSH version.
+
+## Corrective integration update — 2026-10-10
+
+This is the current deployment record and supersedes earlier statements above about the WireGuard listener, firewall rules, DSH launcher environment, and Codex ACP sign-in.
+
+### VERIFIED
+
+- A single validated `deploy/private-services.json` now supplies dashboard relay ports, WireGuard TCP allowances, SSH forward lists, and DSH launch ports. Fresh installs and upgrades add/verify the new interface-scoped rules before pruning only stale rules recorded in the huou07 state file with the expected project comment. Unrecorded manual rules are preserved. Unit tests cover DSH TCP 3080, active UDP listener discovery, stale UDP migration, IPv4/IPv6 status parsing, and idempotency.
+- The deployed WireGuard listener is UDP 3478. Existing manual 3478/UDP on the default-route interface and 3080/TCP on `wg0` remain intact. The stale managed 51820/UDP rule was removed after confirming 3478. Effective UFW now allows 3080/TCP on `wg0`; it does not allow that port on another interface. One existing peer had a handshake within five minutes after deployment.
+- Dashboard health returned HTTP 200 over loopback and the existing Mac WireGuard path. DSH's favicon returned HTTP 200 over WireGuard, and the private dashboard launch route returned its expected redirect without exposing its token. SSH recovery succeeded after deployment.
+- The dashboard, DSH, wg-easy, OmniRoute, LiteLLM, OpenCode Web, and Cockpit remained active. OpenCode Web still returned its expected unauthenticated HTTP 401 challenge. LiteLLM, OmniRoute, and OpenCode Web were not restarted, and their credentials or session files were not accessed or changed.
+- The SSH fallback and dashboard relay consume the shared port map. Application links use standard anchors and expose a browser preference for current tab or `_blank`; desktop and 375 px viewport browser tests passed. Keyboard and middle-click behavior remains native.
+- The source change passed 93 unit tests and the Playwright browser flow. The real WireGuard dashboard, DSH relay, DSH launch redirect, and SSH recovery checks passed on the target. No model inference request was made in this correction.
+
+### CODEX ACP AUTHENTICATION DIAGNOSIS
+
+- The owner CLI is `/home/huou07/.local/bin/codex` version 0.161.0 and its local status reports ChatGPT sign-in. The DSH ACP runtime is `@agentclientprotocol/codex-acp` 2.1.1 with its bundled Codex 0.159.3; the adapter is pinned to 0.2.0-rc.2.9. The [adapter README](https://github.com/agentclientprotocol/codex-acp) documents its bundled runtime default and `CODEX_PATH` override; [Codex auth storage](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/storage.rs) uses the service's own `CODEX_HOME`. No executable override is configured, so an executable-path mismatch is not the cause.
+- DSH runs tools as `huou07-dsh` with its own home and XDG directories. Its Codex auth state was absent and local `codex login status` under that identity reported signed out. The root launcher previously left `USER` and `LOGNAME` set to `root`; it now sets them accurately and sets `CODEX_HOME` to the DSH-only `.codex` directory. No owner auth file was copied or exposed. The cause is missing authentication in the ACP service identity, not a failed owner login or an ACP protocol incompatibility.
+- No safe owner login command is provided yet: DSH shell tools and the ACP child share the DSH UID, so a Codex token stored there could be read by an approved shell command. The installed adapter has no supported separate credential identity. Keep Codex ACP signed out until an OS-separated ACP execution identity is implemented and reviewed. The owner's normal Codex CLI login remains unchanged.
+
+### OWNER SETUP REQUIRED
+
+- If the owner later authorizes credential-bearing Codex ACP use, first isolate the ACP process and its auth state from DSH shell tools. Any subsequent real model response remains **OWNER-CONTROLLED INFERENCE ACCEPTANCE PENDING**; this correction made zero inference calls.
+- Existing WireGuard peer and client configuration was not changed. LAN and Internet routing on the Mac were not modified; this correction verified the existing WireGuard path and SSH recovery, not an external WAN/router forwarding path.
+
+### RESIDUAL SECURITY RISK
+
+- The systemd unit's small trusted launcher still starts as root so it can drop privileges and publish the token file for the dashboard. The DSH Web child runs as `huou07-dsh`; the agent does not run as root. DSH remains developer-preview software, and its shell tools share the DSH service UID and filesystem view. Workspace write policy and approval prompts do not constrain reads or provide a kernel boundary. The prior canary evidence for the workspace and token boundary remains applicable; no auth was added to that shared identity.
+
+### DEPLOYMENT
+
+- The live release is `20261009192702-588191`. The root-owned shared port map and deployed Python helper hashes match the verified local source. The corresponding source commit is recorded in the delivery report; do not treat the earlier 51820 listener notes above as current state.

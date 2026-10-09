@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "services": [
+    {"id": "dashboard", "backend_port": 8765, "wireguard_port": 8765, "relay": false, "ssh_group": "all"},
+    {"id": "cockpit", "backend_port": 9090, "wireguard_port": 9090, "relay": true, "ssh_group": "all"},
+    {"id": "litellm", "backend_port": 4000, "wireguard_port": 4000, "relay": true, "ssh_group": "all"},
+    {"id": "wg-easy", "backend_port": 51821, "wireguard_port": 51821, "relay": true, "ssh_group": "all"},
+    {"id": "opencode-web", "backend_port": 4096, "wireguard_port": 14096, "relay": true, "ssh_group": "all"},
+    {"id": "dsh", "backend_port": 3080, "wireguard_port": 3080, "relay": true, "ssh_group": "all"},
+    {"id": "omniroute-web", "backend_port": 20128, "wireguard_port": 20128, "relay": true, "ssh_group": "omniroute"},
+    {"id": "omniroute-api", "backend_port": 20129, "wireguard_port": 20129, "relay": true, "ssh_group": "omniroute"},
+    {"id": "omniroute-live", "backend_port": 20132, "wireguard_port": 20132, "relay": true, "ssh_group": "omniroute"}
+  ]
+}
