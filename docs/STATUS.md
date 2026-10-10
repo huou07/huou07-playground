@@ -1,7 +1,7 @@
 # Deployment status
 
-The application replacement is **prepared, not deployed**. Preparation must be rerun from the pinned `main` commit on the Dell. It is designed to leave the old five application services and all protected services running until the owner runs the one-time switch in [`CLEAN-REINSTALL.md`](CLEAN-REINSTALL.md).
+The application replacement is **prepared, not deployed**. On the Dell, the current `main` checkout completed `deploy/install-user-apps.sh prepare` with `READY`. Both native ACP initialize checks passed, and the fresh PostgreSQL/LiteLLM plus Redis/OmniRoute stacks passed temporary-port UI and persistence checks. The readiness marker records the prepared source revision.
 
-Current verified host evidence before this source update: the Dell checkout was `658fc2f`, the five old app services and the dashboard/WireGuard/Docker were active, user-scoped Codex/OpenCode/DSH packages and container images were present, and the rootless Podman pod/volume inventory was empty. Temporary runtime checks have since verified LiteLLM/PostgreSQL and OmniRoute/Redis against the freshly prepared configs on non-production ports; those exact temporary resources were removed. The corrected `UserNS`/Podman-volume behavior and current commit still require a final `prepare` run after the owner pulls this revision.
+The five legacy app units remain active, as do the dashboard, WireGuard, and Docker. The replacement services remain stopped. The user-level rollback action was exercised against inactive replacement units; it held their Quadlets, and the prepared files were restored. Temporary containers, pods, volumes, and the test-only hold were removed.
 
-No final application listener was replaced, no provider inference was sent, and no old data/account was deleted. The owner must perform the switch and sign in to the browser UIs before deployment can be called verified.
+No final listener was replaced, no provider inference was sent, and no legacy data/account was deleted. Re-run `prepare` after any source update before switching. The owner must perform the switch and sign in to the browser UIs before deployment can be called verified.
