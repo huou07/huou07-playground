@@ -16,10 +16,62 @@ RUNTIME=/run/user/$(id -u "$USER_NAME")
 SYSTEM_UNITS=(huou07-dsh.service huou07-opencode-web.service huou07-litellm.service huou07-litellm-db.service huou07-omniroute.service huou07-playground.service)
 USER_UNITS=(huou07-playground.service huou07-dsh.service huou07-opencode-web.service huou07-omniroute.service huou07-litellm.service huou07-litellm-db.service)
 declare -A SPACE_REQUIRED=() SPACE_PATH=() SPACE_PURPOSE=()
+declare -A COLLISION_SEEN=()
+COLLISIONS=()
+PRESERVED_OPENCODE_COLLISIONS=()
 fail() { echo "Migration stopped: $*" >&2; exit 1; }
 as_user() { runuser -u "$USER_NAME" -- env HOME="$HOME_DIR" XDG_RUNTIME_DIR="$RUNTIME" DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME/bus" "$@"; }
 as_service() { local user=$1 home=$2 runtime=$3; shift 3; runuser -u "$user" -- env HOME="$home" XDG_RUNTIME_DIR="$runtime" "$@"; }
 userctl() { as_user /usr/bin/systemctl --user "$@"; }
+record_collision() {
+  local path=$1
+  if [[ -z ${COLLISION_SEEN[$path]+seen} ]]; then
+    COLLISION_SEEN[$path]=1
+    COLLISIONS+=("$path")
+  fi
+}
+is_opencode_source() {
+  case "$1" in
+    /var/lib/huou07-opencode/config|/var/lib/huou07-opencode/data|/var/lib/huou07-opencode/state|/var/lib/huou07-opencode/cache) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+is_opencode_config_file() {
+  [[ $1 == /var/lib/huou07-opencode/config && $2 == /home/huou07/.config && ($3 == opencode/opencode.json || $3 == opencode/opencode.jsonc) ]]
+}
+is_opencode_auth_file() {
+  [[ $1 == /var/lib/huou07-opencode/data && $2 == /home/huou07/.local/share && ${3##*/} == auth.json ]]
+}
+opencode_config_check() {
+  python3 "$REPO/deploy/merge_opencode_config.py" check \
+    --source-config /var/lib/huou07-opencode/config \
+    --owner-config "$HOME_DIR/.config/opencode" \
+    --source-data /var/lib/huou07-opencode/data \
+    --owner-data "$HOME_DIR/.local/share"
+}
+opencode_config_apply() {
+  python3 "$REPO/deploy/merge_opencode_config.py" apply \
+    --source-config /var/lib/huou07-opencode/config \
+    --owner-config "$HOME_DIR/.config/opencode" \
+    --source-data /var/lib/huou07-opencode/data \
+    --owner-data "$HOME_DIR/.local/share" \
+    --backup-dir "$backup/opencode" --uid "$(id -u "$USER_NAME")" --gid "$(id -g "$USER_NAME")"
+}
+opencode_config_verify() {
+  python3 "$REPO/deploy/merge_opencode_config.py" verify \
+    --source-config /var/lib/huou07-opencode/config \
+    --owner-config "$HOME_DIR/.config/opencode" \
+    --source-data /var/lib/huou07-opencode/data \
+    --owner-data "$HOME_DIR/.local/share"
+}
+opencode_config_restore() {
+  python3 "$REPO/deploy/merge_opencode_config.py" restore \
+    --source-config /var/lib/huou07-opencode/config \
+    --owner-config "$HOME_DIR/.config/opencode" \
+    --source-data /var/lib/huou07-opencode/data \
+    --owner-data "$HOME_DIR/.local/share" \
+    --backup-dir "$backup/opencode" --uid "$(id -u "$USER_NAME")" --gid "$(id -g "$USER_NAME")"
+}
 du_bytes() {
   local path output
   path=$1
@@ -111,6 +163,9 @@ check_cutover_space() {
 }
 
 preflight() {
+  COLLISIONS=()
+  PRESERVED_OPENCODE_COLLISIONS=()
+  COLLISION_SEEN=()
   [[ $(getent passwd "$USER_NAME" | cut -d: -f6) == "$HOME_DIR" ]] || fail "unexpected target HOME"
   [[ $(loginctl show-user "$USER_NAME" -p Linger --value) == yes ]] || fail "lingering must remain enabled"
   [[ -S $RUNTIME/bus ]] || fail "huou07 user-manager bus unavailable"
@@ -125,7 +180,9 @@ preflight() {
   for unit in "${SYSTEM_UNITS[@]}"; do
     systemctl is-active --quiet "$unit" || fail "expected production unit is not active: $unit"
     if userctl is-active --quiet "$unit"; then fail "target user unit is already active: $unit"; fi
-    if [[ -e $HOME_DIR/.config/systemd/user/$unit ]]; then fail "target unit file already exists; refusing to replace it: $unit"; fi
+    if [[ -e $HOME_DIR/.config/systemd/user/$unit || -L $HOME_DIR/.config/systemd/user/$unit ]]; then
+      record_collision "$HOME_DIR/.config/systemd/user/$unit (migration would replace a user unit)"
+    fi
   done
   local dsh_port
   dsh_port=$(python3 "$REPO/web/private_services.py" --port dsh backend_port) || fail "DSH port configuration could not be read"
@@ -179,9 +236,13 @@ preflight() {
     fi
   done
   for path in "$HOME_DIR/Projects/dsh" "$HOME_DIR/Projects/opencode" "$HOME_DIR/.config/litellm" "$HOME_DIR/.config/omniroute" "$HOME_DIR/.local/share/omniroute/data"; do
-    if [[ -e $path ]]; then local contents; contents=$(find "$path" -mindepth 1 -maxdepth 1 -print) || fail "could not inspect $path"; [[ -z $contents ]] || fail "target path is not empty: $path"; fi
+    if [[ -e $path ]]; then
+      local contents
+      contents=$(find "$path" -mindepth 1 -maxdepth 1 -print) || fail "could not inspect $path"
+      [[ -z $contents ]] || record_collision "$path (migration destination is not empty)"
+    fi
   done
-  [[ ! -e $HOME_DIR/.dsh && ! -L $HOME_DIR/.dsh ]] || fail "destination exists; refusing to merge DSH profile/session tree: $HOME_DIR/.dsh"
+  [[ ! -e $HOME_DIR/.dsh && ! -L $HOME_DIR/.dsh ]] || record_collision "$HOME_DIR/.dsh (DSH profile destination already exists)"
   verify_merge /var/lib/huou07-dsh/config "$HOME_DIR/.config"
   verify_merge /var/lib/huou07-dsh/data "$HOME_DIR/.local/share"
   verify_merge /var/lib/huou07-dsh/state "$HOME_DIR/.local/state"
@@ -193,14 +254,25 @@ preflight() {
   verify_merge /srv/huou07-dsh-workspaces "$HOME_DIR/Projects/dsh"
   verify_merge /srv/huou07-opencode-workspaces "$HOME_DIR/Projects/opencode"
   for path in "$HOME_DIR/.config/opencode/web.env" "$HOME_DIR/.local/state/huou07-playground/apps.json"; do
-    [[ ! -e $path ]] || fail "destination exists; refusing to replace owner data: $path"
+    [[ ! -e $path && ! -L $path ]] || record_collision "$path (migration would replace owner data)"
   done
-  [[ ! -e /srv/huou07-dsh-workspaces-legacy && ! -e /srv/huou07-opencode-workspaces-legacy ]] || fail "workspace rollback destination exists"
+  [[ ! -e /srv/huou07-dsh-workspaces-legacy && ! -L /srv/huou07-dsh-workspaces-legacy ]] || record_collision '/srv/huou07-dsh-workspaces-legacy (rollback destination exists)'
+  [[ ! -e /srv/huou07-opencode-workspaces-legacy && ! -L /srv/huou07-opencode-workspaces-legacy ]] || record_collision '/srv/huou07-opencode-workspaces-legacy (rollback destination exists)'
   [[ -d /srv/huou07-dsh-workspaces && -d /srv/huou07-opencode-workspaces ]] || fail "legacy workspaces missing"
   for unit in "${SYSTEM_UNITS[@]}"; do
     state=$(systemctl is-enabled "$unit" 2>/dev/null || true)
     [[ $state == enabled || $state == enabled-runtime || $state == disabled || $state == static || $state == indirect || $state == generated ]] || fail "unsupported original unit enable state for $unit: ${state:-unknown}"
   done
+  if ! opencode_config_check; then record_collision 'OpenCode config/auth files cannot be merged safely'; fi
+  if ((${#PRESERVED_OPENCODE_COLLISIONS[@]})); then
+    printf 'OpenCode owner files will be retained on %d path(s); source files stay in the untouched legacy state and root-only backup:\n' "${#PRESERVED_OPENCODE_COLLISIONS[@]}"
+    printf '  %s\n' "${PRESERVED_OPENCODE_COLLISIONS[@]}"
+  fi
+  if ((${#COLLISIONS[@]})); then
+    printf 'Unresolved state collisions (%d); no destination will be overwritten:\n' "${#COLLISIONS[@]}" >&2
+    printf '  %s\n' "${COLLISIONS[@]}" >&2
+    fail 'review and resolve every listed destination collision before cutover'
+  fi
   check_cutover_space
   echo 'Preflight passed. It did not stop or restart any service.'
 }
@@ -211,11 +283,15 @@ copy_merge() {
   install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$dst"
   find "$src" -mindepth 1 -xdev -print0 | while IFS= read -r -d '' item; do
     rel=${item#"$src"/}; target=$dst/$rel
+    if is_opencode_config_file "$src" "$dst" "$rel" || is_opencode_auth_file "$src" "$dst" "$rel"; then continue; fi
     if [[ -e $target || -L $target ]]; then
       if [[ -d $item && -d $target && ! -L $item && ! -L $target ]]; then continue
       elif [[ -L $item && -L $target && $(readlink "$item") == "$(readlink "$target")" ]]; then continue
       elif [[ -f $item && -f $target ]] && cmp -s "$item" "$target"; then continue
-      else fail "state collision; no destination was overwritten: $target"; fi
+      else
+        if is_opencode_source "$src"; then continue; fi
+        fail "state collision; no destination was overwritten: $target"
+      fi
     fi
     if [[ -d $item && ! -L $item ]]; then install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$target"
     else install -d -o "$USER_NAME" -g "$USER_NAME" -m 0700 "$(dirname "$target")"; cp -a --no-preserve=ownership "$item" "$target"; chown -h "$USER_NAME:$USER_NAME" "$target"; fi
@@ -223,17 +299,22 @@ copy_merge() {
 }
 
 verify_merge() {
-  local src=$1 dst=$2 item rel target
+  local src=$1 dst=$2 item rel target listing
   [[ -d $src ]] || return 0
-  find "$src" -mindepth 1 -xdev -print0 | while IFS= read -r -d '' item; do
+  listing=$(mktemp) || fail "could not create collision-scan file for $src"
+  find "$src" -mindepth 1 -xdev -print0 >"$listing" || { rm -f "$listing"; fail "could not inspect migration source: $src"; }
+  while IFS= read -r -d '' item; do
     rel=${item#"$src"/}; target=$dst/$rel
     if [[ -e $target || -L $target ]]; then
       if [[ -d $item && -d $target && ! -L $item && ! -L $target ]]; then continue
       elif [[ -L $item && -L $target && $(readlink "$item") == "$(readlink "$target")" ]]; then continue
       elif [[ -f $item && -f $target ]] && cmp -s "$item" "$target"; then continue
-      else fail "state collision before cutover; destination will not be overwritten: $target"; fi
+      elif is_opencode_config_file "$src" "$dst" "$rel" || is_opencode_auth_file "$src" "$dst" "$rel"; then continue
+      elif is_opencode_source "$src"; then PRESERVED_OPENCODE_COLLISIONS+=("$target")
+      else record_collision "$target"; fi
     fi
-  done
+  done <"$listing"
+  rm -f "$listing"
 }
 
 stop_target() {
@@ -263,6 +344,7 @@ restore_legacy() {
     install -o root -g root -m 0644 "$backup/dsh-policy.js" /opt/huou07-dsh/app/node_modules/@deepseek-ai/dsh-sandbox-policy/lib/index.js
     install -o root -g root -m 0644 "$backup/dsh-picker.js" /opt/huou07-dsh/app/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/lib/index.js
   fi
+  if [[ -f ${backup:-}/opencode/manifest.json ]]; then opencode_config_restore; fi
   if [[ -f ${backup:-}/system-unit-states ]]; then
     while read -r unit state; do
       case "$state" in enabled|enabled-runtime) systemctl enable "$unit" >/dev/null;; *) systemctl disable "$unit" >/dev/null 2>&1 || :;; esac
@@ -275,7 +357,7 @@ restore_legacy() {
 
 if [[ $ACTION == preflight ]]; then
   preflight
-  echo 'Review this exact command before any cutover: sudo sh deploy/migrate-one-user.sh cutover'
+  echo 'Cutover is not performed by preflight. Review the runner and backup plan before a separate owner-run cutover.'
   exit 0
 fi
 
@@ -343,6 +425,7 @@ copy_merge /var/lib/huou07-dsh/config "$HOME_DIR/.config"
 copy_merge /var/lib/huou07-dsh/data "$HOME_DIR/.local/share"
 copy_merge /var/lib/huou07-dsh/state "$HOME_DIR/.local/state"
 copy_merge /var/lib/huou07-dsh/cache "$HOME_DIR/.cache"
+opencode_config_apply
 copy_merge /var/lib/huou07-opencode/config "$HOME_DIR/.config"
 copy_merge /var/lib/huou07-opencode/data "$HOME_DIR/.local/share"
 copy_merge /var/lib/huou07-opencode/state "$HOME_DIR/.local/state"
@@ -362,9 +445,7 @@ as_user /usr/bin/podman volume import "$PG_VOLUME" - < "$backup/litellm-postgres
 as_user /usr/bin/podman unshare tar --numeric-owner --same-owner -xpf "$backup/omniroute-data.tar" -C "$HOME_DIR/.local/share/omniroute/data"
 target_owner=$(as_user /usr/bin/podman unshare stat -c '%u:%g' "$HOME_DIR/.local/share/omniroute/data")
 [[ $target_owner == 1000:1000 ]] || fail "imported OmniRoute owner is $target_owner, expected 1000:1000"
-source_auth=$(find /var/lib/huou07-opencode/data -xdev -type f -name auth.json -print -quit)
-target_auth="$HOME_DIR/.local/share/${source_auth#/var/lib/huou07-opencode/data/}"
-[[ -f $target_auth ]] && cmp -s "$source_auth" "$target_auth" || fail 'OpenCode credential file did not migrate byte-for-byte'
+opencode_config_verify || fail 'OpenCode effective config/provider auth verification failed'
 login=$(as_user /home/huou07/.local/bin/codex login status 2>&1) || fail 'native Codex login status failed after state migration'
 [[ $login == *"Logged in using ChatGPT"* ]] || fail 'native Codex ChatGPT login changed during migration'
 [[ -d $HOME_DIR/.dsh/profiles/web ]] || fail 'DSH web profile/session tree did not migrate'

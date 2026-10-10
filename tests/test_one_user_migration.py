@@ -60,9 +60,17 @@ class OneUserMigrationTests(unittest.TestCase):
         source = (ROOT / "deploy/migrate-one-user.sh").read_text()
         self.assertLess(source.index("trap on_exit EXIT"), source.index("systemctl stop \"$unit\""))
         self.assertIn("verify_merge /var/lib/huou07-dsh/config", source)
-        self.assertIn("state collision before cutover", source)
+        self.assertIn("Unresolved state collisions", source)
+        self.assertIn("COLLISIONS+=", source)
+        self.assertIn("record_collision \"$target\"", source)
         self.assertIn("restore_legacy", source)
         self.assertIn('case "$state" in enabled|enabled-runtime)', source)
+
+    def test_opencode_unit_and_rollback_destination_collisions_are_accumulated(self):
+        source = (ROOT / "deploy/migrate-one-user.sh").read_text()
+        self.assertIn("record_collision \"$HOME_DIR/.config/systemd/user/$unit", source)
+        self.assertIn("record_collision '/srv/huou07-dsh-workspaces-legacy", source)
+        self.assertIn("record_collision '/srv/huou07-opencode-workspaces-legacy", source)
 
 
 if __name__ == "__main__":
