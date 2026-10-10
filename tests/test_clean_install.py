@@ -1,7 +1,12 @@
 import contextlib
+import base64
+import http.server
 import importlib.util
 import io
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -21,6 +26,73 @@ launcher = load_module("dsh_dashboard_launcher", ROOT / "deploy/dsh-dashboard-la
 
 
 class CleanInstallTests(unittest.TestCase):
+    def test_health_checker_executes_dsh_cookie_flow_and_named_http_checks(self):
+        expected_auth = "Basic " + base64.b64encode(b"synthetic-user:synthetic-password").decode()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.startswith("/?token="):
+                    self.send_response(302)
+                    self.send_header("Location", "/")
+                    self.send_header("Set-Cookie", "session=synthetic; Path=/")
+                    self.end_headers()
+                elif self.path == "/":
+                    self.send_response(200 if self.headers.get("Cookie") == "session=synthetic" else 401)
+                    self.end_headers()
+                elif self.path == "/global/health":
+                    self.send_response(200 if self.headers.get("Authorization") == expected_auth else 401)
+                    self.end_headers()
+                elif self.path in {"/dashboard", "/litellm", "/omniroute"}:
+                    self.send_response(200)
+                    self.end_headers()
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base_url = f"http://127.0.0.1:{server.server_port}"
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                env_file = root / "opencode.env"
+                env_file.write_text(
+                    "OPENCODE_SERVER_USERNAME=synthetic-user\n"
+                    "OPENCODE_SERVER_PASSWORD=synthetic-password\n"
+                )
+                token_file = root / "dsh-url"
+                token_file.write_text("/?token=" + "A" * 40 + "\n")
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "deploy/check-user-app-health.py"),
+                        "--opencode-env", str(env_file),
+                        "--dsh-token-file", str(token_file),
+                        "--dsh-url", base_url,
+                        "--dashboard-url", base_url + "/dashboard",
+                        "--opencode-url", base_url + "/global/health",
+                        "--litellm-url", base_url + "/litellm",
+                        "--omniroute-url", base_url + "/omniroute",
+                        "--timeout", "5",
+                        "--interval", "0.01",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                for name in ("dashboard", "OpenCode Web", "LiteLLM", "OmniRoute", "DSH Web"):
+                    self.assertIn(name, result.stdout)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_admin_scope_excludes_dashboard_vpn_and_home(self):
         self.assertEqual(set(admin.APP_UNITS), {
             "huou07-dsh.service", "huou07-opencode-web.service",

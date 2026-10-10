@@ -407,57 +407,9 @@ activate() {
 }
 
 wait_for_http() {
-  python3 - "$APP_CONFIG/opencode-web.env" <<'PY'
-import base64, json, socket, sys, time
-from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
-
-def read_env(path):
-    result = {}
-    for line in Path(path).read_text().splitlines():
-        if "=" in line and not line.startswith("#"):
-            key, value = line.split("=", 1)
-            result[key] = value
-    return result
-
-env = read_env(sys.argv[1])
-opencode_auth = base64.b64encode((env["OPENCODE_SERVER_USERNAME"] + ":" + env["OPENCODE_SERVER_PASSWORD"]).encode()).decode()
-token_file = Path("/run/huou07-dsh-link/url")
-deadline = time.monotonic() + 120
-checks = {
-    "dashboard": ("http://127.0.0.1:8765/api/health", None),
-    "OpenCode Web": ("http://127.0.0.1:4096/global/health", "Basic " + opencode_auth),
-    "LiteLLM": ("http://127.0.0.1:4000/health/readiness", None),
-    "OmniRoute": ("http://127.0.0.1:20128/healthz", None),
-}
-pending = set(checks) | {"DSH Web"}
-while pending and time.monotonic() < deadline:
-    for name in tuple(pending):
-        url, auth = checks[name]
-        try:
-            request = Request(url)
-            if auth: request.add_header("Authorization", auth)
-            with urlopen(request, timeout=2) as response:
-                if response.status == 200:
-                    pending.remove(name)
-                    print(name + " HTTP health passed.")
-        except (OSError, HTTPError, URLError, TimeoutError):
-            pass
-    if token_file.is_file():
-        try:
-            token_path = token_file.read_text().strip()
-            with urlopen("http://127.0.0.1:3080" + token_path, timeout=2) as response:
-                if response.status == 200:
-                    pending.discard("DSH Web")
-                    print("DSH Web login page passed.")
-        except (OSError, HTTPError, URLError, TimeoutError):
-            pass
-    time.sleep(2)
-if pending:
-    print("Application health did not become ready: " + ", ".join(sorted(pending)), file=sys.stderr)
-    raise SystemExit(1)
-PY
+  python3 "$ROOT/deploy/check-user-app-health.py" \
+    --opencode-env "$APP_CONFIG/opencode-web.env" \
+    --dsh-token-file /run/huou07-dsh-link/url
 }
 
 status() {
