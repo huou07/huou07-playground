@@ -1,24 +1,7 @@
 # Deployment status
 
-## Current host, inspected read-only
+The Dell's previous clean-install attempt was rolled back successfully. All five original app services are active, and the dashboard, WireGuard, rootful Docker, AN3, AdGuard Home and unrelated services remain untouched. No old app data was deleted.
 
-The repository is being prepared for a clean reinstall. The Dell currently has the dashboard, WireGuard, Docker and old app-specific services active. The owner confirmed experimental app data can be discarded. No application was stopped and no privileged command was run during this implementation.
+The corrected deployment path keeps those services running through full readiness. It accepts Podman's actual cgroup value `v2`, validates the exact OmniRoute unit description, pre-installs the required pinned packages and container images, validates user Quadlets and ACP initialize, and only checks app ports after the owner requests cutover. It does not directly enable generated Quadlet units. LiteLLM/PostgreSQL and OmniRoute/Redis start through their dependency graph. Cutover failure triggers restoration of the old app units.
 
-Verified facts from the host inventory:
-
-- Primary user: `huou07`; HOME `/home/huou07`; user lingering is enabled.
-- Node 24.21.0, Podman 5.4.2, OpenCode CLI 1.18.35, Codex CLI 0.161.0.
-- Codex reports an existing ChatGPT login; OpenCode's native auth command reports configured providers. Credential values were not read or shown.
-- Rootless Podman is available. Current production rootful Docker is separate and remains untouched.
-- Dashboard cards and port definitions are already present. The dashboard system unit is intentionally left in place so its WireGuard-bound listener and app relays are not disturbed.
-- Old app services still run under their previous accounts until the owner runs the reviewed `retire` step. Reinstallation and browser acceptance have not happened yet.
-
-## New clean-install files
-
-The user installer targets DSH and ACP under `~/.local`, DSH profile/state under `~/.dsh`, the existing OpenCode CLI wrapper/config/auth under `~/.opencode`, app-generated settings under `~/.config/huou07-playground`, LiteLLM and OmniRoute state in owner rootless Podman storage, and standard `systemd --user` / Quadlet units.
-
-The owner-run retirement helper is `deploy/admin/clean-playground-apps.py`. It has read-only preflight, reversible service retirement/rollback, and explicitly confirmed final deletion of only the previous app-specific accounts and paths. It does not touch the dashboard, WireGuard, Docker, Cockpit, other containers, or `/home`.
-
-## Acceptance still pending
-
-The owner must review and execute the admin preflight/retire steps, then the unprivileged install. Browser logins and DSH ACP agent setup require owner interaction. Model inference is intentionally excluded. Final cleanup is pending until browser acceptance.
+The Dell checkout's prior local OmniRoute-description adjustment matches the repository correction and is incorporated. No live cutover has been run by Codex. Use [`docs/CLEAN-REINSTALL.md`](CLEAN-REINSTALL.md) for the one readiness command, cutover, rollback and post-install owner setup. Provider login and model inference remain owner-only; tests send no model prompts.

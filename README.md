@@ -16,14 +16,9 @@ The dashboard already has application cards for these private endpoints and rela
 
 ## Clean reinstall
 
-The old app-specific system services use dedicated accounts. The owner-run cleanup has three actions: read-only preflight, reversible retirement, and final cleanup after the new interfaces are accepted. It does not touch the dashboard, WireGuard, SSH, Cockpit, rootful Docker, AN3, LAN Arcade, AdGuard Home, or unrelated data. See [`docs/CLEAN-REINSTALL.md`](docs/CLEAN-REINSTALL.md) for the exact sequence and rollback.
+The old app-specific services are replaced by user services under `huou07`. The owner-run procedure has a non-disruptive readiness stage, one reversible cutover, rollback, and final cleanup only after browser acceptance. It does not touch the dashboard, WireGuard, SSH, Cockpit, rootful Docker, AN3, LAN Arcade, AdGuard Home, or unrelated data. See [`docs/CLEAN-REINSTALL.md`](docs/CLEAN-REINSTALL.md) for the exact sequence.
 
-After the owner runs the preflight and retirement steps on the Dell, sign in as `huou07` and run:
-
-```sh
-./deploy/install-user-apps.sh check
-./deploy/install-user-apps.sh install
-```
+Readiness installs pinned software, validates ACP initialization, checks Quadlet generation, and pre-pulls images while existing services are still active. Cutover retires only the five verified old application units, activates the prepared user services, checks local health, and automatically restores the old units if activation fails. It does not delete old state.
 
 The installer pins DSH `0.2.0-rc.2`, DSH ACP adapter `0.2.0-rc.2.9`, Codex ACP `2.2.2`, LiteLLM `v1.104.2`, PostgreSQL `16`, OmniRoute `3.8.51`, and Redis `8.6.5-alpine`. It uses the existing Node 24, OpenCode CLI, Codex CLI, and rootless Podman. It does not perform model inference or add provider credentials.
 
@@ -43,7 +38,7 @@ Keep the SSH tunnel available until the WireGuard dashboard and app links have b
 make check
 ```
 
-This runs Python regression tests, shell syntax checks, and browser-free app configuration checks. It does not invoke any AI model. `./deploy/install-user-apps.sh status` reports service and local health status without making model requests.
+This runs Python regression tests, shell syntax checks, and browser-free app configuration checks. It does not invoke any AI model. The Dell readiness and post-cutover checks also avoid model requests.
 
 ## Develop the dashboard locally
 

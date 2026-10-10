@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ACTION=${1:-check}
+ACTION=${1:-prepare}
 USER_NAME=huou07
 HOME_DIR=/home/huou07
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -11,7 +11,17 @@ APP_CONFIG="$HOME_DIR/.config/huou07-playground"
 LITELLM_CONFIG="$HOME_DIR/.config/litellm"
 OMNIROUTE_CONFIG="$HOME_DIR/.config/omniroute"
 APP_DATA="$HOME_DIR/.local/share/huou07-playground"
+TOOLS_DIR="$APP_DATA/tools"
+READY_FILE="$APP_DATA/readiness.json"
 PORTS="3080 4096 4000 20128 20129 20132"
+DSH_VERSION=0.2.0-rc.2
+ACP_VERSION=2.2.2
+ADAPTER_VERSION=0.2.0-rc.2.9
+PNPM_VERSION=11.7.0
+LITELLM_IMAGE=ghcr.io/berriai/litellm:v1.104.2
+POSTGRES_IMAGE=docker.io/library/postgres:16
+OMNIROUTE_IMAGE=docker.io/diegosouzapw/omniroute:3.8.51
+REDIS_IMAGE=docker.io/library/redis:8.6.5-alpine
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -23,12 +33,301 @@ check_identity() {
   command -v podman >/dev/null || fail 'Podman is required for the LiteLLM and OmniRoute Quadlets.'
   command -v npm >/dev/null || fail 'npm is required to install DSH and ACP.'
   command -v curl >/dev/null || fail 'curl is required for local health checks.'
+  command -v python3 >/dev/null || fail 'Python 3 is required for local protocol and health checks.'
   available_kib=$(df -Pk "$HOME_DIR" | awk 'NR == 2 {print $4}')
   [ -n "$available_kib" ] && [ "$available_kib" -ge 8388608 ] || fail 'At least 8 GiB of free space is required for the fresh images and app data.'
   [ -x "$HOME_DIR/.opencode/bin/opencode" ] || fail 'The existing OpenCode CLI wrapper is missing; install it through the official OpenCode installer first.'
   [ -x "$HOME_DIR/.local/bin/codex" ] || fail 'Codex CLI is missing; install it through the official Codex instructions first.'
-  command -v /usr/lib/systemd/system-generators/podman-system-generator >/dev/null 2>&1 || fail 'Podman Quadlet generator is unavailable.'
-  [ "$(podman info --format '{{.Host.CgroupsVersion}}' 2>/dev/null)" = 2 ] || fail 'Rootless Podman must be ready on cgroup v2.'
+  [ -x /usr/lib/systemd/system-generators/podman-system-generator ] || fail 'Podman Quadlet generator is unavailable.'
+  node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null) || fail 'Node.js is unavailable.'
+  [ "$node_major" = 24 ] || fail 'Use the verified Node.js 24 runtime; the DSH adapter declares support for Node 22.19+ or 24+.'
+  cgroups=$(podman info --format '{{.Host.CgroupsVersion}}' 2>/dev/null) || fail 'Rootless Podman information is unavailable.'
+  [ "$cgroups" = v2 ] || fail "Rootless Podman requires cgroup v2 (reported: $cgroups)."
+  rootless=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null) || fail 'Rootless Podman status is unavailable.'
+  [ "$rootless" = true ] || fail 'Podman is not running rootless under huou07.'
+  runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+  [ -d "$runtime_dir" ] || fail 'The huou07 systemd runtime directory is unavailable.'
+  systemctl --user show-environment >/dev/null 2>&1 || fail 'The huou07 systemd user manager is unavailable.'
+  linger=$(loginctl show-user "$USER_NAME" --property=Linger --value 2>/dev/null || true)
+  [ "$linger" = yes ] || fail 'Enable lingering for huou07 so user services survive logout and reboot.'
+}
+
+check_clean_inputs() {
+  # The existing owner OpenCode and Codex installations are deliberately reused.
+  # Refuse application-name collisions in huou07's rootless Podman store.
+  for name in huou07-litellm huou07-litellm-db huou07-litellm-proxy huou07-omniroute huou07-omniroute-redis; do
+    if podman container exists "$name" 2>/dev/null; then
+      fail "A rootless Podman container already uses the new app name '$name'; inspect it before continuing."
+    fi
+  done
+  for name in huou07-litellm-postgres huou07-omniroute-redis; do
+    if podman volume exists "$name" 2>/dev/null; then
+      fail "A rootless Podman volume already uses the new app name '$name'; inspect it before continuing."
+    fi
+  done
+  for name in huou07-litellm huou07-omniroute; do
+    if podman pod exists "$name" 2>/dev/null; then
+      fail "A rootless Podman pod already uses the new app name '$name'; inspect it before continuing."
+    fi
+  done
+  for path in "$APP_CONFIG" "$APP_DATA" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" \
+    "$HOME_DIR/.dsh/profiles/web" "$APP_DATA/dsh-dashboard-launcher.py" "$READY_FILE"; do
+    [ ! -L "$path" ] || fail "Refusing a symlinked application path: $path"
+  done
+  for file in "$USER_UNITS/dsh.service" "$USER_UNITS/opencode-web.service" \
+    "$QUADLETS/litellm.pod" "$QUADLETS/litellm-postgres.volume" "$QUADLETS/litellm-db.container" "$QUADLETS/litellm.container" \
+    "$QUADLETS/omniroute.pod" "$QUADLETS/omniroute-redis.volume" "$QUADLETS/omniroute-redis.container" "$QUADLETS/omniroute.container"; do
+    [ ! -L "$file" ] || fail "Refusing a symlinked app unit path: $file"
+  done
+}
+
+check_package_version() {
+  package_dir=$1
+  expected=$2
+  label=$3
+  if [ -f "$package_dir/package.json" ]; then
+    actual=$(node -e 'process.stdout.write(require(process.argv[1]).version || "")' "$package_dir/package.json" 2>/dev/null || true)
+    [ "$actual" = "$expected" ] || fail "$label is already installed at a different version ($actual); review it before replacement."
+  fi
+}
+
+install_cli_packages() {
+  mkdir -p "$HOME_DIR/.local/lib/node_modules" "$HOME_DIR/.local/bin" "$TOOLS_DIR"
+  check_package_version "$HOME_DIR/.local/lib/node_modules/@deepseek-ai/dsh" "$DSH_VERSION" 'DeepSeek Harness'
+  check_package_version "$HOME_DIR/.local/lib/node_modules/@agentclientprotocol/codex-acp" "$ACP_VERSION" 'Codex ACP'
+  if [ ! -f "$HOME_DIR/.local/lib/node_modules/@deepseek-ai/dsh/package.json" ] || \
+     [ ! -f "$HOME_DIR/.local/lib/node_modules/@agentclientprotocol/codex-acp/package.json" ]; then
+    npm install --global --prefix "$HOME_DIR/.local" --no-audit --no-fund \
+      "@deepseek-ai/dsh@$DSH_VERSION" "@agentclientprotocol/codex-acp@$ACP_VERSION"
+  fi
+
+  pnpm_pkg="$TOOLS_DIR/node_modules/pnpm/package.json"
+  if [ -f "$pnpm_pkg" ]; then
+    actual=$(node -e 'process.stdout.write(require(process.argv[1]).version)' "$pnpm_pkg")
+    [ "$actual" = "$PNPM_VERSION" ] || fail "The playground's scoped pnpm runtime is $actual, expected $PNPM_VERSION."
+  else
+    npm install --prefix "$TOOLS_DIR" --no-audit --no-fund "pnpm@$PNPM_VERSION"
+  fi
+  PATH="$TOOLS_DIR/node_modules/.bin:$HOME_DIR/.local/bin:$PATH"
+  export PATH
+  [ "$("$HOME_DIR/.local/bin/dsh" --version 2>/dev/null)" = "$DSH_VERSION" ] || fail 'Installed DSH version did not match the pinned release.'
+  "$HOME_DIR/.local/bin/codex-acp" --version >/dev/null
+  [ "$(pnpm --version)" = "$PNPM_VERSION" ] || fail 'The scoped pnpm runtime did not start at its pinned version.'
+
+  export HOME="$HOME_DIR" DSH_HOME="$HOME_DIR/.dsh" CODEX_HOME="$HOME_DIR/.codex"
+  profile="$DSH_HOME/profiles/web/package.json"
+  if [ -f "$profile" ]; then
+    installed=$(node -e 'const p=require(process.argv[1]); process.stdout.write((p.dependencies||{})["@zaimokuza/dsh-acp-adapter"]||"")' "$profile")
+    [ "$installed" = "$ADAPTER_VERSION" ] || fail "The existing DSH Web profile has a different ACP adapter spec ('$installed')."
+  else
+    "$HOME_DIR/.local/bin/dsh" plugin --profile web add "@zaimokuza/dsh-acp-adapter@$ADAPTER_VERSION"
+  fi
+  node - "$DSH_HOME/profiles/web/node_modules/@zaimokuza/dsh-acp-adapter/package.json" "$ADAPTER_VERSION" <<'NODE'
+const fs = require("node:fs");
+const actual = JSON.parse(fs.readFileSync(process.argv[2], "utf8")).version;
+if (actual !== process.argv[3]) process.exit(1);
+NODE
+  "$HOME_DIR/.local/bin/dsh" --profile web --dump-config >/dev/null 2>&1 || fail 'DSH Web profile could not load its pinned plugin composition.'
+}
+
+check_acp_initialize() {
+  python3 - "$HOME_DIR/.local/bin/codex-acp" "$HOME_DIR/.opencode/bin/opencode" <<'PY'
+import json, subprocess, sys
+request = json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"huou07-readiness","version":"1"}}}) + "\n"
+agents = (([sys.argv[1]], "Codex ACP"), ([sys.argv[2], "acp"], "OpenCode ACP"))
+for command, label in agents:
+    try:
+        result = subprocess.run(command, input=request, capture_output=True, text=True, timeout=30, check=False)
+        replies = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        response = next((item for item in replies if item.get("id") == 1), None)
+        if result.returncode or not response or "error" in response or "result" not in response:
+            raise RuntimeError
+    except Exception:
+        print(f"{label} ACP initialize failed (no model request was sent).", file=sys.stderr)
+        raise SystemExit(1)
+    print(f"{label} ACP initialize passed (no model request was sent).")
+PY
+}
+
+ensure_config_files() {
+  mkdir -p "$APP_CONFIG" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$APP_DATA" "$HOME_DIR/.local/share/omniroute" "$HOME_DIR/Projects"
+  chmod 0700 "$APP_CONFIG" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$APP_DATA" "$HOME_DIR/.local/share/omniroute"
+  if [ ! -f "$APP_CONFIG/opencode-web.env" ]; then
+    pass=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+    write_secret_file "$APP_CONFIG/opencode-web.env" "OPENCODE_SERVER_USERNAME=opencode" "OPENCODE_SERVER_PASSWORD=$pass"
+    unset pass
+  fi
+  if [ ! -f "$LITELLM_CONFIG/postgres.env" ]; then
+    pgpass=$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')
+    write_secret_file "$LITELLM_CONFIG/postgres.env" "POSTGRES_DB=litellm" "POSTGRES_USER=litellm" "POSTGRES_PASSWORD=$pgpass"
+    unset pgpass
+  fi
+  if [ ! -f "$LITELLM_CONFIG/litellm.env" ]; then
+    master=$(python3 -c 'import secrets; print("sk-" + secrets.token_hex(32))')
+    salt=$(python3 -c 'import secrets; print("sk-" + secrets.token_hex(32))')
+    dbpass=$(sed -n 's/^POSTGRES_PASSWORD=//p' "$LITELLM_CONFIG/postgres.env")
+    [ -n "$dbpass" ] || fail 'The PostgreSQL password file is incomplete.'
+    write_secret_file "$LITELLM_CONFIG/litellm.env" \
+      "LITELLM_MASTER_KEY=$master" "LITELLM_SALT_KEY=$salt" \
+      "DATABASE_URL=postgresql://litellm:$dbpass@127.0.0.1:5432/litellm" "STORE_MODEL_IN_DB=True"
+    unset master salt dbpass
+  fi
+  if [ ! -f "$OMNIROUTE_CONFIG/omniroute.env" ]; then
+    password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+    jwt=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
+    api_key_secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+    ws_secret=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+    write_secret_file "$OMNIROUTE_CONFIG/omniroute.env" \
+      'DASHBOARD_PORT=20128' 'API_PORT=20129' 'LIVE_WS_PORT=20132' \
+      'DATA_DIR=/app/data' 'REDIS_URL=redis://127.0.0.1:6379' 'REQUIRE_API_KEY=true' \
+      "INITIAL_PASSWORD=$password" "JWT_SECRET=$jwt" "API_KEY_SECRET=$api_key_secret" \
+      "OMNIROUTE_WS_BRIDGE_SECRET=$ws_secret" 'OMNIROUTE_MEMORY_MB=2048'
+    unset password jwt api_key_secret ws_secret
+  fi
+  if [ ! -f "$LITELLM_CONFIG/config.yaml" ]; then
+    umask 077
+    printf 'model_list: []\n' > "$LITELLM_CONFIG/config.yaml"
+    chmod 0600 "$LITELLM_CONFIG/config.yaml"
+  fi
+  for file in "$APP_CONFIG/opencode-web.env" "$LITELLM_CONFIG/postgres.env" "$LITELLM_CONFIG/litellm.env" "$OMNIROUTE_CONFIG/omniroute.env"; do
+    [ -f "$file" ] && [ ! -L "$file" ] || fail "Required application configuration is missing or symlinked: $file"
+    [ "$(stat -c '%a' "$file")" = 600 ] || fail "Secret file must have mode 0600: $file"
+  done
+}
+
+write_secret_file() {
+  target=$1
+  shift
+  umask 077
+  tmp="$target.tmp.$$"
+  ( set -C; printf '%s\n' "$@" > "$tmp" )
+  chmod 0600 "$tmp"
+  mv "$tmp" "$target"
+}
+
+install_unit_files() {
+  mkdir -p "$USER_UNITS" "$QUADLETS"
+  install_or_verify() {
+    source=$1
+    target=$2
+    if [ -e "$target" ]; then
+      cmp -s "$source" "$target" || fail "Existing application file differs from the pinned checkout: $target"
+    else
+      install -m 0644 "$source" "$target"
+    fi
+  }
+  install_or_verify "$ROOT/deploy/dsh-dashboard-launcher.py" "$APP_DATA/dsh-dashboard-launcher.py"
+  for pair in \
+    "deploy/user/dsh.service:$USER_UNITS/dsh.service" \
+    "deploy/user/opencode-web.service:$USER_UNITS/opencode-web.service" \
+    "deploy/user/litellm.pod:$QUADLETS/litellm.pod" \
+    "deploy/user/litellm-postgres.volume:$QUADLETS/litellm-postgres.volume" \
+    "deploy/user/litellm-db.container:$QUADLETS/litellm-db.container" \
+    "deploy/user/litellm.container:$QUADLETS/litellm.container" \
+    "deploy/user/omniroute.pod:$QUADLETS/omniroute.pod" \
+    "deploy/user/omniroute-redis.volume:$QUADLETS/omniroute-redis.volume" \
+    "deploy/user/omniroute-redis.container:$QUADLETS/omniroute-redis.container" \
+    "deploy/user/omniroute.container:$QUADLETS/omniroute.container"; do
+    source=${pair%%:*}
+    target=${pair#*:}
+    install_or_verify "$ROOT/$source" "$target"
+  done
+}
+
+validate_quadlets() {
+  temp=$(mktemp -d "$APP_DATA/quadlet-check.XXXXXX")
+  trap 'rm -rf "$temp"' EXIT HUP INT TERM
+  cp "$QUADLETS"/*.pod "$QUADLETS"/*.volume "$QUADLETS"/*.container "$temp/"
+  if ! QUADLET_UNIT_DIRS="$temp" /usr/lib/systemd/system-generators/podman-system-generator --user --dryrun >"$temp/output" 2>&1; then
+    sed -n '/error\|failed\|Error\|Failed/p' "$temp/output" >&2
+    fail 'Podman Quadlet generation failed before cutover.'
+  fi
+  for unit in litellm-pod.service litellm-postgres-volume.service litellm-db.service litellm.service \
+    omniroute-pod.service omniroute-redis-volume.service omniroute-redis.service omniroute.service; do
+    grep -q -- "---$unit---" "$temp/output" || fail "Quadlet generator did not produce $unit."
+  done
+  if grep -Eiq 'error loading|failed to parse|invalid quadlet|unknown key' "$temp/output"; then
+    sed -n '/error\|failed\|Error\|Failed/p' "$temp/output" >&2
+    fail 'Podman Quadlet parser reported an invalid unit.'
+  fi
+  trap - EXIT HUP INT TERM
+  rm -rf "$temp"
+  printf 'Podman 5.4 Quadlet generation passed for all eight units.\n'
+}
+
+pull_images() {
+  for image in "$LITELLM_IMAGE" "$POSTGRES_IMAGE" "$OMNIROUTE_IMAGE" "$REDIS_IMAGE"; do
+    if ! podman image exists "$image"; then
+      podman pull "$image"
+    else
+      printf 'Image ready: %s\n' "$image"
+    fi
+  done
+}
+
+write_readiness_marker() {
+  commit=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf unknown)
+  python3 - "$READY_FILE" "$commit" "$DSH_VERSION" "$ACP_VERSION" "$ADAPTER_VERSION" "$LITELLM_IMAGE" "$OMNIROUTE_IMAGE" <<'PY'
+import json, os, sys, tempfile
+path, commit, dsh, codex_acp, adapter, litellm, omniroute = sys.argv[1:]
+data = {"commit": commit, "dsh": dsh, "codex_acp": codex_acp, "adapter": adapter, "litellm_image": litellm, "omniroute_image": omniroute}
+fd, temporary = tempfile.mkstemp(prefix=".readiness-", dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd, "w") as stream:
+        json.dump(data, stream, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+finally:
+    if os.path.exists(temporary): os.unlink(temporary)
+PY
+}
+
+prepare() {
+  check_identity
+  check_clean_inputs
+  mkdir -p "$APP_DATA" "$HOME_DIR/Projects"
+  export HOME="$HOME_DIR" DSH_HOME="$HOME_DIR/.dsh" CODEX_HOME="$HOME_DIR/.codex"
+  if "$HOME_DIR/.local/bin/codex" login status 2>/dev/null | grep -qi 'logged in using chatgpt'; then
+    printf 'Native Codex ChatGPT login detected (credentials hidden).\n'
+  else
+    printf 'OWNER_LOGIN_REQUIRED: native Codex CLI is not signed in.\n'
+  fi
+  if "$HOME_DIR/.opencode/bin/opencode" auth list >/dev/null 2>&1; then
+    printf 'Native OpenCode authentication state is readable by its CLI (values hidden).\n'
+  else
+    printf 'OWNER_LOGIN_REQUIRED: OpenCode provider sign-in may be needed.\n'
+  fi
+  install_cli_packages
+  check_acp_initialize
+  ensure_config_files
+  install_unit_files
+  validate_quadlets
+  pull_images
+  write_readiness_marker
+  printf 'READY: packages, ACP initialize, owner config, Quadlets, and all container images are prepared. Legacy services were not stopped.\n'
+}
+
+check_readiness_marker() {
+  [ -f "$READY_FILE" ] && [ ! -L "$READY_FILE" ] || fail 'Readiness marker missing; run the administrator preflight before cutover.'
+  commit=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf unknown)
+  python3 - "$READY_FILE" "$commit" "$DSH_VERSION" "$ACP_VERSION" "$ADAPTER_VERSION" "$LITELLM_IMAGE" "$OMNIROUTE_IMAGE" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+expected = dict(zip(("commit", "dsh", "codex_acp", "adapter", "litellm_image", "omniroute_image"), sys.argv[2:]))
+if data != expected:
+    print("Prepared state does not match this checkout and its pinned software versions.", file=sys.stderr)
+    raise SystemExit(1)
+PY
+  [ -f "$HOME_DIR/.local/bin/dsh" ] && [ -f "$HOME_DIR/.local/bin/codex-acp" ] || fail 'Prepared CLI packages are missing.'
+  for image in "$LITELLM_IMAGE" "$POSTGRES_IMAGE" "$OMNIROUTE_IMAGE" "$REDIS_IMAGE"; do
+    podman image exists "$image" || fail "Prepared container image is missing: $image"
+  done
+  for file in "$APP_CONFIG/opencode-web.env" "$LITELLM_CONFIG/postgres.env" "$LITELLM_CONFIG/litellm.env" "$OMNIROUTE_CONFIG/omniroute.env"; do
+    [ -f "$file" ] && [ ! -L "$file" ] || fail "Prepared application configuration is missing: $file"
+  done
 }
 
 ports_free() {
@@ -42,196 +341,89 @@ for port in map(int, sys.argv[1].split()):
         except OSError:
             busy.append(port)
 if busy:
-    print("Ports already in use: " + ", ".join(map(str, busy)), file=sys.stderr)
-    print("Stop the old playground-managed application services with the reviewed admin retire command, then retry.", file=sys.stderr)
+    print("After legacy retirement, ports still occupied: " + ", ".join(map(str, busy)), file=sys.stderr)
     raise SystemExit(1)
 PY
 }
 
-preflight() {
+activate() {
   check_identity
+  check_readiness_marker
   ports_free
-  [ ! -e "$HOME_DIR/.local/lib/node_modules/@deepseek-ai/dsh" ] || fail 'A DSH package already exists in ~/.local; inspect it before reinstalling.'
-  [ ! -e "$HOME_DIR/.local/lib/node_modules/@agentclientprotocol/codex-acp" ] || fail 'Codex ACP already exists in ~/.local; inspect it before reinstalling.'
-  [ ! -e "$HOME_DIR/.local/lib/node_modules/omniroute" ] || fail 'An OmniRoute package already exists in ~/.local; inspect it before reinstalling.'
-  [ ! -e "$HOME_DIR/.dsh/profiles/web" ] || fail 'A DSH Web profile exists; move or remove that old experimental profile after confirming it is disposable.'
-  [ ! -e "$HOME_DIR/.local/share/omniroute" ] || fail 'OmniRoute data already exists; move or remove that old experimental data after confirming it is disposable.'
-  [ ! -e "$APP_CONFIG/opencode-web.env" ] || fail 'The playground OpenCode Web password file already exists; keep it or remove it yourself before a clean install.'
-  for file in "$LITELLM_CONFIG/postgres.env" "$LITELLM_CONFIG/litellm.env" "$LITELLM_CONFIG/config.yaml" "$OMNIROUTE_CONFIG/omniroute.env"; do
-    [ ! -e "$file" ] || fail "Application configuration already exists: $file"
-  done
-  for file in dsh.service opencode-web.service; do
-    [ ! -e "$USER_UNITS/$file" ] || fail "User service already exists: $USER_UNITS/$file"
-  done
-  for file in litellm.pod litellm-postgres.volume litellm-db.container litellm.container \
-    omniroute.pod omniroute-redis.volume omniroute-redis.container omniroute.container; do
-    [ ! -e "$QUADLETS/$file" ] || fail "Quadlet already exists: $QUADLETS/$file"
-  done
-  printf 'Preflight passed for %s.\n' "$USER_NAME"
-  printf 'Native Codex CLI: '; "$HOME_DIR/.local/bin/codex" --version
-  if "$HOME_DIR/.local/bin/codex" login status 2>/dev/null | grep -qi 'logged in'; then
-    printf 'Codex ChatGPT login: detected (credentials were not displayed).\n'
-  else
-    printf 'Codex login: owner sign-in may be required.\n'
-  fi
-  if "$HOME_DIR/.opencode/bin/opencode" auth list >/dev/null 2>&1; then
-    printf 'OpenCode auth configuration: readable by its native CLI (values were not displayed).\n'
-  else
-    printf 'OpenCode provider sign-in may be required.\n'
-  fi
-  printf 'Rootless Podman and all playground application ports are ready.\n'
-}
-
-write_secret_file() {
-  target=$1
-  shift
-  umask 077
-  tmp="$target.tmp.$$"
-  ( set -C; printf '%s\n' "$@" > "$tmp" )
-  chmod 0600 "$tmp"
-  mv "$tmp" "$target"
-}
-
-install_apps() {
-  preflight
-  command -v node >/dev/null || fail 'Node.js is required.'
-  case "$(node -p 'process.versions.node.split(".")[0]')" in
-    22|24|25|26) ;;
-    *) fail 'Use the verified Node.js 24 runtime (the target currently has 24.21.0).';;
-  esac
-  mkdir -p "$HOME_DIR/.local/share/huou07-playground" "$APP_CONFIG" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" \
-    "$USER_UNITS" "$QUADLETS" "$HOME_DIR/.local/share/omniroute" "$HOME_DIR/Projects"
-  chmod 0700 "$APP_CONFIG" "$APP_DATA" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$HOME_DIR/.local/share/omniroute"
-
-  npm install --global --prefix "$HOME_DIR/.local" --no-audit --no-fund \
-    @deepseek-ai/dsh@0.2.0-rc.2 \
-    @agentclientprotocol/codex-acp@2.2.2 \
-    pnpm@11.7.0
-  "$HOME_DIR/.local/bin/codex-acp" --version
-  "$HOME_DIR/.local/bin/dsh" plugin --profile web add @zaimokuza/dsh-acp-adapter@0.2.0-rc.2.9
-
-  install -m 0644 "$ROOT/deploy/dsh-dashboard-launcher.py" "$APP_DATA/dsh-dashboard-launcher.py"
-  install -m 0644 "$ROOT/deploy/user/dsh.service" "$USER_UNITS/dsh.service"
-  install -m 0644 "$ROOT/deploy/user/opencode-web.service" "$USER_UNITS/opencode-web.service"
-  for file in litellm.pod litellm-postgres.volume litellm-db.container litellm.container \
-    omniroute.pod omniroute-redis.volume omniroute-redis.container omniroute.container; do
-    install -m 0644 "$ROOT/deploy/user/$file" "$QUADLETS/$file"
-  done
-
-  if [ ! -f "$APP_CONFIG/opencode-web.env" ]; then
-    pass=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
-    write_secret_file "$APP_CONFIG/opencode-web.env" "OPENCODE_SERVER_USERNAME=opencode" "OPENCODE_SERVER_PASSWORD=$pass"
-    unset pass
-  fi
-  if [ ! -f "$LITELLM_CONFIG/postgres.env" ]; then
-    pgpass=$(python3 -c 'import secrets; print(secrets.token_urlsafe(36))')
-    write_secret_file "$LITELLM_CONFIG/postgres.env" \
-      "POSTGRES_DB=litellm" "POSTGRES_USER=litellm" "POSTGRES_PASSWORD=$pgpass"
-    unset pgpass
-  fi
-  if [ ! -f "$LITELLM_CONFIG/litellm.env" ]; then
-    master=$(python3 -c 'import secrets; print("sk-" + secrets.token_hex(32))')
-    salt=$(python3 -c 'import secrets; print("sk-" + secrets.token_hex(32))')
-    dbpass=$(sed -n 's/^POSTGRES_PASSWORD=//p' "$LITELLM_CONFIG/postgres.env")
-    write_secret_file "$LITELLM_CONFIG/litellm.env" \
-      "LITELLM_MASTER_KEY=$master" "LITELLM_SALT_KEY=$salt" \
-      "DATABASE_URL=postgresql://litellm:$dbpass@127.0.0.1:5432/litellm" "STORE_MODEL_IN_DB=True"
-    unset master salt dbpass
-  fi
-  if [ ! -f "$OMNIROUTE_CONFIG/omniroute.env" ]; then
-    password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
-    write_secret_file "$OMNIROUTE_CONFIG/omniroute.env" \
-      'APP_BIND_HOST=127.0.0.1' 'DASHBOARD_PORT=20128' 'API_PORT=20129' 'LIVE_WS_PORT=20132' \
-      'DATA_DIR=/app/data' 'REDIS_URL=redis://127.0.0.1:6379' 'REQUIRE_API_KEY=true' \
-      "INITIAL_PASSWORD=$password" 'OMNIROUTE_MEMORY_MB=2048'
-    unset password
-  fi
-  cat > "$LITELLM_CONFIG/config.yaml.tmp" <<'EOF'
-model_list: []
-EOF
-  chmod 0600 "$LITELLM_CONFIG/config.yaml.tmp"
-  mv -f "$LITELLM_CONFIG/config.yaml.tmp" "$LITELLM_CONFIG/config.yaml"
-
   systemctl --user daemon-reload
   systemctl --user enable --now dsh.service opencode-web.service
-  systemctl --user enable litellm-pod.service litellm-postgres-volume.service litellm-db.service litellm.service \
-    omniroute-pod.service omniroute-redis-volume.service omniroute-redis.service omniroute.service
-  systemctl --user start litellm-pod.service litellm-postgres-volume.service litellm-db.service litellm.service
-  systemctl --user start omniroute-pod.service omniroute-redis-volume.service omniroute-redis.service omniroute.service
-  "$0" status
+  # Quadlet's generator applies [Install] on reload; generated units cannot be enabled directly.
+  systemctl --user start litellm.service omniroute.service
+  status
+}
+
+wait_for_http() {
+  python3 - "$APP_CONFIG/opencode-web.env" <<'PY'
+import base64, json, socket, sys, time
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+def read_env(path):
+    result = {}
+    for line in Path(path).read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            result[key] = value
+    return result
+
+env = read_env(sys.argv[1])
+opencode_auth = base64.b64encode((env["OPENCODE_SERVER_USERNAME"] + ":" + env["OPENCODE_SERVER_PASSWORD"]).encode()).decode()
+token_file = Path("/run/huou07-dsh-link/url")
+deadline = time.monotonic() + 120
+checks = {
+    "dashboard": ("http://127.0.0.1:8765/api/health", None),
+    "OpenCode Web": ("http://127.0.0.1:4096/global/health", "Basic " + opencode_auth),
+    "LiteLLM": ("http://127.0.0.1:4000/health/readiness", None),
+    "OmniRoute": ("http://127.0.0.1:20128/healthz", None),
+}
+pending = set(checks) | {"DSH Web"}
+while pending and time.monotonic() < deadline:
+    for name in tuple(pending):
+        url, auth = checks[name]
+        try:
+            request = Request(url)
+            if auth: request.add_header("Authorization", auth)
+            with urlopen(request, timeout=2) as response:
+                if response.status == 200:
+                    pending.remove(name)
+                    print(name + " HTTP health passed.")
+        except (OSError, HTTPError, URLError, TimeoutError):
+            pass
+    if token_file.is_file():
+        try:
+            token_path = token_file.read_text().strip()
+            with urlopen("http://127.0.0.1:3080" + token_path, timeout=2) as response:
+                if response.status == 200:
+                    pending.discard("DSH Web")
+                    print("DSH Web login page passed.")
+        except (OSError, HTTPError, URLError, TimeoutError):
+            pass
+    time.sleep(2)
+if pending:
+    print("Application health did not become ready: " + ", ".join(sorted(pending)), file=sys.stderr)
+    raise SystemExit(1)
+PY
 }
 
 status() {
   check_identity
-  for unit in dsh.service opencode-web.service litellm-pod.service litellm-db.service litellm.service omniroute-pod.service omniroute-redis.service omniroute.service; do
-    printf '%-28s ' "$unit"
-    systemctl --user is-active "$unit" || true
+  for unit in dsh.service opencode-web.service litellm-pod.service litellm-postgres-volume.service litellm-db.service litellm.service \
+    omniroute-pod.service omniroute-redis-volume.service omniroute-redis.service omniroute.service; do
+    systemctl --user is-active --quiet "$unit" || fail "User service is not active: $unit"
   done
-  python3 - <<'PY'
-import socket, urllib.error, urllib.request
-from base64 import b64encode
-from pathlib import Path
-checks = {
-    3080: None,
-    4096: "http://127.0.0.1:4096/global/health",
-    4000: "http://127.0.0.1:4000/health/readiness",
-    20128: "http://127.0.0.1:20128/healthz",
-}
-for port, url in checks.items():
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=2): pass
-        if url:
-            try:
-                request = urllib.request.Request(url)
-                if port == 4096:
-                    values = dict(line.rstrip("\n").split("=", 1) for line in Path.home().joinpath(".config/huou07-playground/opencode-web.env").read_text().splitlines() if "=" in line)
-                    credentials = f'{values["OPENCODE_SERVER_USERNAME"]}:{values["OPENCODE_SERVER_PASSWORD"]}'.encode()
-                    request.add_header("Authorization", "Basic " + b64encode(credentials).decode())
-                urllib.request.urlopen(request, timeout=3).close()
-                result = "HTTP ready"
-            except urllib.error.HTTPError as exc:
-                result = "HTTP auth required" if exc.code == 401 else f"HTTP {exc.code}"
-        else:
-            result = "loopback listener ready"
-    except OSError as exc:
-        result = f"unavailable ({exc.__class__.__name__})"
-    print(f"127.0.0.1:{port}: {result}")
-PY
-  printf 'Application secrets are stored with mode 0600 in ~/.config/huou07-playground, ~/.config/litellm and ~/.config/omniroute (values not displayed).\n'
-}
-
-resume_apps() {
-  check_identity
-  ports_free
-  hold="$HOME_DIR/.local/share/huou07-playground/rollback/containers-systemd"
-  [ -d "$hold" ] || fail "No preserved Quadlet rollback files exist at $hold."
-  for file in litellm.pod litellm-postgres.volume litellm-db.container litellm.container \
-    omniroute.pod omniroute-redis.volume omniroute-redis.container omniroute.container; do
-    [ ! -e "$QUADLETS/$file" ] || fail "A current Quadlet exists; refusing to overwrite it: $QUADLETS/$file"
-    [ -f "$hold/$file" ] || fail "A preserved Quadlet is missing: $hold/$file"
-  done
-  for file in "$APP_CONFIG/opencode-web.env" "$LITELLM_CONFIG/postgres.env" "$LITELLM_CONFIG/litellm.env" \
-    "$LITELLM_CONFIG/config.yaml" "$OMNIROUTE_CONFIG/omniroute.env" "$APP_DATA/dsh-dashboard-launcher.py"; do
-    [ -f "$file" ] || fail "Application state needed to resume is missing: $file"
-  done
-  [ -x "$HOME_DIR/.local/bin/dsh" ] && [ -x "$HOME_DIR/.local/bin/codex-acp" ] || fail 'The pinned DSH or Codex ACP executable is missing.'
-  mkdir -p "$QUADLETS"
-  mv "$hold"/*.pod "$hold"/*.volume "$hold"/*.container "$QUADLETS/"
-  systemctl --user daemon-reload
-  systemctl --user enable --now dsh.service opencode-web.service
-  systemctl --user enable litellm-pod.service litellm-postgres-volume.service litellm-db.service litellm.service \
-    omniroute-pod.service omniroute-redis-volume.service omniroute-redis.service omniroute.service
-  systemctl --user start litellm-pod.service litellm-postgres-volume.service litellm-db.service litellm.service
-  systemctl --user start omniroute-pod.service omniroute-redis-volume.service omniroute-redis.service omniroute.service
-  rmdir "$hold"
-  rmdir "$(dirname -- "$hold")" 2>/dev/null || true
-  "$0" status
+  wait_for_http
+  printf 'All new application units and local health checks passed.\n'
 }
 
 case "$ACTION" in
-  check) preflight ;;
-  install) install_apps ;;
+  prepare) prepare ;;
+  activate) activate ;;
   status) status ;;
-  resume) resume_apps ;;
-  *) fail 'Usage: deploy/install-user-apps.sh [check|install|resume|status]' ;;
+  *) fail 'Usage: deploy/install-user-apps.sh [prepare|activate|status]' ;;
 esac

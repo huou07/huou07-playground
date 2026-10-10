@@ -86,12 +86,45 @@ class CleanInstallTests(unittest.TestCase):
     def test_installer_is_user_scoped_and_model_free(self):
         installer = (ROOT / "deploy/install-user-apps.sh").read_text()
         self.assertNotIn("sudo ", installer)
-        for pinned in ("dsh@0.2.0-rc.2", "codex-acp@2.2.2", "pnpm@11.7.0", "dsh-acp-adapter@0.2.0-rc.2.9"):
+        for pinned in ("@deepseek-ai/dsh@$DSH_VERSION", "@agentclientprotocol/codex-acp@$ACP_VERSION", "pnpm@$PNPM_VERSION", "@zaimokuza/dsh-acp-adapter@$ADAPTER_VERSION"):
             self.assertIn(pinned, installer)
         self.assertIn('"$HOME_DIR/.opencode/bin/opencode" auth list >/dev/null', installer)
         self.assertIn('"$HOME_DIR/.local/bin/codex" login status', installer)
-        self.assertEqual(installer.count("systemctl --user enable litellm-pod.service"), 2)
+        self.assertIn("prepare) prepare ;;", installer)
+        self.assertIn("activate) activate ;;", installer)
+        self.assertNotIn("systemctl --user enable litellm.service", installer)
+        self.assertIn("systemctl --user start litellm.service omniroute.service", installer)
+        self.assertIn("[ \"$cgroups\" = v2 ]", installer)
+        self.assertIn('"JWT_SECRET=$jwt"', installer)
+        self.assertIn('"API_KEY_SECRET=$api_key_secret"', installer)
+        self.assertIn('"OMNIROUTE_WS_BRIDGE_SECRET=$ws_secret"', installer)
+        prepare = installer.split("prepare() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertNotIn("ports_free", prepare)
         self.assertNotIn("/v1/chat/completions", installer)
+
+    def test_admin_preflight_prepares_before_cutover_and_rollback_is_verified(self):
+        admin_script = (ROOT / "deploy/admin/clean-playground-apps.py").read_text()
+        self.assertIn('run_as_owner("prepare")', admin_script)
+        self.assertIn('run_as_owner("activate")', admin_script)
+        self.assertIn("validate_legacy_listeners()", admin_script)
+        self.assertIn("except Exception as exc:", admin_script)
+        self.assertIn('print("Previous application services were restored.', admin_script)
+        self.assertIn('"huou07 OmniRoute AI gateway"', admin_script)
+
+    def test_rollback_restores_dashboard_registry_atomically(self):
+        with tempfile.TemporaryDirectory() as temp:
+            original_path = admin.DASHBOARD_APPS_FILE
+            path = Path(temp) / "apps.json"
+            try:
+                admin.DASHBOARD_APPS_FILE = path
+                path.write_text('{"apps": []}\n')
+                path.chmod(0o640)
+                admin.restore_dashboard_registry('{"apps": [{"name": "old"}]}\n')
+                self.assertEqual(path.read_text(), '{"apps": [{"name": "old"}]}\n')
+                self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+                self.assertFalse(list(Path(temp).glob(".apps-rollback-*")))
+            finally:
+                admin.DASHBOARD_APPS_FILE = original_path
 
 
 if __name__ == "__main__":
