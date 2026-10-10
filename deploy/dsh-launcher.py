@@ -85,7 +85,13 @@ def save_url(line: str) -> bool:
 
 
 def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:
-    environment = dict(os.environ if base is None else base)
+    source = os.environ if base is None else base
+    # A systemd manager or caller can carry provider credentials and other
+    # ambient secrets. Never forward them to DSH or its shell/ACP children.
+    environment = {
+        key: value for key, value in source.items()
+        if key in {"LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TZ"} or key.startswith("LC_")
+    }
     environment.update({
         "USER": "huou07-dsh",
         "LOGNAME": "huou07-dsh",

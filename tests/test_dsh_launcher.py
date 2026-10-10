@@ -19,12 +19,21 @@ class DshLauncherTests(unittest.TestCase):
             with patch.object(dsh_launcher, "PORT_CONFIG", config):
                 self.assertEqual(dsh_launcher.configured_port("dsh"), 3080)
                 self.assertEqual(dsh_launcher.configured_port("dsh", "wireguard_port"), 13080)
-        environment = dsh_launcher.child_environment({"USER": "root", "LOGNAME": "root", "CODEX_HOME": "/root/.codex", "PATH": "/bin"})
+        environment = dsh_launcher.child_environment({
+            "USER": "root", "LOGNAME": "root", "CODEX_HOME": "/root/.codex", "PATH": "/bin",
+            "LANG": "C.UTF-8", "LC_TIME": "C",
+            "OPENAI_API_KEY": "dummy", "OPENCODE_GO_API_KEY": "dummy", "CODEX_API_KEY": "dummy",
+            "GITHUB_TOKEN": "dummy", "NODE_OPTIONS": "--require=untrusted.js",
+        })
         self.assertEqual(environment["USER"], "huou07-dsh")
         self.assertEqual(environment["LOGNAME"], "huou07-dsh")
         self.assertEqual(environment["HOME"], str(dsh_launcher.STATE))
         self.assertEqual(environment["CODEX_HOME"], str(dsh_launcher.STATE / ".codex"))
         self.assertTrue(environment["CODEX_HOME"].startswith(environment["HOME"] + "/"))
+        self.assertEqual(environment["LANG"], "C.UTF-8")
+        self.assertEqual(environment["LC_TIME"], "C")
+        for name in ("OPENAI_API_KEY", "OPENCODE_GO_API_KEY", "CODEX_API_KEY", "GITHUB_TOKEN", "NODE_OPTIONS"):
+            self.assertNotIn(name, environment)
 
     def test_saves_only_a_single_well_formed_process_token(self):
         with tempfile.TemporaryDirectory() as temporary:

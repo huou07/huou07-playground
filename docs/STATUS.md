@@ -177,3 +177,38 @@ This is the current deployment record and supersedes earlier statements above ab
 ### DEPLOYMENT
 
 - The live release is `20261009192702-588191`. The root-owned shared port map and deployed Python helper hashes match the verified local source. The corresponding source commit is recorded in the delivery report; do not treat the earlier 51820 listener notes above as current state.
+
+## ACP runtime recheck — 2026-10-10
+
+This entry supersedes earlier ACP-protocol and authentication observations above.
+
+### VERIFIED
+
+- The deployed DSH profile contains the selected `@zaimokuza/dsh-acp-adapter` bundle at `0.2.0-rc.2.9`; its saved agent configuration names both `codex-acp` and native `opencode acp`. The web Plugin Manager lists **ACP adapter** under Installed and enables **Add plugin**. DSH 0.2.0-rc.2's Settings plugin inventory is read-only by design; no UI installation request is required for the already-installed adapter. No plugin was installed or changed.
+- Direct ACP protocol checks from the DSH identity completed `initialize` for Codex ACP `2.1.1` and OpenCode `1.18.35`. OpenCode also completed `session/new` without a prompt. Codex returned `Authentication required` for `session/new`; its advertised auth methods include ChatGPT and API key.
+- The owner's Codex CLI remains authenticated under `huou07`, version `0.161.0`. DSH Codex status is signed out under its separate `HOME`/`CODEX_HOME`. This is the expected Linux identity boundary, not a wrong executable or protocol mismatch.
+- OpenCode ACP reads only DSH's own `HOME` and XDG state. Its credential status reports zero entries. Its catalog lists 11 `opencode/` models, while asking for `opencode-go` returns “Provider not found”. The OpenCode Web service's separate Go credentials were not inspected or copied.
+- The deployed browser showed the plugin-manager inventory and ACP adapter details. The adapter detail reports Codex signed out with a terminal login hint. The same page offers the ACP agent configuration controls. No inference was run.
+- DSH's root launcher consumes stdout only to extract and protect its one-time launch URL and redirects child stderr to `/dev/null`; there are no detailed DSH startup diagnostics in the service journal. The service was active and healthy, and a fresh browser load recorded no failed HTTP requests or alert messages.
+- The DSH launcher now filters its inherited environment down to locale variables before adding its explicit `HOME`, `CODEX_HOME`, XDG paths, identity, and executable `PATH`. Regression coverage proves provider keys, Git tokens, and arbitrary `NODE_OPTIONS` do not flow from the launcher environment into DSH.
+
+### OWNER SETUP REQUIRED
+
+- Do not run `codex login` as `huou07-dsh` while DSH shell tools share that identity. The resulting token would be reachable to same-UID tools. No owner login command is safe until Codex ACP runs under a separately protected process identity with approved workspace access. The owner's existing Codex CLI session needs no action.
+- OpenCode ACP has no provider credential in the DSH identity. Its protocol session is not authenticated inference. If the owner wants OpenCode Go through ACP, provider setup must be completed inside a protected ACP identity; the working OpenCode Web login remains unchanged.
+
+### IMPLEMENTATION INCOMPLETE
+
+- ACP initialization is verified without inference. OpenCode session creation is verified without inference. Codex session creation is blocked by missing DSH-identity authentication. Tool execution, file permissions, approvals, session restore, reconnect, authenticated inference, and ACP coding workflows remain unverified. No full ACP coding workflow is claimed.
+
+### RESIDUAL SECURITY RISK
+
+- DSH shell tools and its ACP children still share the DSH UID. Filtering inherited environment variables does not protect credentials later stored in that identity's private state. Keep both ACP providers signed out there until execution identity separation is implemented and reviewed.
+
+### ZERO-INFERENCE RECORD
+
+- No Codex, OpenCode Go, DSH, LiteLLM, or OmniRoute model inference request was made. Protocol initialization, session creation, login-status checks, browser navigation, and local catalog inspection did not send prompts or completions. Existing owner credentials and sessions were left intact.
+
+### DEPLOYMENT
+
+- Installed the filtered launcher and restarted only `huou07-dsh.service`; a root-only local rollback copy was preserved. The live launcher hash is `f91eb26b70a6de3cd1a58d5e64425c62171ce486bc8e8a8e8151538a51ef45ad`. After restart, DSH returned HTTP 200 on loopback and over the existing WireGuard route, and the private dashboard returned HTTP 200 over WireGuard. The dashboard release and all other services were unchanged and active.
