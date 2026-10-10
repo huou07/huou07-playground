@@ -8,12 +8,12 @@ Podman inventory, and disk-space estimates. No model request is made.
 
 ## 1. Pin and inspect the reviewed source
 
-Run these commands on the Dell to use the verified migration runner commit:
+Run these commands on the Dell to use the reviewed migration runner commit:
 
 ```sh
-sudo git clone --no-checkout https://github.com/huou07/huou07-playground.git /root/huou07-playground-migration-87665bf
-sudo git -C /root/huou07-playground-migration-87665bf checkout --detach 87665bfb3a489cd5968cfb7be8f473caef4ff151
-sudo sh /root/huou07-playground-migration-87665bf/deploy/inspect-one-user-migration.sh
+sudo git clone --no-checkout https://github.com/huou07/huou07-playground.git /root/huou07-playground-migration-401ef9b
+sudo git -C /root/huou07-playground-migration-401ef9b checkout --detach 401ef9bd18e82205aa5345c26d84197f60dc3e6c
+sudo sh /root/huou07-playground-migration-401ef9b/deploy/inspect-one-user-migration.sh
 ```
 
 Review the complete inventory. Required Podman discovery must succeed. It
@@ -27,7 +27,7 @@ host's mapped `UNKNOWN` ownership for a `chown` decision.
 After reviewing inventory, run:
 
 ```sh
-sudo bash /root/huou07-playground-migration-87665bf/deploy/migrate-one-user.sh preflight
+sudo bash /root/huou07-playground-migration-401ef9b/deploy/migrate-one-user.sh preflight
 ```
 
 Preflight must finish with `Preflight passed`. It checks active source services,
@@ -37,6 +37,23 @@ Podman and volume discovery, namespace
 ownership, destination collisions, and all current application health checks.
 It also makes an HTTP health check to the dashboard's active `wg0` IPv4
 address. A missing WireGuard interface or unreachable dashboard is a blocker.
+Preflight inventories all state collisions in one pass. It reports every
+unresolved destination before stopping and never overwrites one.
+
+The pinned OpenCode `1.18.35` loader reads `opencode.json` and then
+`opencode.jsonc` from the same directory; the later JSONC file wins for a
+setting it declares. See the [pinned OpenCode config loader](https://github.com/anomalyco/opencode/blob/v1.18.35/packages/core/src/config.ts).
+The migration evaluates both sides in that order, then deep-merges the Web
+settings into the owner's effective native settings. Owner values win
+conflicts; missing provider/MCP/UI settings are retained, and plugin entries
+are combined without duplicates. The result is written to the owner's
+`opencode.jsonc`, leaving any owner `opencode.json` intact. Provider auth is
+merged by provider name with the owner's value winning. Preflight reports
+counts only and never prints config or credential values. Cutover snapshots
+the exact original owner JSONC/auth files in the root-only backup before
+writing; rollback restores those exact bytes. The Web source files remain
+untouched. Other conflicting OpenCode state keeps the owner's file while the
+source copy stays in legacy state and the root-only backup for review.
 
 The disk check estimates the protected backup (including the second
 OmniRoute-data archive), the migrated HOME state, PostgreSQL volume import,
@@ -59,7 +76,7 @@ Run the following only after the full inventory is reviewed and the latest
 preflight passes all essential checks:
 
 ```sh
-sudo bash /root/huou07-playground-migration-87665bf/deploy/migrate-one-user.sh cutover
+sudo bash /root/huou07-playground-migration-401ef9b/deploy/migrate-one-user.sh cutover
 ```
 
 The runner downloads the required images before the outage. It writes a
@@ -74,8 +91,9 @@ in place.
 
 The runner copies DSH sessions/configuration, OpenCode XDG state and auth,
 workspace files, environment/configuration, dashboard settings, and keeps the
-existing Codex store in place. It checks the migrated OpenCode auth file byte
-for byte and rechecks Codex login status without making a model request.
+existing Codex store in place. It checks the OpenCode merged configuration and
+provider auth without exposing values and rechecks Codex login status without
+making a model request.
 It installs and enables the user units, checks their active/enabled state,
 checks all local application health endpoints, and verifies dashboard access
 through `wg0`. Existing user linger plus enabled user units is the standard
@@ -88,7 +106,7 @@ reactivating the original units. If it reports that automatic rollback failed,
 keep all state and backups, inspect the service status, then run:
 
 ```sh
-sudo bash /root/huou07-playground-migration-87665bf/deploy/migrate-one-user.sh rollback
+sudo bash /root/huou07-playground-migration-401ef9b/deploy/migrate-one-user.sh rollback
 ```
 
 Rollback returns the workspace paths and DSH policy patches, restores original
