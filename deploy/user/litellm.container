@@ -1,0 +1,25 @@
+[Unit]
+Description=LiteLLM Gateway
+Requires=litellm-pod.service litellm-db.service
+After=litellm-pod.service litellm-db.service
+
+[Container]
+Image=ghcr.io/berriai/litellm:v1.104.2
+ContainerName=huou07-litellm-proxy
+Pod=litellm.pod
+EnvironmentFile=%h/.config/litellm/litellm.env
+Volume=%h/.config/litellm/config.yaml:/app/config.yaml:ro
+Exec=--config /app/config.yaml
+LogDriver=journald
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180s
+TimeoutStopSec=45s
+MemoryMax=2G
+
+[Install]
+WantedBy=default.target

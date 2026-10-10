@@ -1,0 +1,21 @@
+[Unit]
+Description=OmniRoute Redis cache
+Requires=omniroute-pod.service omniroute-redis-volume.service
+After=omniroute-pod.service omniroute-redis-volume.service
+
+[Container]
+Image=docker.io/library/redis:8.6.5-alpine
+ContainerName=huou07-omniroute-redis
+Pod=omniroute.pod
+Volume=omniroute-redis.volume:/data
+Exec=redis-server --save 60 1 --loglevel warning
+LogDriver=journald
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

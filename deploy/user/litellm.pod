@@ -1,0 +1,9 @@
+[Unit]
+Description=LiteLLM and PostgreSQL pod
+
+[Pod]
+PodName=huou07-litellm
+PublishPort=127.0.0.1:4000:4000
+
+[Install]
+WantedBy=default.target

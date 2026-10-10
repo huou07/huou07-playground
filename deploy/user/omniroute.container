@@ -1,0 +1,24 @@
+[Unit]
+Description=OmniRoute
+Requires=omniroute-pod.service omniroute-redis.service
+After=omniroute-pod.service omniroute-redis.service
+
+[Container]
+Image=docker.io/diegosouzapw/omniroute:3.8.51
+ContainerName=huou07-omniroute
+Pod=omniroute.pod
+EnvironmentFile=%h/.config/omniroute/omniroute.env
+Volume=%h/.local/share/omniroute:/app/data:Z
+LogDriver=journald
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=300s
+TimeoutStopSec=50s
+MemoryMax=3G
+
+[Install]
+WantedBy=default.target

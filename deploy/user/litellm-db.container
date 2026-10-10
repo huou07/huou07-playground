@@ -1,0 +1,22 @@
+[Unit]
+Description=LiteLLM PostgreSQL
+Requires=litellm-pod.service litellm-postgres-volume.service
+After=litellm-pod.service litellm-postgres-volume.service
+
+[Container]
+Image=docker.io/library/postgres:16
+ContainerName=huou07-litellm-db
+Pod=litellm.pod
+EnvironmentFile=%h/.config/litellm/postgres.env
+Volume=litellm-postgres.volume:/var/lib/postgresql/data
+LogDriver=journald
+NoNewPrivileges=true
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120s
+TimeoutStopSec=45s
+
+[Install]
+WantedBy=default.target

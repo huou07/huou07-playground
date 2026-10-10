@@ -20,7 +20,7 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "Run this installer as root (for example: sudo ./deploy/install.sh)." >&2
   exit 1
 fi
-if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/private-services.json" ] || [ ! -f "$SOURCE/deploy/private_firewall.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ] || [ ! -f "$SOURCE/deploy/power.py" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_TIMER" ] || [ ! -f "$SOURCE/deploy/gpu.py" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_TIMER" ] || [ ! -f "$SOURCE/deploy/state.py" ]; then
+if [ ! -f "$SOURCE/web/app.py" ] || [ ! -f "$SOURCE/deploy/private-services.json" ] || [ ! -f "$SOURCE/deploy/private_firewall.py" ] || [ ! -f "$SOURCE/deploy/systemd/$SERVICE" ] || [ ! -f "$SOURCE/deploy/power.py" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$POWER_TIMER" ] || [ ! -f "$SOURCE/deploy/gpu.py" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_SERVICE" ] || [ ! -f "$SOURCE/deploy/systemd/$GPU_TIMER" ]; then
   echo "Run the installer from a complete huou07-playground checkout." >&2
   exit 1
 fi
@@ -136,7 +136,6 @@ trap on_error EXIT HUP INT TERM
 install -d -o root -g root -m 0755 "$release"
 cp -R "$SOURCE/web" "$release/web"
 install -d -o root -g root -m 0755 "$release/deploy"
-install -o root -g root -m 0644 "$SOURCE/deploy/state.py" "$release/deploy/state.py"
 install -o root -g root -m 0644 "$SOURCE/deploy/power.py" "$release/deploy/power.py"
 install -o root -g root -m 0644 "$SOURCE/deploy/gpu.py" "$release/deploy/gpu.py"
 install -o root -g root -m 0644 "$SOURCE/deploy/private-services.json" "$release/deploy/private-services.json"
