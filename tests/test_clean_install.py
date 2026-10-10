@@ -3,12 +3,16 @@ import base64
 import http.server
 import importlib.util
 import io
+import json
+import os
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +30,167 @@ launcher = load_module("dsh_dashboard_launcher", ROOT / "deploy/dsh-dashboard-la
 
 
 class CleanInstallTests(unittest.TestCase):
+    def rollback_fixture(self, temp):
+        root = Path(temp)
+        home = root / "home"
+        (home / ".config/containers/systemd").mkdir(parents=True)
+        checkpoint = root / "rollback-state.json"
+        checkpoint.write_text("checkpoint")
+        registry = root / "apps.json"
+        registry.write_text('{"apps": []}\n')
+        state = {
+            "active": {unit: True for unit in admin.APP_UNITS},
+            "enabled": {unit: True for unit in admin.APP_UNITS},
+            "dashboard_apps": '{"apps": []}\n',
+        }
+        return root, home, checkpoint, registry, state
+
+    def rollback_patches(self, home, checkpoint, registry):
+        return (
+            patch.object(admin, "STATE_FILE", checkpoint),
+            patch.object(admin, "DASHBOARD_APPS_FILE", registry),
+            patch.object(admin, "validate_old_installation"),
+            patch.object(admin, "validate_legacy_listeners"),
+            patch.object(admin, "read_state", return_value={
+                "active": {unit: True for unit in admin.APP_UNITS},
+                "enabled": {unit: True for unit in admin.APP_UNITS},
+                "dashboard_apps": '{"apps": []}\n',
+            }),
+            patch.object(admin.pwd, "getpwnam", return_value=SimpleNamespace(pw_dir=str(home), pw_uid=1234)),
+        )
+
+    @staticmethod
+    def successful_rollback_command(args, *, check=True):
+        output = ""
+        if "show-environment" in args:
+            pass
+        elif "--property=LoadState" in args:
+            output = "loaded\ninactive\n"
+        elif "--property=ActiveState" in args:
+            output = "active\n"
+        elif "--property=UnitFileState" in args:
+            output = "disabled\n" if "--user" in args else "enabled\n"
+        elif args[:2] == ["runuser", "-u"]:
+            output = ""
+        return subprocess.CompletedProcess(args, 0, stdout=output, stderr="")
+
+    def test_rollback_connection_failure_preserves_checkpoint_and_does_not_restore_old_apps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, home, checkpoint, registry, _ = self.rollback_fixture(temp)
+            patches = self.rollback_patches(home, checkpoint, registry)
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patch.object(
+                admin, "run", side_effect=subprocess.CalledProcessError(1, ["systemctl", "show-environment"])
+            ) as run:
+                with self.assertRaisesRegex(RuntimeError, "user manager is unreachable"):
+                    admin.rollback()
+                self.assertTrue(checkpoint.exists())
+                self.assertFalse(any(call.args[0][:2] == ["systemctl", "start"] for call in run.call_args_list))
+
+    def test_rollback_stop_failure_preserves_checkpoint_and_does_not_restore_old_apps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, home, checkpoint, registry, _ = self.rollback_fixture(temp)
+            patches = self.rollback_patches(home, checkpoint, registry)
+
+            def fail_stop(args, *, check=True):
+                if "stop" in args:
+                    raise subprocess.CalledProcessError(1, args)
+                return self.successful_rollback_command(args, check=check)
+
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patch.object(admin, "run", side_effect=fail_stop) as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    admin.rollback()
+                self.assertTrue(checkpoint.exists())
+                self.assertFalse(any(call.args[0][:2] == ["systemctl", "start"] for call in run.call_args_list))
+
+    def test_rollback_rejects_unknown_user_unit_state_and_preserves_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, home, checkpoint, registry, _ = self.rollback_fixture(temp)
+            patches = self.rollback_patches(home, checkpoint, registry)
+
+            def unknown_state(args, *, check=True):
+                if "--property=LoadState" in args:
+                    return subprocess.CompletedProcess(args, 0, stdout="not-found\ninactive\n", stderr="")
+                return self.successful_rollback_command(args, check=check)
+
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patch.object(admin, "run", side_effect=unknown_state):
+                with self.assertRaisesRegex(RuntimeError, "known inactive state"):
+                    admin.rollback()
+                self.assertTrue(checkpoint.exists())
+
+    def test_rollback_restores_legacy_services_after_new_units_and_containers_stop(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, home, checkpoint, registry, _ = self.rollback_fixture(temp)
+            patches = self.rollback_patches(home, checkpoint, registry)
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patch.object(
+                admin, "run", side_effect=self.successful_rollback_command
+            ) as run:
+                admin.rollback()
+                self.assertFalse(checkpoint.exists())
+                self.assertEqual(json.loads(registry.read_text()), {"apps": []})
+                commands = [call.args[0] for call in run.call_args_list]
+                podman_check = next(i for i, args in enumerate(commands) if args[-4:] == ["podman", "ps", "--format", "{{.Names}}"])
+                legacy_restore = next(i for i, args in enumerate(commands) if args[:2] == ["systemctl", "start"])
+                self.assertLess(podman_check, legacy_restore)
+
+    def test_rollback_does_not_restore_legacy_services_while_new_container_runs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, home, checkpoint, registry, _ = self.rollback_fixture(temp)
+            patches = self.rollback_patches(home, checkpoint, registry)
+
+            def running_container(args, *, check=True):
+                result = self.successful_rollback_command(args, check=check)
+                if args[:2] == ["runuser", "-u"]:
+                    result.stdout = "huou07-litellm-proxy\n"
+                return result
+
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patch.object(admin, "run", side_effect=running_container) as run:
+                with self.assertRaisesRegex(RuntimeError, "containers remain running"):
+                    admin.rollback()
+                self.assertTrue(checkpoint.exists())
+                self.assertFalse(any(call.args[0][:2] == ["systemctl", "start"] for call in run.call_args_list))
+
+    def test_preflight_checks_user_manager_before_owner_preparation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state_file = Path(temp) / "state.json"
+            tmpfiles_rule = Path(temp) / "tmpfiles.conf"
+            with patch.object(admin, "STATE_FILE", state_file), patch.object(admin, "TMPFILES_RULE", tmpfiles_rule), \
+                    patch.object(admin, "validate_old_installation"), patch.object(admin, "validate_legacy_listeners"), \
+                    patch.object(admin, "verify_user_manager", side_effect=RuntimeError("manager offline")) as verify_manager, \
+                    patch.object(admin.shutil, "which", return_value="/usr/bin/tool"), patch.object(admin, "run_as_owner") as prepare:
+                with self.assertRaisesRegex(RuntimeError, "manager offline"):
+                    admin.preflight()
+                verify_manager.assert_called_once()
+                prepare.assert_not_called()
+
+    def test_dashboard_health_migrates_known_legacy_defaults_and_preserves_custom_url(self):
+        entries = [
+            {
+                "name": "OpenCode Web", "url": "http://127.0.0.1:14096/", "description": "OpenCode",
+                "category": "Coding Agents", "health_url": "http://127.0.0.1:4096/",
+                "health_method": "GET", "management_url": "http://127.0.0.1:14096/",
+            },
+            {
+                "name": "LiteLLM Gateway", "url": "http://127.0.0.1:4000/ui", "description": "LiteLLM",
+                "category": "AI Gateway", "health_url": "http://127.0.0.1:4000/health/liveliness",
+                "health_method": "GET", "management_url": "http://127.0.0.1:4000/ui",
+            },
+            {
+                "name": "OmniRoute", "url": "http://127.0.0.1:20128/", "description": "Custom route",
+                "category": "Personal", "health_url": "http://127.0.0.1:20128/custom-health",
+                "health_method": "HEAD", "management_url": "http://127.0.0.1:20128/",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            registry = Path(temp) / "apps.json"
+            registry.write_text(json.dumps({"apps": entries}))
+            with patch.dict(os.environ, {"APPS_FILE": str(registry)}):
+                admin.register_dashboard_health()
+            saved = {item["name"]: item for item in json.loads(registry.read_text())["apps"]}
+        self.assertEqual(saved["OpenCode Web"]["health_url"], "http://127.0.0.1:4096/global/health")
+        self.assertEqual(saved["LiteLLM Gateway"]["health_url"], "http://127.0.0.1:4000/health/readiness")
+        self.assertEqual(saved["OmniRoute"]["health_url"], "http://127.0.0.1:20128/custom-health")
+        self.assertEqual(saved["OmniRoute"]["health_method"], "HEAD")
+
     def test_health_checker_executes_dsh_cookie_flow_and_named_http_checks(self):
         expected_auth = "Basic " + base64.b64encode(b"synthetic-user:synthetic-password").decode()
 

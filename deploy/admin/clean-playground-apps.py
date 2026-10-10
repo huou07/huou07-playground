@@ -128,6 +128,21 @@ def run_as_owner(action: str) -> None:
         raise RuntimeError(f"The huou07 installer {action} step failed with exit {result.returncode}.")
 
 
+def user_systemctl() -> list[str]:
+    return ["systemctl", "--machine=huou07@.host", "--user"]
+
+
+def verify_user_manager() -> None:
+    try:
+        run([*user_systemctl(), "show-environment"])
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError("The huou07 systemd user manager is unreachable; no app services were stopped.") from exc
+
+
+def user_unit_property(unit: str, prop: str) -> str:
+    return run([*user_systemctl(), "show", "--property=" + prop, "--value", unit]).stdout.strip()
+
+
 def verify_ready_checkout() -> None:
     if not READY_FILE.is_file() or READY_FILE.is_symlink():
         raise RuntimeError("The non-disruptive readiness stage has not completed. Run preflight first.")
@@ -202,6 +217,7 @@ def read_state() -> dict:
 def preflight() -> None:
     validate_old_installation(must_be_active=True)
     validate_legacy_listeners()
+    verify_user_manager()
     if STATE_FILE.exists():
         raise RuntimeError(f"A prior retirement checkpoint exists: {STATE_FILE}")
     expected_rule = "d /run/huou07-dsh-link 2750 huou07 huou07-dsh-link -\n"
@@ -228,22 +244,23 @@ def register_dashboard_health() -> None:
     from register_app import register_default_app
 
     dashboard_apps = (
-        ("DeepSeek Harness", "http://127.0.0.1:3080/", "Coding Agents", "Private DSH Web sessions.", "http://127.0.0.1:3080/", None),
-        ("OpenCode Web", "http://127.0.0.1:14096/", "Coding Agents", "Private OpenCode Web using the owner CLI configuration.", "http://127.0.0.1:4096/global/health", "http://127.0.0.1:14096/"),
-        ("LiteLLM Gateway", "http://127.0.0.1:4000/ui", "AI Gateway", "Private LiteLLM management UI.", "http://127.0.0.1:4000/health/readiness", "http://127.0.0.1:4000/ui"),
-        ("OmniRoute", "http://127.0.0.1:20128/", "AI Gateway", "Private OmniRoute dashboard.", "http://127.0.0.1:20128/healthz", "http://127.0.0.1:20128/"),
+        ("DeepSeek Harness", "http://127.0.0.1:3080/", "Coding Agents", "Private DSH Web sessions.", "http://127.0.0.1:3080/", None, (None,)),
+        ("OpenCode Web", "http://127.0.0.1:14096/", "Coding Agents", "Private OpenCode Web using the owner CLI configuration.", "http://127.0.0.1:4096/global/health", "http://127.0.0.1:14096/", (None, "http://127.0.0.1:4096/")),
+        ("LiteLLM Gateway", "http://127.0.0.1:4000/ui", "AI Gateway", "Private LiteLLM management UI.", "http://127.0.0.1:4000/health/readiness", "http://127.0.0.1:4000/ui", (None, "http://127.0.0.1:4000/health/liveliness")),
+        ("OmniRoute", "http://127.0.0.1:20128/", "AI Gateway", "Private OmniRoute dashboard.", "http://127.0.0.1:20128/healthz", "http://127.0.0.1:20128/", (None,)),
     )
-    for name, url, category, description, health_url, management_url in dashboard_apps:
+    for name, url, category, description, health_url, management_url, old_health_defaults in dashboard_apps:
         register_default_app({
             "name": name, "url": url, "category": category, "description": description,
             "health_url": health_url, "health_method": "GET", "management_url": management_url,
-        }, migrate_health_from=(None,))
+        }, migrate_health_from=old_health_defaults)
 
 
 def cutover() -> None:
     validate_old_installation(must_be_active=True)
     validate_legacy_listeners()
     verify_ready_checkout()
+    verify_user_manager()
     if STATE_FILE.exists():
         raise RuntimeError(f"A prior cutover checkpoint exists: {STATE_FILE}; rollback it before retrying.")
     enabled = {}
@@ -294,6 +311,7 @@ def cutover() -> None:
 def rollback() -> None:
     state = read_state()
     validate_old_installation(must_be_active=False)
+    verify_user_manager()
     owner_home = Path(pwd.getpwnam("huou07").pw_dir)
     hold = owner_home / ".local/share/huou07-playground/rollback/containers-systemd"
     quadlet_dir = owner_home / ".config/containers/systemd"
@@ -304,19 +322,33 @@ def rollback() -> None:
             raise RuntimeError(f"Refusing to move a symlinked Quadlet: {quadlet_dir / name}")
     # Stop only the new user apps. Move Quadlet definitions aside so they do
     # not come back at the next boot and collide with restored system units.
-    user_systemctl = ["systemctl", "--machine=huou07@.host", "--user"]
+    userctl = user_systemctl()
     for unit in (*NEW_USER_UNITS, "litellm.service", "litellm-db.service", "litellm-postgres-volume.service",
                  "litellm-pod.service", "omniroute.service", "omniroute-redis.service", "omniroute-redis-volume.service",
                  "omniroute-pod.service"):
-        run([*user_systemctl, "stop", unit], check=False)
-        active = run([*user_systemctl, "is-active", unit], check=False)
-        if active.returncode == 0 and active.stdout.strip() == "active":
-            raise RuntimeError(f"New user service did not stop during rollback: {unit}")
+        run([*userctl, "stop", unit])
+        states = run([*userctl, "show", "--property=LoadState", "--property=ActiveState", "--value", unit]).stdout.splitlines()
+        if len(states) != 2 or states[0] != "loaded" or states[1] != "inactive":
+            raise RuntimeError(f"New user service did not reach a known inactive state during rollback: {unit}")
     for unit in NEW_USER_UNITS:
-        run([*user_systemctl, "disable", unit], check=False)
-        enabled = run([*user_systemctl, "is-enabled", unit], check=False)
-        if enabled.returncode == 0 and enabled.stdout.strip() in {"enabled", "enabled-runtime"}:
-            raise RuntimeError(f"New user service remains enabled during rollback: {unit}")
+        run([*userctl, "disable", unit])
+        if user_unit_property(unit, "UnitFileState") != "disabled":
+            raise RuntimeError(f"New user service remains enabled or has an unknown unit-file state: {unit}")
+    owner_uid = pwd.getpwnam("huou07").pw_uid
+    runtime_dir = f"/run/user/{owner_uid}"
+    podman = run([
+        "runuser", "-u", "huou07", "--", "/usr/bin/env", f"HOME={owner_home}",
+        "USER=huou07", "LOGNAME=huou07", f"XDG_RUNTIME_DIR={runtime_dir}",
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime_dir}/bus",
+        f"PATH={owner_home}/.local/bin:/usr/local/bin:/usr/bin:/bin",
+        "podman", "ps", "--format", "{{.Names}}",
+    ])
+    expected_containers = {
+        "huou07-litellm-db", "huou07-litellm-proxy", "huou07-omniroute", "huou07-omniroute-redis",
+    }
+    still_running = expected_containers.intersection(podman.stdout.splitlines())
+    if still_running:
+        raise RuntimeError("New rootless application containers remain running; preserving the rollback checkpoint.")
     if any((quadlet_dir / name).exists() for name in NEW_QUADLETS):
         run(["install", "-d", "-o", "huou07", "-g", "huou07", "-m", "0700", str(hold)])
         for name in NEW_QUADLETS:
@@ -334,7 +366,7 @@ def rollback() -> None:
         if state["enabled"].get(unit):
             run(["systemctl", "enable", unit])
         else:
-            run(["systemctl", "disable", unit], check=False)
+            run(["systemctl", "disable", unit])
     for unit in APP_UNITS:
         if state["active"].get(unit):
             run(["systemctl", "start", unit])
@@ -343,6 +375,10 @@ def rollback() -> None:
         actual = systemd_property(unit, "ActiveState")
         if actual != expected:
             raise RuntimeError(f"Rollback did not restore {unit} to {expected} (now {actual}).")
+        expected_enabled = state["enabled"].get(unit, False)
+        actual_enabled = systemd_property(unit, "UnitFileState") in {"enabled", "enabled-runtime"}
+        if actual_enabled != expected_enabled:
+            raise RuntimeError(f"Rollback did not restore the enabled state of {unit}.")
     if any(state["active"].values()):
         validate_legacy_listeners()
     restore_dashboard_registry(state["dashboard_apps"])
