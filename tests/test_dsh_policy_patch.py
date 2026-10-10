@@ -46,7 +46,18 @@ class DshWorkspacePolicyPatchTests(unittest.TestCase):
         with patch.object(sys, "argv", ["patch", "apply"]):
             self.assertEqual(policy_patch.main(), 0)
         self.assertEqual(self.policy.read_text(), patched)
-        self.assertIn("outside /srv/huou07-dsh-workspaces", patched)
+        self.assertIn("outside /home/huou07/Projects", patched)
+
+    def test_migrates_previous_deployment_workspace_root(self) -> None:
+        previous = policy_patch.NEW_FUNCTION.replace(
+            "/home/huou07/Projects", "/srv/huou07-dsh-workspaces"
+        )
+        self.policy.write_text(
+            policy_patch.NEW_IMPORT + "\n" + previous + "\n" + policy_patch.NEW_EXPORT + "\n"
+        )
+        with patch.object(sys, "argv", ["patch", "apply"]):
+            self.assertEqual(policy_patch.main(), 0)
+        self.assertIn("outside /home/huou07/Projects", self.policy.read_text())
 
     def test_refuses_unknown_upstream_source(self) -> None:
         self.policy.write_text("unexpected upstream change")

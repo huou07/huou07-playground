@@ -11,7 +11,7 @@ from pathlib import Path
 PACKAGE = Path("/opt/huou07-dsh/app/node_modules/@deepseek-ai/dsh-host-directory-picker-browse")
 SOURCE = PACKAGE / "lib/index.js"
 VERSION = "0.2.0-rc.2"
-ROOT = "/srv/huou07-dsh-workspaces"
+ROOT = "/home/huou07/Projects"
 
 REPLACEMENTS = (
     (
@@ -68,6 +68,24 @@ def main() -> int:
     source = SOURCE.read_text()
     if all(new in source for _, new in REPLACEMENTS):
         return 0
+    previous = tuple(
+        (old, new.replace(ROOT, "/srv/huou07-dsh-workspaces"))
+        for old, new in REPLACEMENTS
+    )
+    if all(old_patch in source for _, old_patch in previous):
+        if action == "check":
+            print("DSH directory picker needs its home-workspace root update", file=sys.stderr)
+            return 1
+        for baseline, old_patch in previous:
+            source = source.replace(old_patch, baseline, 1)
+        for old, new in REPLACEMENTS:
+            if old not in source:
+                print("unexpected previous DSH directory-picker patch", file=sys.stderr)
+                return 1
+            source = source.replace(old, new, 1)
+        SOURCE.write_text(source)
+        print("DSH web directory browsing is limited to /home/huou07/Projects")
+        return 0
     if any(old not in source for old, _ in REPLACEMENTS):
         print("unexpected DSH directory-picker source", file=sys.stderr)
         return 1
@@ -77,7 +95,7 @@ def main() -> int:
     for old, new in REPLACEMENTS:
         source = source.replace(old, new, 1)
     SOURCE.write_text(source)
-    print("DSH web directory browsing is limited to the dedicated workspace tree")
+    print("DSH web directory browsing is limited to /home/huou07/Projects")
     return 0
 
 

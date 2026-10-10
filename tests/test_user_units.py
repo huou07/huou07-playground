@@ -30,6 +30,8 @@ class UserUnitTests(unittest.TestCase):
         self.assertIn('"127.0.0.1"', launcher)
         self.assertIn("DSH_URL_FILE=%t/huou07-dsh-link/url", dsh)
         self.assertIn("--hostname 127.0.0.1", opencode)
+        self.assertIn("WorkingDirectory=%h/Projects", dsh)
+        self.assertIn("AF_NETLINK", dsh)
         self.assertIn("APPS_FILE=%h/.local/state/huou07-playground/apps.json", dashboard)
         self.assertIn("DSH_URL_FILE=%t/huou07-dsh-link/url", dashboard)
 

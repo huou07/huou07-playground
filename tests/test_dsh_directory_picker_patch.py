@@ -44,6 +44,18 @@ class DshDirectoryPickerPatchTests(unittest.TestCase):
         with patch.object(sys, "argv", ["patch", "apply"]):
             self.assertEqual(picker_patch.main(), 1)
 
+    def test_migrates_previous_deployment_workspace_root(self) -> None:
+        previous = tuple(
+            (old, new.replace(picker_patch.ROOT, "/srv/huou07-dsh-workspaces"))
+            for old, new in picker_patch.REPLACEMENTS
+        )
+        self.source.write_text("\n".join(old_patch for _, old_patch in previous))
+        with patch.object(sys, "argv", ["patch", "apply"]):
+            self.assertEqual(picker_patch.main(), 0)
+        updated = self.source.read_text()
+        self.assertIn(picker_patch.ROOT, updated)
+        self.assertNotIn("/srv/huou07-dsh-workspaces", updated)
+
 
 if __name__ == "__main__":
     unittest.main()

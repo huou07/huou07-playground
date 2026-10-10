@@ -25,10 +25,10 @@ NEW_FUNCTION = '''function resolveWorkspaceRoot(path) {
 	} catch {
 		throw new Error("sandbox-policy: workspace root must be an existing approved workspace directory");
 	}
-	const approvedRoot = "/srv/huou07-dsh-workspaces";
+	const approvedRoot = "/home/huou07/Projects";
 	const relativePath = relative(approvedRoot, canonical);
 	if (relativePath === ".." || relativePath.startsWith(`..${process.platform === "win32" ? "\\\\" : "/"}`) || isAbsolute(relativePath)) {
-		throw new Error("sandbox-policy: workspace root is outside /srv/huou07-dsh-workspaces");
+		throw new Error("sandbox-policy: workspace root is outside /home/huou07/Projects");
 	}
 	return canonical;
 }'''
@@ -54,6 +54,18 @@ def main() -> int:
         return 1
     if NEW_FUNCTION in source and NEW_IMPORT in source and NEW_EXPORT in source:
         return 0
+    # Migrate the previous deployment's same safeguard to the normal home
+    # workspace. Keep accepting only the known pinned implementation.
+    old_root_function = NEW_FUNCTION.replace(
+        '/home/huou07/Projects', '/srv/huou07-dsh-workspaces'
+    )
+    if old_root_function in source and NEW_IMPORT in source and NEW_EXPORT in source:
+        if action == "check":
+            print("DSH workspace policy needs its home-workspace root update", file=sys.stderr)
+            return 1
+        POLICY.write_text(source.replace(old_root_function, NEW_FUNCTION, 1))
+        print("DSH workspace policy now limits roots to /home/huou07/Projects")
+        return 0
     if OLD_FUNCTION not in source or OLD_IMPORT not in source or OLD_EXPORT not in source:
         print("unexpected DSH workspace-root policy source", file=sys.stderr)
         return 1
@@ -65,7 +77,7 @@ def main() -> int:
         .replace(OLD_FUNCTION, NEW_FUNCTION, 1)
         .replace(OLD_EXPORT, NEW_EXPORT, 1)
     )
-    print("DSH workspace policy now rejects roots outside the dedicated workspace tree")
+    print("DSH workspace policy now limits roots to /home/huou07/Projects")
     return 0
 
 
