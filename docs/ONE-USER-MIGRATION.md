@@ -11,9 +11,9 @@ Podman inventory, and disk-space estimates. No model request is made.
 Run these commands on the Dell to use the verified migration runner commit:
 
 ```sh
-sudo git clone --no-checkout https://github.com/huou07/huou07-playground.git /root/huou07-playground-migration-6eb9fc8
-sudo git -C /root/huou07-playground-migration-6eb9fc8 checkout --detach 6eb9fc82d01abe8537e39718ee66f362ffb7fc67
-sudo sh /root/huou07-playground-migration-6eb9fc8/deploy/inspect-one-user-migration.sh
+sudo git clone --no-checkout https://github.com/huou07/huou07-playground.git /root/huou07-playground-migration-87665bf
+sudo git -C /root/huou07-playground-migration-87665bf checkout --detach 87665bfb3a489cd5968cfb7be8f473caef4ff151
+sudo sh /root/huou07-playground-migration-87665bf/deploy/inspect-one-user-migration.sh
 ```
 
 Review the complete inventory. Required Podman discovery must succeed. It
@@ -27,13 +27,13 @@ host's mapped `UNKNOWN` ownership for a `chown` decision.
 After reviewing inventory, run:
 
 ```sh
-sudo bash /root/huou07-playground-migration-6eb9fc8/deploy/migrate-one-user.sh preflight
+sudo bash /root/huou07-playground-migration-87665bf/deploy/migrate-one-user.sh preflight
 ```
 
 Preflight must finish with `Preflight passed`. It checks active source services,
 the user manager and linger setting, Codex ChatGPT login, OpenCode auth-file
-presence (path and byte equality are checked without printing contents), DSH
-session/configuration paths, rootless Podman and volume discovery, namespace
+presence without printing contents, DSH session/configuration paths, rootless
+Podman and volume discovery, namespace
 ownership, destination collisions, and all current application health checks.
 It also makes an HTTP health check to the dashboard's active `wg0` IPv4
 address. A missing WireGuard interface or unreachable dashboard is a blocker.
@@ -59,11 +59,12 @@ Run the following only after the full inventory is reviewed and the latest
 preflight passes all essential checks:
 
 ```sh
-sudo bash /root/huou07-playground-migration-6eb9fc8/deploy/migrate-one-user.sh cutover
+sudo bash /root/huou07-playground-migration-87665bf/deploy/migrate-one-user.sh cutover
 ```
 
-The runner writes a mode-0700 root-only backup before stopping the six source
-application units. It does not stop SSH, WireGuard, Cockpit, Docker, AN3,
+The runner downloads the required images before the outage. It writes a
+mode-0700 root-only backup before stopping the six source application units.
+It does not stop SSH, WireGuard, Cockpit, Docker, AN3,
 AdGuard Home, or unrelated containers. It exports LiteLLM PostgreSQL with the
 source rootless Podman identity and imports it into a new owner-user volume;
 it does not copy Podman storage. OmniRoute data is archived and restored inside
@@ -87,7 +88,7 @@ reactivating the original units. If it reports that automatic rollback failed,
 keep all state and backups, inspect the service status, then run:
 
 ```sh
-sudo bash /root/huou07-playground-migration-6eb9fc8/deploy/migrate-one-user.sh rollback
+sudo bash /root/huou07-playground-migration-87665bf/deploy/migrate-one-user.sh rollback
 ```
 
 Rollback returns the workspace paths and DSH policy patches, restores original
