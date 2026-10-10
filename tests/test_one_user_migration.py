@@ -22,7 +22,34 @@ class OneUserMigrationTests(unittest.TestCase):
         self.assertIn('podman unshare tar --numeric-owner', source)
         self.assertIn('podman unshare stat -c', source)
         self.assertNotIn("/containers/storage", source)
-        self.assertNotIn("graphroot", source.lower())
+        self.assertIn("GraphRoot", source)
+
+    def test_space_and_wireguard_checks_are_in_read_only_preflight_and_cutover(self):
+        source = (ROOT / "deploy/migrate-one-user.sh").read_text()
+        self.assertIn("check_cutover_space\n  echo 'Preflight passed", source)
+        self.assertIn("df -PB1", source)
+        self.assertIn("du -sx --apparent-size -B1", source)
+        self.assertIn("omni_bytes", source)
+        self.assertIn("postgres:16", source)
+        self.assertIn("litellm:v1.103.1", source)
+        self.assertIn("omniroute:3.8.51", source)
+        self.assertGreaterEqual(source.count("check_dashboard_wireguard"), 3)
+        self.assertIn("wg0 has no IPv4 address", source)
+
+    def test_accepted_sudo_and_docker_access_are_warnings_not_blockers(self):
+        source = (ROOT / "deploy/migrate-one-user.sh").read_text()
+        self.assertIn("owner-confirmed sudo privileges", source)
+        self.assertIn("root-equivalent", source)
+        self.assertIn("mask the socket as defense in depth", source)
+        self.assertNotIn("resolve before enabling agents", source)
+        self.assertNotIn("systemctl stop docker.service", source)
+        self.assertNotIn("systemctl disable docker.service", source)
+
+    def test_rollback_confirms_new_services_and_containers_stopped(self):
+        source = (ROOT / "deploy/migrate-one-user.sh").read_text()
+        self.assertIn("new user service is still active during rollback", source)
+        self.assertIn("could not verify target Podman containers stopped during rollback", source)
+        self.assertIn("AUTOMATIC ROLLBACK FAILED", source)
 
     def test_cutover_has_preflight_collision_checks_and_failure_recovery(self):
         source = (ROOT / "deploy/migrate-one-user.sh").read_text()
