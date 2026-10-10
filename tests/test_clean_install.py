@@ -330,6 +330,8 @@ class CleanInstallTests(unittest.TestCase):
         omni_pod = (ROOT / "deploy/user/omniroute.pod").read_text()
         self.assertIn("ghcr.io/berriai/litellm:v1.104.2", litellm)
         self.assertIn("diegosouzapw/omniroute:3.8.51", omni)
+        self.assertIn("Volume=huou07-omniroute-data:/app/data", omni)
+        self.assertNotIn("UserNS=keep-id", (ROOT / "deploy/user/omniroute.pod").read_text())
         self.assertIn("postgres:16", (ROOT / "deploy/user/litellm-db.container").read_text())
         self.assertIn("redis:8.6.5-alpine", (ROOT / "deploy/user/omniroute-redis.container").read_text())
         for text in (litellm_pod, omni_pod):
@@ -346,20 +348,33 @@ class CleanInstallTests(unittest.TestCase):
         self.assertIn("npm rebuild --global --prefix", installer)
         self.assertIn("--allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs", installer)
         self.assertIn("prepare) prepare ;;", installer)
+        self.assertIn("deactivate) deactivate ;;", installer)
         self.assertIn("activate) activate ;;", installer)
         self.assertNotIn("systemctl --user enable litellm.service", installer)
         self.assertIn("systemctl --user start litellm.service omniroute.service", installer)
         self.assertIn("[ \"$cgroups\" = v2 ]", installer)
         self.assertIn("subprocess.Popen(command", installer)
         self.assertIn("process.stdin.flush()", installer)
-        self.assertIn('"$HOME_DIR/.local/share/omniroute" "$HOME_DIR/.dsh"', installer)
+        self.assertIn("huou07-omniroute-data", installer)
         self.assertIn("Could not verify rootless Podman", installer)
         self.assertIn('"JWT_SECRET=$jwt"', installer)
         self.assertIn('"API_KEY_SECRET=$api_key_secret"', installer)
         self.assertIn('"OMNIROUTE_WS_BRIDGE_SECRET=$ws_secret"', installer)
+        self.assertIn('python3 "$ROOT/deploy/check-user-app-runtime.py"', installer)
         prepare = installer.split("prepare() {", 1)[1].split("\n}\n", 1)[0]
         self.assertNotIn("ports_free", prepare)
         self.assertNotIn("/v1/chat/completions", installer)
+
+    def test_container_staging_uses_only_disposable_names_and_no_inference(self):
+        staging = (ROOT / "deploy/check-user-app-runtime.py").read_text()
+        self.assertIn('"h07-check-" + secrets.token_hex(5)', staging)
+        self.assertIn("Temporary staging containers, pods, and volumes removed.", staging)
+        self.assertIn("/health/readiness", staging)
+        self.assertIn("/healthz", staging)
+        self.assertIn("OmniRoute data volume did not persist across restart", staging)
+        self.assertNotIn("/v1/chat/completions", staging)
+        self.assertNotIn("huou07-litellm-postgres", staging)
+        self.assertNotIn("huou07-omniroute-redis", staging)
 
     def test_admin_preflight_prepares_before_cutover_and_rollback_is_verified(self):
         admin_script = (ROOT / "deploy/admin/clean-playground-apps.py").read_text()

@@ -10,15 +10,15 @@ A private dashboard for one Debian user. The dashboard remains a small Python se
 | DeepSeek Harness | `dsh.service` | `~/.dsh` | 3080 |
 | OpenCode Web and CLI | `opencode-web.service` plus existing CLI | Existing `~/.opencode`; Web password in `~/.config/huou07-playground` | 4096 |
 | LiteLLM and PostgreSQL | Rootless Podman Quadlets | `~/.config/litellm`, Podman volume | 4000 |
-| OmniRoute and Redis | Rootless Podman Quadlets | `~/.config/omniroute`, `~/.local/share/omniroute`, Podman volume | 20128, 20129, 20132 |
+| OmniRoute and Redis | Rootless Podman Quadlets | `~/.config/omniroute`, rootless Podman volumes | 20128, 20129, 20132 |
 
 The dashboard already has application cards for these private endpoints and relays them through its WireGuard listener. The app services stay on loopback. Port definitions are in [`deploy/private-services.json`](deploy/private-services.json).
 
 ## Clean reinstall
 
-The old app-specific services are replaced by user services under `huou07`. The owner-run procedure has a non-disruptive readiness stage, one reversible cutover, rollback, and final cleanup only after browser acceptance. It does not touch the dashboard, WireGuard, SSH, Cockpit, rootful Docker, AN3, LAN Arcade, AdGuard Home, or unrelated data. See [`docs/CLEAN-REINSTALL.md`](docs/CLEAN-REINSTALL.md) for the exact sequence.
+Prepare the pinned applications while legacy services are still running, then stop only the five old application units and activate the new user services. Legacy accounts, files, databases, and credentials remain untouched until browser acceptance. The dashboard, WireGuard, SSH, Cockpit, rootful Docker, AN3, LAN Arcade, AdGuard Home, and unrelated data stay outside scope. See [`docs/CLEAN-REINSTALL.md`](docs/CLEAN-REINSTALL.md) for the exact sequence and rollback.
 
-Readiness installs pinned software, validates ACP initialization, checks Quadlet generation, and pre-pulls images while existing services are still active. Cutover retires only the five verified old application units, activates the prepared user services, checks local health, and automatically restores the old units if activation fails. It does not delete old state.
+Readiness installs pinned software, validates ACP initialization and Quadlet generation, and pre-pulls images while existing services are still active. It also verifies fresh PostgreSQL/LiteLLM and Redis/OmniRoute instances on temporary ports with temporary volumes. Activation checks final ports after the owner stops the old units and then verifies the application health endpoints. A failed activation leaves all old data and unit files intact; the documented `deactivate` action stops and holds the new definitions before the owner restores the old units.
 
 The installer pins DSH `0.2.0-rc.2`, DSH ACP adapter `0.2.0-rc.2.9`, Codex ACP `2.2.2`, LiteLLM `v1.104.2`, PostgreSQL `16`, OmniRoute `3.8.51`, and Redis `8.6.5-alpine`. It uses the existing Node 24, OpenCode CLI, Codex CLI, and rootless Podman. It does not perform model inference or add provider credentials.
 

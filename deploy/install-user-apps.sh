@@ -63,7 +63,7 @@ check_clean_inputs() {
       [ "$result" -eq 1 ] || fail 'Could not verify rootless Podman container names.'
     fi
   done
-  for name in huou07-litellm-postgres huou07-omniroute-redis; do
+  for name in huou07-litellm-postgres huou07-omniroute-redis huou07-omniroute-data; do
     if podman volume exists "$name" >/dev/null 2>&1; then
       fail "A rootless Podman volume already uses the new app name '$name'; inspect it before continuing."
     else
@@ -80,7 +80,7 @@ check_clean_inputs() {
     fi
   done
   for path in "$HOME_DIR/.config" "$HOME_DIR/.local" "$HOME_DIR/.local/lib/node_modules" "$HOME_DIR/.local/bin" \
-    "$HOME_DIR/.local/share" "$HOME_DIR/.local/share/omniroute" "$HOME_DIR/.dsh" "$HOME_DIR/.dsh/profiles" \
+    "$HOME_DIR/.local/share" "$HOME_DIR/.dsh" "$HOME_DIR/.dsh/profiles" \
     "$APP_CONFIG" "$APP_DATA" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$USER_UNITS" "$QUADLETS" \
     "$HOME_DIR/.dsh/profiles/web" "$APP_DATA/dsh-dashboard-launcher.py" "$READY_FILE"; do
     [ ! -L "$path" ] || fail "Refusing a symlinked application path: $path"
@@ -199,8 +199,8 @@ PY
 }
 
 ensure_config_files() {
-  mkdir -p "$APP_CONFIG" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$APP_DATA" "$HOME_DIR/.local/share/omniroute" "$HOME_DIR/Projects"
-  chmod 0700 "$APP_CONFIG" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$APP_DATA" "$HOME_DIR/.local/share/omniroute"
+  mkdir -p "$APP_CONFIG" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$APP_DATA" "$HOME_DIR/Projects"
+  chmod 0700 "$APP_CONFIG" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$APP_DATA"
   if [ ! -f "$APP_CONFIG/opencode-web.env" ]; then
     pass=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
     write_secret_file "$APP_CONFIG/opencode-web.env" "OPENCODE_SERVER_USERNAME=opencode" "OPENCODE_SERVER_PASSWORD=$pass"
@@ -260,7 +260,10 @@ install_unit_files() {
     source=$1
     target=$2
     if [ -e "$target" ]; then
-      cmp -s "$source" "$target" || fail "Existing application file differs from the pinned checkout: $target"
+      [ -f "$target" ] && [ ! -L "$target" ] || fail "Existing application file is not a regular file: $target"
+      if ! cmp -s "$source" "$target"; then
+        install -m 0644 "$source" "$target"
+      fi
     else
       install -m 0644 "$source" "$target"
     fi
@@ -355,12 +358,13 @@ prepare() {
   install_unit_files
   validate_quadlets
   pull_images
+  python3 "$ROOT/deploy/check-user-app-runtime.py"
   write_readiness_marker
-  printf 'READY: packages, ACP initialize, owner config, Quadlets, and all container images are prepared. Legacy services were not stopped.\n'
+  printf 'READY: packages, ACP initialize, owner config, Quadlets, images, and fresh container UI/persistence checks passed. Legacy services were not stopped.\n'
 }
 
 check_readiness_marker() {
-  [ -f "$READY_FILE" ] && [ ! -L "$READY_FILE" ] || fail 'Readiness marker missing; run the administrator preflight before cutover.'
+  [ -f "$READY_FILE" ] && [ ! -L "$READY_FILE" ] || fail 'Readiness marker missing; run prepare from this checkout before activation.'
   commit=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf unknown)
   python3 - "$READY_FILE" "$commit" "$DSH_VERSION" "$ACP_VERSION" "$ADAPTER_VERSION" "$LITELLM_IMAGE" "$OMNIROUTE_IMAGE" <<'PY'
 import json, sys
@@ -422,9 +426,57 @@ status() {
   printf 'All new application units and local health checks passed.\n'
 }
 
+deactivate() {
+  check_identity
+  systemctl --user show-environment >/dev/null 2>&1 || fail 'The huou07 systemd user manager is unavailable.'
+  hold="$APP_DATA/rollback/containers-systemd"
+  [ ! -e "$hold" ] && [ ! -L "$hold" ] || fail "Rollback holding path already exists: $hold"
+  for unit in dsh.service opencode-web.service litellm.service litellm-db.service litellm-postgres-volume.service \
+    litellm-pod.service omniroute.service omniroute-redis.service omniroute-redis-volume.service omniroute-pod.service; do
+    state=$(systemctl --user show --property=LoadState --property=ActiveState --value "$unit") || fail "Could not inspect user unit: $unit"
+    load_state=$(printf '%s\n' "$state" | sed -n '1p')
+    active_state=$(printf '%s\n' "$state" | sed -n '2p')
+    if [ "$load_state" = not-found ] && [ "$active_state" = inactive ]; then
+      continue
+    fi
+    [ "$load_state" = loaded ] || fail "Unexpected load state for $unit: $load_state"
+    systemctl --user stop "$unit" || fail "Could not stop fresh application unit: $unit"
+    systemctl --user reset-failed "$unit" >/dev/null 2>&1 || true
+    state=$(systemctl --user show --property=LoadState --property=ActiveState --value "$unit") || fail "Could not verify stopped unit: $unit"
+    [ "$(printf '%s\n' "$state" | sed -n '1p')" = loaded ] && \
+      [ "$(printf '%s\n' "$state" | sed -n '2p')" = inactive ] || fail "Fresh application unit is not confirmed inactive: $unit"
+  done
+  for name in huou07-litellm-db huou07-litellm-proxy huou07-omniroute huou07-omniroute-redis; do
+    if podman container exists "$name"; then
+      running=$(podman inspect --format '{{.State.Running}}' "$name") || fail "Could not inspect container: $name"
+      [ "$running" = false ] || fail "Fresh application container is still running: $name"
+    else
+      result=$?
+      [ "$result" -eq 1 ] || fail "Could not verify container state: $name"
+    fi
+  done
+  for file in "$QUADLETS"/litellm.pod "$QUADLETS"/litellm-postgres.volume "$QUADLETS"/litellm-db.container \
+    "$QUADLETS"/litellm.container "$QUADLETS"/omniroute.pod "$QUADLETS"/omniroute-redis.volume \
+    "$QUADLETS"/omniroute-redis.container "$QUADLETS"/omniroute.container; do
+    [ ! -L "$file" ] || fail "Refusing to move a symlinked Quadlet: $file"
+    [ ! -e "$file" ] || [ -f "$file" ] || fail "Quadlet is not a regular file: $file"
+  done
+  systemctl --user disable dsh.service opencode-web.service >/dev/null || fail 'Could not disable fresh Web services.'
+  mkdir -m 0700 -p "$hold"
+  for file in "$QUADLETS"/litellm.pod "$QUADLETS"/litellm-postgres.volume "$QUADLETS"/litellm-db.container \
+    "$QUADLETS"/litellm.container "$QUADLETS"/omniroute.pod "$QUADLETS"/omniroute-redis.volume \
+    "$QUADLETS"/omniroute-redis.container "$QUADLETS"/omniroute.container; do
+    [ ! -e "$file" ] || mv -- "$file" "$hold/"
+  done
+  systemctl --user daemon-reload
+  printf 'Fresh applications are stopped. Their Quadlets are held at %s; application data remains intact.\n' "$hold"
+  printf 'The previous system units can now be restored by the owner.\n'
+}
+
 case "$ACTION" in
   prepare) prepare ;;
   activate) activate ;;
   status) status ;;
-  *) fail 'Usage: deploy/install-user-apps.sh [prepare|activate|status]' ;;
+  deactivate) deactivate ;;
+  *) fail 'Usage: deploy/install-user-apps.sh [prepare|activate|status|deactivate]' ;;
 esac
