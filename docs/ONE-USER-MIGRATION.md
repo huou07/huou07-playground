@@ -9,12 +9,15 @@ read-only `sudo -n -l -U huou07` policy query.
 
 ## 1. Complete the privileged inventory
 
-After this revision is deployed to the Dell, run from its deployed repository
-release directory:
+No production service deployment is needed for the inventory or preflight.
+First make a root-owned, commit-pinned copy of the public source on the Dell so
+the owner-run privileged scripts cannot be changed by an ordinary user between
+review and execution:
 
 ```sh
-cd /opt/huou07-playground/current
-sudo sh deploy/inspect-one-user-migration.sh
+sudo git clone --no-checkout https://github.com/huou07/huou07-playground.git /root/huou07-playground-migration-73c2c4b
+sudo git -C /root/huou07-playground-migration-73c2c4b checkout --detach 73c2c4b5a473fc054040bf5fdb7bd6cac205068b
+sudo sh /root/huou07-playground-migration-73c2c4b/deploy/inspect-one-user-migration.sh
 ```
 
 The script changes to `/` before invoking either rootless Podman account, so
@@ -39,8 +42,7 @@ nonzero or says a required discovery failed.
 After the inventory is reviewed, run:
 
 ```sh
-cd /opt/huou07-playground/current
-sudo bash deploy/migrate-one-user.sh preflight
+sudo bash /root/huou07-playground-migration-73c2c4b/deploy/migrate-one-user.sh preflight
 ```
 
 Preflight checks production health, target user-manager availability, native
@@ -66,8 +68,7 @@ Only after reviewing the full inventory and successful preflight, the owner
 may run this exact command:
 
 ```sh
-cd /opt/huou07-playground/current
-sudo bash deploy/migrate-one-user.sh cutover
+sudo bash /root/huou07-playground-migration-73c2c4b/deploy/migrate-one-user.sh cutover
 ```
 
 The runner first makes a root-only backup and captures the original unit
@@ -86,8 +87,7 @@ cutover step fails after the source stop begins, the runner automatically
 reactivates the original services. If manual recovery is needed, run:
 
 ```sh
-cd /opt/huou07-playground/current
-sudo bash deploy/migrate-one-user.sh rollback
+sudo bash /root/huou07-playground-migration-73c2c4b/deploy/migrate-one-user.sh rollback
 ```
 
 Rollback stops and removes the new user-unit definitions, restores the prior
