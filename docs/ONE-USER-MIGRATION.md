@@ -1,111 +1,106 @@
 # Single-user migration
 
-The Debian production services remain on their existing system units until the
-owner reviews the complete inventory and explicitly runs the cutover. The
-runner has three modes: `preflight` is read-only, `cutover` migrates, and
-`rollback` returns to the original services and their untouched data. The
-runner does not use `sudo` to launch privileged work; preflight uses only the
-read-only `sudo -n -l -U huou07` policy query.
+This is an owner-run migration from the existing system services to ordinary
+`huou07` user services. It does not stop services until the owner runs the
+explicit `cutover` command. The `preflight` command is read-only with respect
+to service state and application data: it performs health/auth/path checks,
+Podman inventory, and disk-space estimates. No model request is made.
 
-## 1. Complete the privileged inventory
+## 1. Pin and inspect the reviewed source
 
-No production service deployment is needed for the inventory or preflight.
-First make a root-owned, commit-pinned copy of the public source on the Dell so
-the owner-run privileged scripts cannot be changed by an ordinary user between
-review and execution:
+Run these commands on the Dell to use the verified migration runner commit:
 
 ```sh
-sudo git clone --no-checkout https://github.com/huou07/huou07-playground.git /root/huou07-playground-migration-73c2c4b
-sudo git -C /root/huou07-playground-migration-73c2c4b checkout --detach 73c2c4b5a473fc054040bf5fdb7bd6cac205068b
-sudo sh /root/huou07-playground-migration-73c2c4b/deploy/inspect-one-user-migration.sh
+sudo git clone --no-checkout https://github.com/huou07/huou07-playground.git /root/huou07-playground-migration-6eb9fc8
+sudo git -C /root/huou07-playground-migration-6eb9fc8 checkout --detach 6eb9fc82d01abe8537e39718ee66f362ffb7fc67
+sudo sh /root/huou07-playground-migration-6eb9fc8/deploy/inspect-one-user-migration.sh
 ```
 
-The script changes to `/` before invoking either rootless Podman account, so
-the caller's working-directory permissions cannot break discovery. Any
-required Podman command failure stops the inventory with an error. OmniRoute
-ownership and UID/GID maps are read inside its original Podman user namespace;
-the host's mapped `UNKNOWN` owner is not used to make a `chown` decision.
+Review the complete inventory. Required Podman discovery must succeed. It
+reports paths and metadata without printing credential values, database rows,
+project file names, process arguments, or private key material. OmniRoute file
+ownership is inspected from its original Podman user namespace; do not use the
+host's mapped `UNKNOWN` ownership for a `chown` decision.
 
-The output reports account and unit state, file counts, credential locations,
-the rootless container and volume inventory, volume metadata, namespace maps,
-destination conflicts, and sudo/Docker-socket facts. It prints no credential
-values, database rows, project file names, process arguments, or private key
-material. OpenCode credentials are identified by path only. Codex login status
-is queried through the owner's existing CLI without copying or changing its
-authentication store.
+## 2. Read-only preflight
 
-Return the complete output for review. Do not proceed if the inventory exits
-nonzero or says a required discovery failed.
-
-## 2. Read-only migration preflight
-
-After the inventory is reviewed, run:
+After reviewing inventory, run:
 
 ```sh
-sudo bash /root/huou07-playground-migration-73c2c4b/deploy/migrate-one-user.sh preflight
+sudo bash /root/huou07-playground-migration-6eb9fc8/deploy/migrate-one-user.sh preflight
 ```
 
-Preflight checks production health, target user-manager availability, native
-Codex login, OpenCode credential presence, rootless Podman for all three
-identities, original OmniRoute namespace ownership, PostgreSQL volume
-availability, HOME collisions, existing user-unit files, Docker socket access,
-and passwordless sudo rules. It also compares colliding XDG paths without
-printing their contents. It does not stop or restart services. Resolve any
-reported conflict and review the entire preflight output before choosing the
-cutover command.
+Preflight must finish with `Preflight passed`. It checks active source services,
+the user manager and linger setting, Codex ChatGPT login, OpenCode auth-file
+presence (path and byte equality are checked without printing contents), DSH
+session/configuration paths, rootless Podman and volume discovery, namespace
+ownership, destination collisions, and all current application health checks.
+It also makes an HTTP health check to the dashboard's active `wg0` IPv4
+address. A missing WireGuard interface or unreachable dashboard is a blocker.
 
-The account's `sudo` group membership is reported as an owner privilege fact;
-no passwordless sudo rule is accepted. The DSH and OpenCode units set
-`NoNewPrivileges=yes` and make the rootful Docker socket inaccessible. This
-prevents those user services from elevating through sudo or calling a rootful
-Docker API. It does not make the shared interactive `huou07` account a separate
-security identity; an agent process with that account's ordinary file access
-can access the same user-readable files and credentials.
+The disk check estimates the protected backup (including the second
+OmniRoute-data archive), the migrated HOME state, PostgreSQL volume import,
+and pinned container images. It groups simultaneous space needs by filesystem,
+reserves 25% headroom plus 1 GiB, and stops if any required discovery or
+capacity check fails. Re-run preflight immediately before cutover so free space
+and service health are current.
+
+Sudo/NOPASSWD and Docker-group access are reported as explicit security
+warnings and do not block migration, as the owner has accepted those privileges
+on this personal computer. DSH and OpenCode retain `NoNewPrivileges=yes` and
+mask `/run/docker.sock` as defense in depth. These unit restrictions do not
+isolate the shared `huou07` account from its sudo rights, Docker access, or
+user-readable credentials. The migration does not stop or modify the rootful
+Docker daemon or unrelated containers.
 
 ## 3. Owner-reviewed cutover
 
-Only after reviewing the full inventory and successful preflight, the owner
-may run this exact command:
+Run the following only after the full inventory is reviewed and the latest
+preflight passes all essential checks:
 
 ```sh
-sudo bash /root/huou07-playground-migration-73c2c4b/deploy/migrate-one-user.sh cutover
+sudo bash /root/huou07-playground-migration-6eb9fc8/deploy/migrate-one-user.sh cutover
 ```
 
-The runner first makes a root-only backup and captures the original unit
-enablement. It then stops old writers in dependency order, exports the stopped
-LiteLLM PostgreSQL volume with the old rootless Podman identity, and imports
-that archive into a new target-user volume. OmniRoute data is archived and
-restored inside the source and target Podman user namespaces, preserving the
-container-view numeric ownership. It does not copy either Podman graphroot.
-DSH sessions/profiles, OpenCode XDG data, configuration, environment files,
-dashboard settings, and workspaces are copied into `/home/huou07`; the native
-Codex store is backed up but not replaced. Original service homes, accounts,
-volumes, data, and unit files are retained.
+The runner writes a mode-0700 root-only backup before stopping the six source
+application units. It does not stop SSH, WireGuard, Cockpit, Docker, AN3,
+AdGuard Home, or unrelated containers. It exports LiteLLM PostgreSQL with the
+source rootless Podman identity and imports it into a new owner-user volume;
+it does not copy Podman storage. OmniRoute data is archived and restored inside
+each rootless Podman user namespace to preserve container-view numeric
+ownership. Original accounts, databases, credentials, and source data remain
+in place.
 
-Local health checks validate the user services without model inference. If a
-cutover step fails after the source stop begins, the runner automatically
-reactivates the original services. If manual recovery is needed, run:
+The runner copies DSH sessions/configuration, OpenCode XDG state and auth,
+workspace files, environment/configuration, dashboard settings, and keeps the
+existing Codex store in place. It checks the migrated OpenCode auth file byte
+for byte and rechecks Codex login status without making a model request.
+It installs and enables the user units, checks their active/enabled state,
+checks all local application health endpoints, and verifies dashboard access
+through `wg0`. Existing user linger plus enabled user units is the standard
+systemd mechanism for logout/reboot persistence; this procedure does not reboot
+the production machine as an acceptance test.
+
+If any cutover step fails after source services stop, the exit handler attempts
+automatic rollback. It stops and verifies the new services/containers before
+reactivating the original units. If it reports that automatic rollback failed,
+keep all state and backups, inspect the service status, then run:
 
 ```sh
-sudo bash /root/huou07-playground-migration-73c2c4b/deploy/migrate-one-user.sh rollback
+sudo bash /root/huou07-playground-migration-6eb9fc8/deploy/migrate-one-user.sh rollback
 ```
 
-Rollback stops and removes the new user-unit definitions, restores the prior
-DSH policy patch, restores workspace paths, restores the old unit enablement,
-and starts the original services against their original state. It retains the
-new HOME data and private backup for diagnosis. Do not delete the legacy state
-or backup as part of this initial cutover.
+Rollback returns the workspace paths and DSH policy patches, restores original
+unit enablement, and starts the original services against untouched source
+data. The newly migrated HOME data and root-only backup are retained. Do not
+delete old accounts, source databases, credentials, or backups during initial
+acceptance; cleanup requires a separate explicit owner decision.
 
-## Migration boundaries
+## Boundaries
 
-- PostgreSQL data moves through `podman volume export` / `podman volume import`
-  with both services stopped; database files are not copied manually.
-- OmniRoute bind-mounted data is translated through each rootless Podman user
-  namespace; there is no host `chown` or Podman storage copy.
-- Codex ChatGPT login remains in `/home/huou07/.codex`; OpenCode provider
-  credentials stay in the native OpenCode XDG data path.
-- WireGuard, SSH, UFW, Cockpit, system monitoring, and their system-managed
-  operating-system services are outside this migration.
-- No provider login, model request, inference, or quota use occurs.
-- Old accounts, services, data, and backups are intentionally retained.
-  Cleanup requires a separate owner review and approval.
+- WireGuard UDP 3478, SSH, UFW, Cockpit, and operating-system services are
+  outside this migration and remain managed as they are today.
+- No Codex/OpenCode inference, provider login, model fallback, or quota use is
+  part of inventory, preflight, cutover checks, or rollback.
+- A healthy service and preserved authentication files do not prove an
+  authenticated ACP coding turn; that remains separate owner-authorized work.
