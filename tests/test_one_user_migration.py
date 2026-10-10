@@ -51,6 +51,11 @@ class OneUserMigrationTests(unittest.TestCase):
         self.assertIn("could not verify target Podman containers stopped during rollback", source)
         self.assertIn("AUTOMATIC ROLLBACK FAILED", source)
 
+    def test_container_images_are_pulled_before_production_is_stopped(self):
+        source = (ROOT / "deploy/migrate-one-user.sh").read_text()
+        self.assertLess(source.index("# Download images before stopping production"), source.index('systemctl stop "$unit"'))
+        self.assertLess(source.index("podman pull docker.io/library/postgres:16"), source.index('systemctl stop "$unit"'))
+
     def test_cutover_has_preflight_collision_checks_and_failure_recovery(self):
         source = (ROOT / "deploy/migrate-one-user.sh").read_text()
         self.assertLess(source.index("trap on_exit EXIT"), source.index("systemctl stop \"$unit\""))

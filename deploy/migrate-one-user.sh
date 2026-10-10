@@ -290,6 +290,12 @@ fi
 
 preflight
 [[ ! -e $RECORD && ! -L $RECORD ]] || fail "an existing migration record requires explicit review: $RECORD"
+# Download images before stopping production writers; this does not start a
+# second service and keeps network/image failures outside the outage window.
+as_user /usr/bin/podman pull docker.io/library/postgres:16 >/dev/null
+as_user /usr/bin/podman pull ghcr.io/berriai/litellm:v1.103.1 >/dev/null
+as_user /usr/bin/podman pull docker.io/library/redis:8.6.5-alpine >/dev/null
+as_user /usr/bin/podman pull docker.io/diegosouzapw/omniroute:3.8.51 >/dev/null
 install -d -o root -g root -m 0700 "$BACKUP_ROOT" /var/lib/huou07-playground-migration
 stamp=$(date -u +%Y%m%dT%H%M%SZ); backup=$BACKUP_ROOT/$stamp; mkdir -m 0700 "$backup"
 printf '%s\n' "$backup" > "$RECORD"; chmod 0600 "$RECORD"
@@ -362,11 +368,6 @@ target_auth="$HOME_DIR/.local/share/${source_auth#/var/lib/huou07-opencode/data/
 login=$(as_user /home/huou07/.local/bin/codex login status 2>&1) || fail 'native Codex login status failed after state migration'
 [[ $login == *"Logged in using ChatGPT"* ]] || fail 'native Codex ChatGPT login changed during migration'
 [[ -d $HOME_DIR/.dsh/profiles/web ]] || fail 'DSH web profile/session tree did not migrate'
-as_user /usr/bin/podman pull docker.io/library/postgres:16 >/dev/null
-as_user /usr/bin/podman pull ghcr.io/berriai/litellm:v1.103.1 >/dev/null
-as_user /usr/bin/podman pull docker.io/library/redis:8.6.5-alpine >/dev/null
-as_user /usr/bin/podman pull docker.io/diegosouzapw/omniroute:3.8.51 >/dev/null
-
 mv /srv/huou07-dsh-workspaces /srv/huou07-dsh-workspaces-legacy
 ln -s "$HOME_DIR/Projects/dsh" /srv/huou07-dsh-workspaces
 mv /srv/huou07-opencode-workspaces /srv/huou07-opencode-workspaces-legacy
