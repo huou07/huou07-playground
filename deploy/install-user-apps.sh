@@ -98,8 +98,13 @@ install_cli_packages() {
   if [ ! -f "$HOME_DIR/.local/lib/node_modules/@deepseek-ai/dsh/package.json" ] || \
      [ ! -f "$HOME_DIR/.local/lib/node_modules/@agentclientprotocol/codex-acp/package.json" ]; then
     npm install --global --prefix "$HOME_DIR/.local" --no-audit --no-fund \
+      --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs \
       "@deepseek-ai/dsh@$DSH_VERSION" "@agentclientprotocol/codex-acp@$ACP_VERSION"
   fi
+  # npm 11 otherwise skips these pinned dependencies' native/helper install scripts.
+  npm rebuild --global --prefix "$HOME_DIR/.local" --no-audit --no-fund \
+    --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs \
+    @deepseek-ai/dsh-subprocess-local koffi node-pty @google/genai protobufjs
 
   pnpm_pkg="$TOOLS_DIR/node_modules/pnpm/package.json"
   if [ -f "$pnpm_pkg" ]; then
@@ -132,19 +137,52 @@ NODE
 
 check_acp_initialize() {
   python3 - "$HOME_DIR/.local/bin/codex-acp" "$HOME_DIR/.opencode/bin/opencode" <<'PY'
-import json, subprocess, sys
+import json, select, subprocess, sys, time
 request = json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"huou07-readiness","version":"1"}}}) + "\n"
 agents = (([sys.argv[1]], "Codex ACP"), ([sys.argv[2], "acp"], "OpenCode ACP"))
 for command, label in agents:
+    process = None
     try:
-        result = subprocess.run(command, input=request, capture_output=True, text=True, timeout=30, check=False)
-        replies = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
-        response = next((item for item in replies if item.get("id") == 1), None)
-        if result.returncode or not response or "error" in response or "result" not in response:
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, bufsize=1)
+        assert process.stdin is not None and process.stdout is not None
+        process.stdin.write(request)
+        process.stdin.flush()
+        deadline = time.monotonic() + 45
+        response = None
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([process.stdout], [], [], 1)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+            try:
+                item = json.loads(line)
+                if item.get("id") == 1:
+                    response = item
+                    break
+            except json.JSONDecodeError:
+                pass
+        if not response or "error" in response or "result" not in response:
             raise RuntimeError
     except Exception:
         print(f"{label} ACP initialize failed (no model request was sent).", file=sys.stderr)
         raise SystemExit(1)
+    finally:
+        if process is not None:
+            try:
+                if process.stdin:
+                    process.stdin.close()
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                process.terminate()
+                process.wait(timeout=5)
+            for stream in (process.stdout, process.stderr):
+                if stream:
+                    stream.close()
     print(f"{label} ACP initialize passed (no model request was sent).")
 PY
 }
@@ -290,7 +328,7 @@ prepare() {
   check_clean_inputs
   mkdir -p "$APP_DATA" "$HOME_DIR/Projects"
   export HOME="$HOME_DIR" DSH_HOME="$HOME_DIR/.dsh" CODEX_HOME="$HOME_DIR/.codex"
-  if "$HOME_DIR/.local/bin/codex" login status 2>/dev/null | grep -qi 'logged in using chatgpt'; then
+  if login_status=$("$HOME_DIR/.local/bin/codex" login status 2>&1) && printf '%s' "$login_status" | grep -qi 'logged in using chatgpt'; then
     printf 'Native Codex ChatGPT login detected (credentials hidden).\n'
   else
     printf 'OWNER_LOGIN_REQUIRED: native Codex CLI is not signed in.\n'

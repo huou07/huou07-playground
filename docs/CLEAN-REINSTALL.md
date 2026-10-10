@@ -4,7 +4,7 @@ This replaces only the old DSH, OpenCode Web, LiteLLM/PostgreSQL and OmniRoute/R
 
 ## Pinned software and readiness
 
-The Dell inventory verified Debian, Node `24.21.0`, Podman `5.4.2`, OpenCode CLI `1.18.35`, Codex CLI `0.161.0`, rootless Podman and a ChatGPT-authenticated Codex CLI. The installer pins DSH `0.2.0-rc.2`, its compatible ACP adapter `0.2.0-rc.2.9`, Codex ACP `2.2.2`, LiteLLM `v1.104.2`, PostgreSQL `16`, OmniRoute `3.8.51`, and Redis `8.6.5-alpine`.
+The Dell inventory verified Debian, Node `24.21.0`, Podman `5.4.2`, OpenCode CLI `1.18.35`, Codex CLI `0.161.0`, rootless Podman and a ChatGPT-authenticated Codex CLI. The installer pins DSH `0.2.0-rc.2`, its compatible ACP adapter `0.2.0-rc.2.9`, Codex ACP `2.2.2`, LiteLLM `v1.104.2`, PostgreSQL `16`, OmniRoute `3.8.51`, and Redis `8.6.5-alpine`. It explicitly permits only the reviewed DSH helper and native dependency install scripts required by npm 11's global install policy.
 
 As `huou07`, update the Dell checkout to the reviewed commit. Then run the single administrator readiness command below. It validates exact old service identities and listener ownership, protected services, free-space/runtime prerequisites, and the rollback state; it then runs `deploy/install-user-apps.sh prepare` as `huou07` while all old application services remain running. That preparation installs the pinned CLIs/plugin, checks Codex and OpenCode ACP `initialize` without inference, creates owner-only settings, validates the actual Quadlet generator, and pre-pulls all container images. The prior rollout's cgroup output `v2` and OmniRoute description are handled explicitly. An incompatible user file, app name or version must be reviewed rather than overwritten.
 
