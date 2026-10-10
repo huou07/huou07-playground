@@ -10,12 +10,13 @@ Environment=DSH_URL_FILE=%t/huou07-dsh-link/url
 Environment=PATH=/opt/huou07-dsh/node/bin:/opt/huou07-dsh/app/node_modules/.bin:%h/.opencode/bin:/usr/local/bin:/usr/bin:/bin
 RuntimeDirectory=huou07-dsh-link
 RuntimeDirectoryMode=0700
-ExecStart=/usr/bin/python3 /opt/huou07-playground/current/deploy/user/dsh-launcher.py
+ExecStart=/usr/bin/python3 /usr/local/libexec/huou07-dsh/user-launcher.py
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 UMask=0077
 NoNewPrivileges=yes
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
 PrivateDevices=yes
 PrivateTmp=yes
 ProtectSystem=full

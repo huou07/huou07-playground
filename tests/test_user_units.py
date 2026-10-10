@@ -32,6 +32,9 @@ class UserUnitTests(unittest.TestCase):
         self.assertIn("--hostname 127.0.0.1", opencode)
         self.assertIn("WorkingDirectory=%h/Projects", dsh)
         self.assertIn("AF_NETLINK", dsh)
+        self.assertIn("/usr/local/libexec/huou07-dsh/user-launcher.py", dsh)
+        self.assertIn("InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock", dsh)
+        self.assertIn("InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock", opencode)
         self.assertIn("APPS_FILE=%h/.local/state/huou07-playground/apps.json", dashboard)
         self.assertIn("DSH_URL_FILE=%t/huou07-dsh-link/url", dashboard)
 
