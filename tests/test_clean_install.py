@@ -149,6 +149,22 @@ class CleanInstallTests(unittest.TestCase):
                 self.assertTrue(checkpoint.exists())
                 self.assertFalse(any(call.args[0][:2] == ["systemctl", "start"] for call in run.call_args_list))
 
+    def test_rollback_port_check_failure_preserves_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temp:
+            _, home, checkpoint, registry, _ = self.rollback_fixture(temp)
+            patches = self.rollback_patches(home, checkpoint, registry)
+
+            def fail_port_check(args, *, check=True):
+                if args and args[0] == "ss":
+                    raise subprocess.CalledProcessError(1, args)
+                return self.successful_rollback_command(args, check=check)
+
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patch.object(admin, "run", side_effect=fail_port_check) as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    admin.rollback()
+                self.assertTrue(checkpoint.exists())
+                self.assertFalse(any(call.args[0][:2] == ["systemctl", "start"] for call in run.call_args_list))
+
     def test_preflight_checks_user_manager_before_owner_preparation(self):
         with tempfile.TemporaryDirectory() as temp:
             state_file = Path(temp) / "state.json"

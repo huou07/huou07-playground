@@ -358,7 +358,7 @@ def rollback() -> None:
         run([*user_systemctl, "daemon-reload"])
     busy_ports = []
     for port in APP_LISTENERS:
-        if run(["ss", "-H", "-ltn", "sport", "=", f":{port}"], check=False).stdout.strip():
+        if run(["ss", "-H", "-ltn", "sport", "=", f":{port}"]).stdout.strip():
             busy_ports.append(port)
     if busy_ports:
         raise RuntimeError("Cannot restore legacy services because app ports remain occupied: " + ", ".join(map(str, busy_ports)))
