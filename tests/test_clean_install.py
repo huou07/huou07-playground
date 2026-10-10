@@ -99,6 +99,8 @@ class CleanInstallTests(unittest.TestCase):
         self.assertIn("[ \"$cgroups\" = v2 ]", installer)
         self.assertIn("subprocess.Popen(command", installer)
         self.assertIn("process.stdin.flush()", installer)
+        self.assertIn('"$HOME_DIR/.local/share/omniroute" "$HOME_DIR/.dsh"', installer)
+        self.assertIn("Could not verify rootless Podman", installer)
         self.assertIn('"JWT_SECRET=$jwt"', installer)
         self.assertIn('"API_KEY_SECRET=$api_key_secret"', installer)
         self.assertIn('"OMNIROUTE_WS_BRIDGE_SECRET=$ws_secret"', installer)

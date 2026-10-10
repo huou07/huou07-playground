@@ -56,21 +56,32 @@ check_clean_inputs() {
   # The existing owner OpenCode and Codex installations are deliberately reused.
   # Refuse application-name collisions in huou07's rootless Podman store.
   for name in huou07-litellm huou07-litellm-db huou07-litellm-proxy huou07-omniroute huou07-omniroute-redis; do
-    if podman container exists "$name" 2>/dev/null; then
+    if podman container exists "$name" >/dev/null 2>&1; then
       fail "A rootless Podman container already uses the new app name '$name'; inspect it before continuing."
+    else
+      result=$?
+      [ "$result" -eq 1 ] || fail 'Could not verify rootless Podman container names.'
     fi
   done
   for name in huou07-litellm-postgres huou07-omniroute-redis; do
-    if podman volume exists "$name" 2>/dev/null; then
+    if podman volume exists "$name" >/dev/null 2>&1; then
       fail "A rootless Podman volume already uses the new app name '$name'; inspect it before continuing."
+    else
+      result=$?
+      [ "$result" -eq 1 ] || fail 'Could not verify rootless Podman volume names.'
     fi
   done
   for name in huou07-litellm huou07-omniroute; do
-    if podman pod exists "$name" 2>/dev/null; then
+    if podman pod exists "$name" >/dev/null 2>&1; then
       fail "A rootless Podman pod already uses the new app name '$name'; inspect it before continuing."
+    else
+      result=$?
+      [ "$result" -eq 1 ] || fail 'Could not verify rootless Podman pod names.'
     fi
   done
-  for path in "$APP_CONFIG" "$APP_DATA" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" \
+  for path in "$HOME_DIR/.config" "$HOME_DIR/.local" "$HOME_DIR/.local/lib/node_modules" "$HOME_DIR/.local/bin" \
+    "$HOME_DIR/.local/share" "$HOME_DIR/.local/share/omniroute" "$HOME_DIR/.dsh" "$HOME_DIR/.dsh/profiles" \
+    "$APP_CONFIG" "$APP_DATA" "$LITELLM_CONFIG" "$OMNIROUTE_CONFIG" "$USER_UNITS" "$QUADLETS" \
     "$HOME_DIR/.dsh/profiles/web" "$APP_DATA/dsh-dashboard-launcher.py" "$READY_FILE"; do
     [ ! -L "$path" ] || fail "Refusing a symlinked application path: $path"
   done
