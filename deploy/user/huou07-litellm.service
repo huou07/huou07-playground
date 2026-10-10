@@ -1,0 +1,40 @@
+[Unit]
+Description=LiteLLM Gateway (huou07 user service)
+Requires=huou07-litellm-db.service
+After=huou07-litellm-db.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=%t
+Environment=STORE_MODEL_IN_DB=True
+EnvironmentFile=%h/.config/litellm/litellm.env
+RuntimeDirectory=huou07-litellm
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/podman run --replace --rm --name huou07-litellm-proxy --pod huou07-litellm --security-opt=no-new-privileges --cap-drop=all --log-driver=journald --volume %h/.config/litellm/config.yaml:/tmp/huou07-litellm-config.yaml:ro --env LITELLM_MASTER_KEY --env LITELLM_SALT_KEY --env DATABASE_URL --env STORE_MODEL_IN_DB ghcr.io/berriai/litellm:v1.103.1 --config /tmp/huou07-litellm-config.yaml
+ExecStop=/usr/bin/podman stop --time 30 huou07-litellm-proxy
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=180s
+TimeoutStopSec=45s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+MemoryMax=2G
+CPUQuota=200%
+TasksMax=512
+LimitNOFILE=8192
+Delegate=yes
+
+[Install]
+WantedBy=default.target
