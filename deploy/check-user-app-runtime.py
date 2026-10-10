@@ -105,6 +105,7 @@ class Stage:
     def check_ports(self, ports: tuple[int, ...]) -> None:
         for port in ports:
             with socket.socket() as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
                     sock.bind(("127.0.0.1", port))
                 except OSError as exc:

@@ -371,6 +371,7 @@ class CleanInstallTests(unittest.TestCase):
         self.assertIn("Temporary staging containers, pods, and volumes removed.", staging)
         self.assertIn("/health/readiness", staging)
         self.assertIn("/healthz", staging)
+        self.assertIn("socket.SO_REUSEADDR", staging)
         self.assertIn("OmniRoute data volume did not persist across restart", staging)
         self.assertNotIn("/v1/chat/completions", staging)
         self.assertNotIn("huou07-litellm-postgres", staging)
