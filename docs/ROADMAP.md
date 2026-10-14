@@ -6,7 +6,7 @@ No phase is accepted from a checklist alone. Evidence includes exact source and 
 | Slice | Observable result | State |
 | --- | --- | --- |
 | F0 framework | Contracts, source audit, focused skills and handoff; hosted framework/legacy/browser checks | CI-verified at ed4cc8f; [run 38611677690](https://github.com/huou07/huou07-playground/actions/runs/38611677690); live skill discovery and owner acceptance unverified |
-| P1 Rust baseline | Rust serves existing UI and health/read APIs against parity fixtures; hosted build and resource baseline | In progress — initial health/static boundary is only in the working tree; P1 acceptance remains unverified |
+| P1 Rust baseline | Rust serves existing UI and health/read APIs against parity fixtures; hosted build and resource baseline | In progress — health/static boundary CI-verified at `c171e5e42799333aec72ea9b2a3c2c7608f240e3`; [run 38619770803](https://github.com/huou07/huou07-playground/actions/runs/38619770803). Remaining read API parity and comparable resource samples unverified; owner acceptance pending |
 | P2 owner and policy | Independent owner login, rule editor, templates, dry-run, revisioned apply and redacted audit | Planned |
 | P3 actual isolation | Managed workers cannot administer themselves; block/allow and balance broker enforced in Debian VM | Planned |
 | P4 detect | Owner-selected redacted scan proposals, manual selection and no changes before Apply | Planned |
@@ -24,21 +24,21 @@ or NAS demo before owner authentication and real enforcement exist.
 Then port telemetry/app reads incrementally; preserve historical protected launch
 tokens and external app behavior without reading real credentials.
 
-2026-10-15 progress evidence: working tree based on `main` HEAD
-`53a2d7ef4bf2514a42e8830ba27d24387daa6fc9` adds a Rust loopback server for the
-existing static assets and `/api/health`, with traversal, response-header and
-non-loopback regression cases. No CI run exists for this working tree. Rust is not
-installed in the repository host session, so no local build or test was attempted.
-Cargo.lock is not yet checked in; CI has a one-time lock bootstrap artifact path.
-This is implemented source, not a deployed service or an accepted Rust migration.
-Python remains the runtime and parity reference.
+2026-10-15 hosted evidence: source branch `codex/p1-rust-health-static`, HEAD
+`c171e5e42799333aec72ea9b2a3c2c7608f240e3`. The Rust server serves the existing
+static UI and `/api/health`, rejects non-loopback binding, and passes traversal and
+response-header regressions. `Cargo.lock` is checked in from the hosted-generated
+dependency graph. [GitHub run 38619770803](https://github.com/huou07/huou07-playground/actions/runs/38619770803)
+passed framework and legacy checks, Rust format/Clippy/test/release build/HTTP smoke,
+and existing browser acceptance. This verifies the health/static migration boundary;
+it does not establish production deployment or owner acceptance. Python remains the
+runtime and parity reference for the other APIs.
 
-Completion of P1 still needs a committed exact Cargo.lock, remaining safe read API
-parity fixtures, hosted Rust build/test/browser evidence, and comparable bounded
-resource samples for the same workload. The next action is to obtain the hosted
-lockfile from CI, check it in, and then port read endpoints against Python fixtures.
-P1 is a backend baseline, not secure NAS acceptance. Choose the next P2/P3 boundary
-only after this evidence is available.
+P1 remains in progress. Safe read API parity fixtures and comparable bounded resource
+samples for the same workload are unverified. The next action is to port the dashboard
+metrics read API against Python fixtures and add the same-fixture CI comparison. No
+local tests/builds were run; executable checks ran on GitHub-hosted infrastructure.
+P1 is a backend baseline, not secure NAS acceptance.
 
 ## Working rules
 
