@@ -2,6 +2,20 @@
 
 A private dashboard for one Debian user. The dashboard remains a small Python service; coding tools and app services use the owner account `huou07` and its existing home. WireGuard is the primary remote path, with SSH tunnels kept for recovery.
 
+## Product direction (2026-10-15)
+
+H07P is being reorganized for a Rust backend, owner-controlled worker isolation,
+private NAS and integrated Storage browser. These features are planned, not yet
+implemented. Preserve the existing design. Start at [docs/README.md](docs/README.md)
+and [AGENTS.md](AGENTS.md); implementation handoff is
+[docs/prompts/IMPLEMENT-H07P.md](docs/prompts/IMPLEMENT-H07P.md).
+
+All tests/builds/package acceptance for this initiative run on disposable
+GitHub-hosted infrastructure. Do not run the commands below, install or deploy
+on the owner's Debian machine without a later explicit request. The following
+sections describe the legacy implementation and historical owner operations;
+they do not establish current host state or authorize agents to execute them.
+
 ## What runs where
 
 | App | User service | Data/config | Private loopback port |
