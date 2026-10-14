@@ -15,6 +15,10 @@ const CONTENT_SECURITY_POLICY: &str = concat!(
     "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; ",
     "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
 );
+const LOOPBACK_ERROR: &str = concat!(
+    "Only loopback binding is supported until authentication and private-network ",
+    "access controls are implemented."
+);
 
 async fn health() -> Response {
     let mut response = (StatusCode::OK, "{\"ok\":true}").into_response();
@@ -60,11 +64,7 @@ fn static_root() -> PathBuf {
 
 fn loopback_addresses(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     if !matches!(host, "127.0.0.1" | "::1" | "localhost") {
-        return Err(concat!(
-            "Only loopback binding is supported until authentication and private-network ",
-            "access controls are implemented.",
-        )
-        .into());
+        return Err(LOOPBACK_ERROR.into());
     }
     if host == "localhost" {
         Ok(vec![
@@ -100,8 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!(
             "Static asset directory is unavailable: {}",
             static_root.display()
-        )
-        .into());
+        ).into());
     }
 
     let application = app(static_root);

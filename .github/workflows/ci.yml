@@ -49,7 +49,7 @@ jobs:
       - name: Smoke test Rust HTTP boundary
         run: bash tests/rust-smoke.sh target/release/h07p-server
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: env.CARGO_LOCK_BOOTSTRAP == '1'
+        if: always() && env.CARGO_LOCK_BOOTSTRAP == '1'
         with:
           name: cargo-lock-bootstrap
           path: Cargo.lock
