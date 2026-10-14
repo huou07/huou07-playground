@@ -5,7 +5,7 @@ No phase is accepted from a checklist alone. Evidence includes exact source and 
 
 | Slice | Observable result | State |
 | --- | --- | --- |
-| F0 framework | Contracts, source audit, focused skills and handoff; hosted framework/legacy/browser checks | Implemented; CI evidence recorded in GitHub |
+| F0 framework | Contracts, source audit, focused skills and handoff; hosted framework/legacy/browser checks | CI-verified at ed4cc8f; [run 38611677690](https://github.com/huou07/huou07-playground/actions/runs/38611677690); live skill discovery and owner acceptance unverified |
 | P1 Rust baseline | Rust serves existing UI and health/read APIs against parity fixtures; hosted build and resource baseline | Planned |
 | P2 owner and policy | Independent owner login, rule editor, templates, dry-run, revisioned apply and redacted audit | Planned |
 | P3 actual isolation | Managed workers cannot administer themselves; block/allow and balance broker enforced in Debian VM | Planned |
