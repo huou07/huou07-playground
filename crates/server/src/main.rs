@@ -79,7 +79,7 @@ fn loopback_addresses(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> 
 }
 
 fn app(static_root: PathBuf) -> Router {
-    let static_files = ServeDir::new(static_root).append_index_html_on_directories();
+    let static_files = ServeDir::new(static_root).append_index_html_on_directories(true);
     Router::new()
         .route("/api/health", get(health))
         .fallback_service(static_files)
