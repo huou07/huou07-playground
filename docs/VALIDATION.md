@@ -101,6 +101,20 @@ CI can measure CPU cost but cannot prove electricity savings on the owner's mach
 If later authorized, measure joules for fixed work and idle watts over matched
 intervals on actual hardware. Distinguish CPU package from whole-machine energy.
 
+## Package lifecycle and data protection
+
+In the disposable Debian guest, create synthetic owner configuration, policy
+state and NAS data with known hashes before testing upgrade/removal. Install
+protected binaries/units outside worker-writable trees; package scripts must not
+execute a checkout or worker-controlled configuration with privilege. Check
+fresh install, interrupted/failed upgrade, schema backup/restore, rollback,
+remove and purge. Remove must preserve user data; purge may remove package-owned
+configuration but must not silently delete NAS/workspaces, owner credentials or
+unrelated services. Destructive user-data deletion is a separate explicit owner
+operation, not an uninstall side effect. Verify retained hashes and service/
+worker identity after each lifecycle transition. Legacy deploy scripts are not
+the future .deb lifecycle proof.
+
 ## CI trust and publication
 
 Pin actions to reviewed immutable commits. Default GITHUB_TOKEN contents: read;

@@ -1,53 +1,62 @@
 # Implement H07P
 
-Work in the Hub-registered `huou07-playground` repository. Establish current
-branch, HEAD and working tree; preserve unrelated work. Select references through
-[AGENTS](../../AGENTS.md) and available procedures through
-[skills.md](../../skills.md). Read [WORKING](../WORKING.md) for execution authority
-and [ROADMAP](../ROADMAP.md) for the first incomplete outcome. Retrieve only the
-source/contracts needed for that outcome.
+Deliver the compact, customizable open source Linux product in
+[PRODUCT](../PRODUCT.md), beginning with the first unverified boundary in the
+single [ROADMAP](../ROADMAP.md) tracker.
 
-Start implementing the next unverified P1 boundary. At this handoff Rust already
-serves health/static with a checked-in lockfile; do not recreate that scaffold.
-Use [IMPLEMENTATION](../IMPLEMENTATION.md) to locate `linux_metrics`, its helpers,
-existing fixtures and the Rust server. Port GET /api/metrics against the Python
-reference and make the existing Home/System/Storage telemetry render real Rust
-responses with the current design. Preserve null/unavailable states, units,
-sampling/counter semantics and bounded collection. Add same-fixture HTTP parity
-and a reproducible Python/Rust idle/open workload comparison on disposable hosted
-Linux infrastructure. Measure resource cost and variance before claiming gains.
-Recheck the tracker: if that boundary has fresh evidence, continue at its next
-unverified outcome rather than repeating completed work.
+Verified handoff snapshot (2026-10-15): Hub resolves `huou07-playground` to
+`/home/huou07/Projects/huou07-playground`; branch
+`codex/h07p-framework-refresh`, inspected HEAD
+`0b6a3847bbf67cf34c197b7d3d6dc48f9dbf81b4`.
+[Hosted CI](https://github.com/huou07/huou07-playground/actions/runs/38621848508)
+passed framework, legacy/Python browser and locked Rust health/static gates.
+Recheck current HEAD/tree and preserve unrelated changes; this snapshot is dated.
 
-Use [ARCHITECTURE](../ARCHITECTURE.md), [VALIDATION](../VALIDATION.md) and
-[REUSE](../REUSE.md) for migration, gates and provenance. Keep the Python reference
-until replacement evidence exists. The current browser runner starts Python;
-exercise Rust explicitly, and do not treat intercepted API responses as backend
-parity. Fix observed failures and update the single tracker with exact source,
-run URLs, observations and limitations.
+Use [AGENTS](../../AGENTS.md) to select docs/tools and [skills.md](../../skills.md)
+to choose procedures exposed by the current harness. Read
+[WORKING](../WORKING.md) for authority and
+[IMPLEMENTATION](../IMPLEMENTATION.md) for source locations. Retrieve only what
+the active outcome needs.
 
-Continue authorized product development through the remaining read APIs, owner
-authentication/revisioned policy, actual worker isolation, detection proposals,
-private NAS and host Storage, following tracker dependencies and the relevant
-[product](../PRODUCT.md), [security](../SECURITY.md) and [UX](../UX.md) contracts.
-Each slice must produce usable behavior and an observed journey; do not stop at
-another general plan or empty crates. Redis requires measured total-cost benefit.
-Linux/.deb is the supported delivery target; other platforms remain Coming soon.
+Implement P1.2 now: port GET /api/metrics against `web/app.py:linux_metrics` and
+its helper fixtures, reuse the existing Rust workspace/lockfile, and make the
+preserved Home/System/Storage UI render actual Rust telemetry. Keep null/error
+states, units, rounding and sampling/counter semantics. Add same-input HTTP
+parity, including unavailable/malformed/reset cases, and a reproducible
+Python/Rust idle/open resource comparison with raw sanitized samples and variance.
+The existing browser runner starts Python and intercepts some APIs; its pass
+alone cannot close Rust parity. If P1.2 already has fresh evidence, implement the
+tracker's next unverified outcome instead.
 
-Run tests/builds/benchmarks/package lifecycle only on disposable GitHub-hosted
-Linux runners/VMs; sudo is allowed there. Never use self-hosted runners, test or
-install Playground on the owner's Debian machine. Use the existing H07P GitHub
-repository for authorized validation pushes/publication; a framework pass is not
-a product release. Respect the release/host authority in WORKING and VALIDATION.
+Continue through remaining read APIs, owner authentication/policy, actual worker
+isolation and approvals, detection proposals, private NAS and host Storage using
+[ARCHITECTURE](../ARCHITECTURE.md), [SECURITY](../SECURITY.md),
+[UX](../UX.md) and [REUSE](../REUSE.md) as needed. Preserve the design and licences.
+Do not replace implementation with another general plan or empty crates.
+Redis requires measured benefit including its operating/resource cost.
 
-A slice is done when its real owner journey and applicable hosted gates pass for
-the exact source, with parity/resource/boundary evidence appropriate to it.
-Record implemented, CI-tested, owner-accepted, blocked and unverified separately.
-Mock rules do not prove isolation, CPU measurements do not prove target-host
-electricity savings, and CI cannot grant owner acceptance. Continue at the next
-incomplete outcome; if an actual capability or authority is missing, report the
-specific condition and smallest next action.
+Run verification only on disposable GitHub-hosted Linux runners/VMs; sudo is
+allowed there. Never use self-hosted runners or test/install/deploy on the owner's
+Debian machine. Existing hosted commands are `python3 tools/check-framework.py`,
+`make check`, `make acceptance`, the pinned Rust commands in
+[CI](../../.github/workflows/ci.yml), and
+`bash tests/rust-smoke.sh target/release/h07p-server`.
+Extend meaningful gates for the changed boundary according to
+[VALIDATION](../VALIDATION.md). Use the existing GitHub repository for authorized
+validation pushes; publication/release and host operations follow current owner
+authority. Linux/.deb is supported; other platforms remain Coming soon.
 
-Prompt provenance: the current DSH loader rejected `prompt-assist` as unavailable
-on 2026-10-15. This artifact follows the Hub's prompting reference; no successful
-prompt-assist activation or project-skill discovery is claimed.
+Complete each slice when its real journey and applicable hosted gates pass for
+the exact source, with required parity, resource or Linux-boundary evidence.
+Update ROADMAP with source/run/artifact pointers and implemented, CI-tested,
+owner-accepted, blocked and unverified results; then continue authorized work.
+Mock policy tests cannot prove isolation; CI CPU cannot prove target-host energy.
+If a concrete capability/authority blocks execution, report it and the smallest
+next action.
+
+Assumptions: no additional product decisions are inferred; implementation details
+remain reversible until source and the applicable contracts justify them.
+Unverified: remaining product journeys, real worker isolation, .deb lifecycle,
+resource improvements, target-hardware energy and owner acceptance.
+Prompt method: `prompt-assist` was successfully loaded through the current DSH
+skill tool after the catalog update; project-skill discovery is still unverified.

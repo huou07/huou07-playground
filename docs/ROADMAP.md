@@ -9,7 +9,7 @@ A check or source artifact never implies owner acceptance.
 
 | Slice | Observable result | State / prerequisite |
 | --- | --- | --- |
-| F0 framework | Navigable contracts, focused skills, executable handoff and hosted structural guards | Earlier framework CI-verified at ed4cc8f; refresh in progress, fresh hosted evidence pending |
+| F0 framework | Navigable contracts, focused skills, executable handoff and hosted structural guards | Refresh CI-verified at 0b6a384; [run 38621848508](https://github.com/huou07/huou07-playground/actions/runs/38621848508); subsequent documentation finalization recorded below |
 | P1 Rust baseline | Existing UI and read APIs work with fixture parity and comparable resource evidence | In progress; health/static CI-verified, metrics and remaining read APIs/resources unverified |
 | P2 owner and policy | Independent owner login, rule editor, templates, dry-run, revisioned apply and redacted audit | Planned; build on Rust boundary; required before private/mutating control APIs |
 | P3 actual isolation | Managed workers cannot administer themselves; Block/Allow and balance broker enforced in Debian VM | Planned; depends on P2; actual Linux workers plus positive/negative cases |
@@ -57,15 +57,29 @@ parity must not reproduce an insecure access model.
   feature branch. The initial Hub status snapshot had shown c171e5e plus one dirty
   file; a subsequent external evidence commit advanced HEAD before our edits.
   No external work was overwritten. The Hub has unrelated registry/ops changes.
-- F0 refresh: source docs, navigation, rule limitations, focused project skills,
-  prompt and structural/CI guards updated; no product code changed. Hosted
-  verification pending. No local tests/builds/benchmarks/installers were run.
-  Existing licences and deployment history retained; Git diff is the rollback.
-- Current DSH catalog exposes the eight shared skills only. Their full bodies
-  were loaded through this session's DSH loader. Project bodies were read as
-  repository references; live project-skill discovery remains unverified.
-  A current `prompt-assist` load returned unknown/unavailable; the prompt follows
-  the Hub prompting reference without claiming activation.
+- F0 refresh source `0b6a3847bbf67cf34c197b7d3d6dc48f9dbf81b4`, branch
+  `codex/h07p-framework-refresh`:
+  [run 38621848508](https://github.com/huou07/huou07-playground/actions/runs/38621848508)
+  completed successfully. All three jobs passed: framework links/metadata/15
+  declared route cases, legacy plus locked Rust gates/HTTP smoke, and Python
+  browser acceptance. Source docs, navigation, rule limitations, focused project
+  skills, prompt and structural/CI guards changed; no product code changed.
+  Later documentation finalization adds the package data-protection contract,
+  current prompt-assist evidence and this ledger. The run above remains evidence
+  for its exact source; inspect the latest branch run for subsequent revisions.
+  No local product tests/builds/benchmarks/installers were run. Scoped Git whitespace
+  check and a fully redacted Gitleaks stdin scan of the staged framework diff passed;
+  scanner coverage is that diff only, not historical source or host data. Manual
+  trust review retained pinned actions, read-only CI tokens, hosted targets and
+  owner/worker boundaries. Existing licences/deployment history retained; Git
+  commits/diff provide rollback. No release, merge or host deployment performed.
+- Discovery changed during this task: the initial DSH catalog exposed eight
+  shared skills and a prompt-assist attempt returned unknown/unavailable. After
+  the replacement catalog added `prompt-assist`, the current DSH loader returned
+  its full body successfully and the prompt was revised using it. The eight
+  shared bodies were also loaded through this session's DSH loader. Project
+  bodies were read as repository references; live H07P project-skill discovery
+  and model-routing performance remain unverified.
 
 ## Acceptance gaps and working rules
 

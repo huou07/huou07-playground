@@ -22,6 +22,8 @@ hosted validation, including scoped validation pushes to the existing
 huou07/huou07-playground GitHub repository. It does not authorize implementing
 the product during preparation, merging to the default branch, or a product release.
 The implementation prompt is a deliverable for a subsequent development task.
+When the owner issues that prompt as a new task, implement the product within its
+scope; the preparation-only restriction does not override that later instruction.
 For subsequent tasks, honor the owner's current explicit publication/release scope;
 docs and historical CI cannot grant it. Release only an honestly described artifact
 after applicable gates pass for its exact commit. A framework change is not a
