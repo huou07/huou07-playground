@@ -5,6 +5,8 @@ source of truth; the Hub contains its pointer only.
 
 | Document | Purpose |
 | --- | --- |
+| [WORKING.md](WORKING.md) | Scope, authority, task loop and evidence |
+| [TOOLS.md](TOOLS.md) | Tools, commands, side effects and execution targets |
 | [PRODUCT.md](PRODUCT.md) | Owner intent, journeys and acceptance |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Rust target, boundaries, cache and migration |
 | [SECURITY.md](SECURITY.md) | Permission semantics, presets and OS enforcement |
@@ -13,7 +15,7 @@ source of truth; the Hub contains its pointer only.
 | [ROADMAP.md](ROADMAP.md) | Single implementation tracker and first slice |
 | [REUSE.md](REUSE.md) | Upstream candidates, licensing and decisions |
 | [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) | Source inspection and its limits |
-| [SKILLS.md](SKILLS.md) | Focused project skill candidates and routing |
+| [../skills.md](../skills.md) | Shared system and project skill routing |
 | [prompts/IMPLEMENT-H07P.md](prompts/IMPLEMENT-H07P.md) | Owner handoff prompt |
 
 ## Historical references
