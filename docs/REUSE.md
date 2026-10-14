@@ -22,6 +22,24 @@ or assume old BSD terms apply. Valkey is a candidate if a compatible open source
 shared cache is warranted; confirm feature/version/license requirements with owner
 intent before substitution. Neither runs by default.
 
+## Rust baseline dependency record
+
+The initial server declares exact direct crate releases and disables Axum's default
+feature set. Crate checksums and SPDX metadata were checked against crates.io on
+2026-10-15. Direct records: Axum 0.8.9, MIT,
+`31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90`
+(features: http1, tokio); Tokio 1.53.3, MIT,
+`ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e`
+(features: macros, net, rt-multi-thread, signal); tower-http 0.7.1, MIT,
+`08a05a66a4fdd61cbbe0a1d755ffe0ca6aba159dd4820936a0ff8a8278245b9c`
+(feature: fs); Tower 0.5.2, MIT,
+`d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9`, test-only
+(feature: util).
+These are registry archive checksums, not a substitute for Cargo.lock. Hosted CI
+resolves the transitive graph and uploads the lockfile bootstrap artifact. Until
+that exact lock is checked into the repository and CI stops generating it, the
+dependency graph is not yet reproducible across runs and P1 remains unverified.
+
 ## Import record required per adopted component
 
 Record upstream URL, exact release/commit/checksum, selected licence/SPDX, used
