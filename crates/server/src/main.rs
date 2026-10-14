@@ -57,9 +57,9 @@ async fn security_headers(request: Request<Body>, next: Next) -> Response {
 }
 
 fn static_root() -> PathBuf {
-    env::var_os("STATIC_DIR").map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/static")
-    })
+    env::var_os("STATIC_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/static"))
 }
 
 fn loopback_addresses(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
@@ -100,7 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!(
             "Static asset directory is unavailable: {}",
             static_root.display()
-        ).into());
+        )
+        .into());
     }
 
     let application = app(static_root);
@@ -172,17 +173,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(response.headers().contains_key(header::CONTENT_SECURITY_POLICY));
+        assert!(response
+            .headers()
+            .contains_key(header::CONTENT_SECURITY_POLICY));
         assert_eq!(
             response.headers()[header::X_CONTENT_TYPE_OPTIONS],
             "nosniff"
         );
         let html = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        assert!(
-            std::str::from_utf8(&html)
-                .unwrap()
-                .contains("<title>Home · huou07 playground</title>")
-        );
+        assert!(std::str::from_utf8(&html)
+            .unwrap()
+            .contains("<title>Home · huou07 playground</title>"));
     }
 
     #[tokio::test]
