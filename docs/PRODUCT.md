@@ -5,11 +5,14 @@
 H07P is an open source, compact Linux web control panel for one owner to manage
 their machine, isolate coding agents and privately manage files. Keep the current
 design language. Ship Linux .deb first; other platforms display "Coming soon".
-Rust is the target implementation for backend and OS integration. Extensibility
-means typed internal adapters and versioned APIs, not a plugin daemon or platform.
+Rust is the target implementation for backend and OS integration. Support customization through documented configuration,
+UI preferences and versioned policy templates. Extensibility starts with typed
+internal adapters and versioned APIs; add extension boundaries for demonstrated
+callers rather than a speculative plugin daemon or platform.
 
-This preparation stage establishes contracts and CI; the Rust product and new
-screens remain implementation work tracked in [ROADMAP.md](ROADMAP.md).
+This preparation stage maintains contracts and verification paths; the existing
+Rust health/static baseline is mapped in [IMPLEMENTATION.md](IMPLEMENTATION.md).
+Remaining migration and new screens are tracked only in [ROADMAP.md](ROADMAP.md).
 No installation, deployment or testing on the owner's Debian machine is authorized.
 
 ## Permissions

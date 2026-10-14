@@ -8,7 +8,8 @@ source of truth; the Hub contains its pointer only.
 | [WORKING.md](WORKING.md) | Scope, authority, task loop and evidence |
 | [TOOLS.md](TOOLS.md) | Tools, commands, side effects and execution targets |
 | [PRODUCT.md](PRODUCT.md) | Owner intent, journeys and acceptance |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Rust target, boundaries, cache and migration |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Proposed Rust boundaries, cache and migration |
+| [IMPLEMENTATION.md](IMPLEMENTATION.md) | Source-backed implementation and route coverage; not task state |
 | [SECURITY.md](SECURITY.md) | Permission semantics, presets and OS enforcement |
 | [UX.md](UX.md) | Preserve design and make security/files usable |
 | [VALIDATION.md](VALIDATION.md) | GitHub CI, evidence, performance and .deb gates |

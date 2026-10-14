@@ -38,11 +38,23 @@ delete/rename: never claim those rights are independently isolated using chmod
 alone. If a backend cannot enforce a selected combination, reject it or require
 the broker; the UI explains the unsupported combination.
 
+Execute means OS executable access; denying execute cannot stop an interpreter
+from evaluating a readable script. Do not advertise prevention of arbitrary code
+execution for a coding worker. Explain required read/runtime dependencies and
+check whether direct access or a mediated operation can enforce the selected
+rights. Unsupported granular rights must never be silently widened.
+
 Evaluate immutable boundaries first, then any applicable block (deny wins),
 then ask, then allow, then preset default. Overlapping allow cannot silently
 override private descendants. To change a block, the owner edits/removes that
 rule with an impact preview. Expiry/revision changes invalidate approvals.
 A more permissive OS permission never overrides a compiled block.
+
+Applying a template supplies editable defaults; custom rules remain explicit.
+Show merge versus reset before changing templates. Neither template nor custom
+Allow may cross the immutable administration/NAS boundary. A NAS Block rule is
+an owner-visible dogfood operation with actual enforcement evidence; removing
+that discretionary rule cannot grant worker NAS access, including under none.
 
 ## Presets
 
@@ -97,6 +109,11 @@ Changes to existing host ownership/units are owner operations at installation.
 Policy updates use expected revision to prevent lost edits. Validate compiled
 enforcement before activation; report Desired / Applying / Enforced / Failed.
 Revoking access requires terminating affected managed process trees and handles.
+Revocation cannot erase bytes a worker already read or copies it made while access
+was permitted. State that limit and deny future access; do not promise retroactive
+confidentiality. Keep NAS private before any worker launch so this limit is not
+used to excuse a NAS leak. Same-UID workers require process/control-socket isolation;
+workspace or cgroup labels alone do not prevent another process accessing a handle.
 On failure, retain known protection or stop affected workers, report the applied
 revision and offer an owner rollback; never silently drop to none.
 

@@ -8,17 +8,19 @@ Never use a self-hosted runner, SSH into the owner host or invoke deploy scripts
 there. Sudo is allowed inside the disposable CI guest. Read-only source/Git review
 does not establish runtime behavior.
 
-Current CI: legacy make check, framework structure guard and existing browser
-acceptance. Browser tests use a temporary apps registry and fixture app server.
-They do not validate new permissions/NAS because those are not implemented.
+Current CI: framework structure/routing guard, legacy make check, locked Rust
+format/Clippy/test/release/HTTP smoke, and existing Python browser acceptance.
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for source coverage. The browser runner
+starts Python, uses a temporary apps registry/fixture app server and intercepts
+several APIs; its pass does not prove Rust UI/backend parity or permissions/NAS.
 Hosted Ubuntu tests do not establish Debian package or OS isolation acceptance.
 
 ## Required gates as slices land
 
 | Change | Gate and evidence |
 | --- | --- |
-| Framework | Local link integrity and skill frontmatter/routing structure in hosted CI |
-| Rust baseline | cargo fmt --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace --locked, release build; commands only after workspace exists |
+| Framework | Hosted python3 tools/check-framework.py: links/anchors, navigation/router inventory, skill metadata and declared route-case schema; model selection/loading remains unverified |
+| Rust baseline | Pinned toolchain: cargo fmt --all -- --check; cargo clippy --workspace --all-targets --locked -- -D warnings; cargo test --workspace --locked; cargo build --workspace --release --locked |
 | API parity | Fixture comparisons with Python reference; errors/timeouts and limits included |
 | Owner control | Auth/CSRF, replay, worker-to-owner API denial, policy revision conflicts |
 | Isolation | Actual managed agents-worker subprocesses and descendants in disposable Debian VM, not mocked syscall results |
@@ -35,6 +37,27 @@ incomplete gate, never a skip presented as a pass. Supported minimum Debian/kern
 and required ABI are chosen from demonstrated capability tests before first release.
 Start with Linux amd64 .deb; other Linux architectures need their own evidence.
 Non-Linux platforms remain Coming soon.
+
+## Framework checks and current executable entrypoints
+
+The framework job is independent of product jobs. Its guard reads repository
+text only; it does not import application code, start services, install packages
+or contact host services. It checks declared routing cases in
+[../tools/framework-routing.json](../tools/framework-routing.json); these are
+declared positive/subtle/negative/no-skill expectations, not live model
+routing results. Validate actual selection and output separately through the
+current session loader before claiming discovery or promoting a skill.
+
+Existing hosted entrypoints are `make check`, `make acceptance`, the pinned Rust
+commands in [CI](../.github/workflows/ci.yml), and
+`bash tests/rust-smoke.sh target/release/h07p-server`. Do not run them locally.
+Missing Cargo.lock is a gate failure. Browser acceptance must be extended to a
+real Rust backend as each API slice lands; a Python-only pass cannot close P1.
+
+Retain sanitized raw measurements/reports as CI artifacts with source SHA,
+workload/toolchain identity, job/run URL, units and sample duration. Link these
+from ROADMAP rather than copying result tables into every contract. Publish only
+synthetic paths/data; no real credential, NAS or owner host inventories.
 
 ## Adversarial fixture matrix
 

@@ -51,6 +51,10 @@ private native directories. Readable files do not prove discovery or activation.
 If a needed procedure is unavailable, report that fact; project docs remain
 retrievable references, not a substitute claim that a skill was loaded.
 
+The machine-readable [routing cases](tools/framework-routing.json) exercise the
+same intent boundaries structurally in hosted CI. They declare expected routes;
+this is not proof that a model selected or loaded them.
+
 ## Representative routes
 
 | Request | Route |

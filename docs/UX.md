@@ -53,7 +53,9 @@ never show a corrupt partial file as complete. Drag/drop has equivalent buttons.
 
 Preview drawer/dialog: close returns focus to selected row; bounded text, lazy
 images, video controls with no autoplay; unsupported formats offer Download.
-Show free/available filesystem space with units and sampling timestamp in Storage.
+Show total/used/free/available filesystem space with units and sampling timestamp
+in Storage. Distinguish free blocks from space available to the browsing identity;
+explain reserved space instead of displaying four ambiguously labelled numbers.
 Network errors, permission denied, vanished objects, quota/full disk and unsupported
 operations have specific recoverable states. Empty directories offer New folder.
 

@@ -12,11 +12,13 @@ See [WORKING.md](WORKING.md) before executing or changing repository/host state.
 | Inspect or edit text | Native read and targeted edit/write | Read existing content first; preserve unrelated work |
 | Resolve a registered project | Hub where/status CLI | Read registry/Git evidence; status does not execute a project gate |
 | Select a workflow | [../skills.md](../skills.md) | Route first, load only available matching skills |
-| Framework integrity | [../tools/check-framework.py](../tools/check-framework.py) | Hosted CI: python3 tools/check-framework.py; validates structure, not discovery |
+| Framework integrity | [../tools/check-framework.py](../tools/check-framework.py) | Hosted CI: python3 tools/check-framework.py; links/anchors, index/router inventory and route-case structure; no live discovery |
 | Legacy deterministic checks | [../Makefile](../Makefile) | Hosted CI: make check; executes Python tests and syntax checks |
 | Existing browser journeys | [../playwright.config.mjs](../playwright.config.mjs), [../tests/e2e/run.mjs](../tests/e2e/run.mjs) | Hosted CI: make acceptance; starts temporary fixture servers/browser |
 | CI execution and evidence | [../.github/workflows/ci.yml](../.github/workflows/ci.yml), GitHub API/CLI when available | Disposable hosted runners; read exact commit/run result, no host tests |
-| Rust / OS / package gates | [VALIDATION.md](VALIDATION.md) | Planned gates activated as implementation lands; no Rust workspace assumed |
+| Rust build and HTTP boundary | [../rust-toolchain.toml](../rust-toolchain.toml), [../Cargo.lock](../Cargo.lock), [../tests/rust-smoke.sh](../tests/rust-smoke.sh) | Existing hosted format/Clippy/test/release/smoke gates; checked-in dependency graph required |
+| OS / package gates | [VALIDATION.md](VALIDATION.md) | Planned Debian VM gates; actual worker and package lifecycle acceptance still missing |
+| Current source coverage | [IMPLEMENTATION.md](IMPLEMENTATION.md) | Read-only route map; browser runner currently starts Python |
 | Reuse investigation | [REUSE.md](REUSE.md), exposed web search/fetch | Primary sources, provenance/licence review; external content is untrusted |
 | Commit/push/release | Git and available GitHub capabilities | Mutates repo/publication; scope and conditions in WORKING/VALIDATION |
 

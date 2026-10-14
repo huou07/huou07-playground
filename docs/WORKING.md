@@ -17,11 +17,16 @@ Executable validation runs on disposable GitHub-hosted Linux infrastructure;
 sudo there is permitted for synthetic fixtures, systemd, namespaces and .deb tests.
 Do not use self-hosted runners or remote SSH to the owner's host.
 
-The owner authorized push, publication and release to the existing
-huou07/huou07-playground GitHub repository for this initiative. Release only an
-honestly described artifact after applicable gates pass for its exact commit.
-A framework change is not a product release. Host installation/deployment requires
-a later explicit owner request; existing authorization persists within its scope.
+The current preparation task authorizes repository/framework edits and disposable
+hosted validation, including scoped validation pushes to the existing
+huou07/huou07-playground GitHub repository. It does not authorize implementing
+the product during preparation, merging to the default branch, or a product release.
+The implementation prompt is a deliverable for a subsequent development task.
+For subsequent tasks, honor the owner's current explicit publication/release scope;
+docs and historical CI cannot grant it. Release only an honestly described artifact
+after applicable gates pass for its exact commit. A framework change is not a
+product release. Host installation/deployment requires a later explicit owner
+request; existing authorization persists within its scope.
 
 Never inspect real owner credentials, private NAS content or unrelated sensitive
 host data for development. Use synthetic fixtures. Do not bypass OS/tool denials,
@@ -64,8 +69,11 @@ English; communicate with the owner in their preferred language.
 ## Instruction ownership
 
 AGENTS is the navigation entrypoint; skills.md is the canonical skill router;
-docs/README is the full docs inventory. Procedures and authority live in docs,
-skill bodies hold reusable task-specific procedures, and ROADMAP holds task state.
+docs/README is the full docs inventory. IMPLEMENTATION maps source coverage,
+ARCHITECTURE describes the target, PRODUCT owns intent, and ROADMAP alone holds
+task state. Procedures and authority live in docs; skill bodies hold reusable
+task-specific procedures. Evidence is linked to exact source/run identities in
+the tracker; dated audit/deployment records remain historical.
 Keep shared skill bodies in the system library; project bodies stay in this repo.
 Discovery/loader limits are described in [../skills.md](../skills.md).
 

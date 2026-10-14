@@ -1,6 +1,7 @@
 # Reuse and provenance
 
-Reviewed as design sources on 2026-10-15; none has been vendored or installed.
+Design sources were reviewed on 2026-10-15; the Rust server now adopts the direct
+crates recorded below. Other entries remain candidates. This task installs nothing.
 Pin a supported release and immutable revision before importing code, verify its
 actual licence and preserve notices. Repository GPL-3.0 licence stays unchanged.
 Reuse dependencies and algorithms before copying large applications.
@@ -35,10 +36,12 @@ feature set. Crate checksums and SPDX metadata were checked against crates.io on
 (feature: fs); Tower 0.5.2, MIT,
 `d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9`, test-only
 (feature: util).
-These are registry archive checksums, not a substitute for Cargo.lock. Hosted CI
-resolves the transitive graph and uploads the lockfile bootstrap artifact. Until
-that exact lock is checked into the repository and CI stops generating it, the
-dependency graph is not yet reproducible across runs and P1 remains unverified.
+These are earlier registry archive checksum observations, not a substitute for
+[Cargo.lock](../Cargo.lock). The hosted-generated full graph was checked in at
+c171e5e42799333aec72ea9b2a3c2c7608f240e3 and the recorded hosted build used it.
+CI now requires that lock and uses --locked; a missing lock fails rather than
+bootstrapping a new graph. Transitive licence/advisory review is still a separate
+gate in [VALIDATION.md](VALIDATION.md), not established by dependency pinning.
 
 ## Import record required per adopted component
 

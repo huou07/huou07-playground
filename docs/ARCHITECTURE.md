@@ -2,13 +2,18 @@
 
 ## Current and chosen direction
 
-The inspected baseline is Python stdlib HTTPServer plus static HTML/CSS/JS.
-Rust has not yet been implemented. Preserve static assets and migrate backend
-behavior in slices with parity fixtures. Existing third-party apps remain external
-integrations, not rewritten services.
+The legacy reference is Python stdlib HTTPServer plus static HTML/CSS/JS.
+A minimal Rust workspace already serves static assets and /api/health on loopback;
+other APIs and OS collectors remain Python. See [IMPLEMENTATION.md](IMPLEMENTATION.md)
+for source coverage and [ROADMAP.md](ROADMAP.md) for dated CI evidence.
+The boundaries below are target architecture, not implemented isolation.
+Preserve static assets and migrate behavior in slices with parity fixtures.
+Existing third-party apps remain external integrations, not rewritten services.
 
 Use Rust with Tokio, Axum, Tower/tower-http, Serde and tracing as the initial
-backend candidates. Choose supported versions and pin Cargo.lock when implemented.
+backend components. The initial server uses Axum/Tokio/tower-http with a checked-in
+Cargo.lock; Serde/tracing and a policy store are still candidates. Review the locked
+features/licences before adding dependencies; do not regenerate the graph implicitly.
 Use SQLite for durable policy revisions, approvals, redacted audit and file job
 metadata; choose one maintained Rust binding then. Files remain ordinary filesystem
 objects. Never put NAS bytes or credentials in a database/cache. Do not introduce
@@ -39,11 +44,12 @@ ancestor paths must be outside worker control. A worker's edited checkout must
 never be used as the privileged installed executable. Prevent connections to owner
 APIs by both authentication and namespace/socket exposure controls.
 
-## Suggested Rust workspace (create when implemented)
+## Rust workspace evolution
 
 - crates/policy: pure typed rules, operation mapping, conflict decisions, revision.
 - crates/platform-linux: capability probes and enforcement compiler/adapters.
-- crates/server: API, owner sessions, telemetry, file job orchestration.
+- crates/server: existing health/static crate; grow API, owner sessions, telemetry
+  and file job orchestration only as callers need them.
 - crates/helper: narrow privileged IPC, only if integration proves it necessary.
 - web/static: preserved UI; split readable modules by feature as each is touched.
 - tests/fixtures and tests/integration: synthetic data and OS boundary scenarios.
@@ -69,6 +75,17 @@ For revocation, stop the complete cgroup, close broker handles and recreate it.
 A restart requirement or failed application is visible and recoverable; an old
 running process is not protected merely because the new DB revision exists.
 Existing unmanaged workers require owner migration, not automatic host changes.
+
+## Storage capacity semantics
+
+The host browser samples the selected mount with statvfs-equivalent values:
+total = blocks × fragment size, free = bfree × fragment size,
+available = bavail × fragment size, used = total − free. Return byte counts plus
+mount/sample identity; display explicit decimal GB or binary GiB. Available is
+subject to filesystem reservation, quotas and the service identity; do not imply
+it guarantees an upload will succeed or equals owner quota headroom. Record the
+identity/capability limitation when an adapter cannot observe owner availability.
+Do not substitute raw block-device capacity for mounted filesystem usage.
 
 ## Caching, latency and energy
 
