@@ -9,7 +9,7 @@ export default defineConfig({
   expect: { timeout: 8000 },
   outputDir: 'test-results',
   workers: 1,
-  reporter: 'list',
+  reporter: process.env.CI ? [['list'], ['github']] : 'list',
   use: {
     baseURL: process.env.HUOU07_E2E_BASE_URL,
     browserName: 'chromium',
