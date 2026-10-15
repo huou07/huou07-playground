@@ -96,9 +96,14 @@ the retained screenshots still need human/vision review.
 
 Local OS lab design and preflight are in
 [VALIDATION](VALIDATION.md#disposable-local-os-security-lab). No guest or live
-security test ran. Current worker KVM access and a reviewed immutable base are
-missing; P2/P3 enforcement is still unimplemented. No new host permissions,
-self-hosted runner or production policy were introduced.
+security test ran. The owner subsequently installed the dedicated h07p-lab
+account (UID 985) and verified KVM API 12; the normal worker intentionally has
+no KVM membership. The immutable Debian base and synthetic seed are still
+missing, so the registered lab profile remains disabled. The installed snapshot
+service needs the reviewed Hub owner upgrade before protected history is usable.
+P2/P3 product enforcement is still unimplemented. No self-hosted runner or live
+production policy was introduced. The implementation prompt records current
+standing publication authority and the actual local lab boundary.
 
 ## Acceptance gaps and working rules
 
