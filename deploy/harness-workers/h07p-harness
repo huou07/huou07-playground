@@ -1,0 +1,14 @@
+#!/bin/sh
+# Owner entry point; workers cannot use this to switch identities.
+set -eu
+[ "$(id -u)" = 0 ] || { echo 'Run with sudo as the owner.' >&2; exit 1; }
+harness=${1:-}
+case "$harness" in dsh|codex|opencode) ;; *) echo 'Usage: sudo h07p-harness dsh|codex|opencode [arguments...]' >&2; exit 2;; esac
+shift
+cd /home/huou07/Projects
+exec runuser -u "$harness-worker" -- env -i \
+    HOME=/home/huou07 USER="$harness-worker" LOGNAME="$harness-worker" \
+    PATH=/home/huou07/.local/bin:/home/huou07/.cargo/bin:/usr/local/bin:/usr/bin:/bin \
+    TERM="${TERM:-xterm-256color}" LANG=C.UTF-8 \
+    DSH_HOME=/home/huou07/.dsh CODEX_HOME=/home/huou07/.codex \
+    setpriv --no-new-privs /home/huou07/.local/bin/"$harness" "$@"
