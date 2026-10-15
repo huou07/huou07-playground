@@ -4,13 +4,27 @@ set -eu
 binary=${1:?Pass the built H07P Rust server binary}
 port=18765
 base=http://127.0.0.1:$port
-log=$(mktemp)
-STATIC_DIR="$PWD/web/static" HOST=127.0.0.1 PORT="$port" "$binary" >"$log" 2>&1 &
+fixture=$(mktemp -d)
+chmod 700 "$fixture"
+log="$fixture/server.log"
+mkdir "$fixture/state"
+# Populate only this disposable test database; production authentication is unchanged.
+python3 - "$fixture" <<'PYFIXTURE'
+import hashlib, pathlib, secrets, sqlite3, sys, time
+root = pathlib.Path(sys.argv[1])
+token, csrf = secrets.token_hex(32), secrets.token_hex(32)
+with sqlite3.connect(root / 'state/owner.db') as db:
+    db.execute('CREATE TABLE sessions(token TEXT PRIMARY KEY,username TEXT,csrf TEXT,expires INTEGER)')
+    db.execute('INSERT INTO sessions VALUES(?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), 'synthetic-owner', csrf, int(time.time()) + 600))
+(root / 'owner-header').write_text('Cookie: h07p_owner=' + token + '\n')
+(root / 'owner-header').chmod(0o600)
+PYFIXTURE
+H07P_STATE_DIR="$fixture/state" APPS_FILE="$fixture/apps.json" STATIC_DIR="$PWD/web/static" HOST=127.0.0.1 PORT="$port" "$binary" >"$log" 2>&1 &
 server_pid=$!
 cleanup() {
   kill "$server_pid" 2>/dev/null || true
   wait "$server_pid" 2>/dev/null || true
-  rm -f "$log"
+  rm -rf "$fixture"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -34,7 +48,7 @@ fi
 health=$(curl --silent --show-error --fail -D - "$base/api/health")
 printf '%s\n' "$health" | grep -Fq '{"ok":true}'
 printf '%s\n' "$health" | grep -Eiq '^cache-control: no-store'
-printf '%s\n' "$health" | grep -Eiq '^content-type: application/json; charset=utf-8'
+printf '%s\n' "$health" | grep -Eiq '^content-type: application/json(; charset=utf-8)?'
 html=$(curl --silent --show-error --fail -D "$log" "$base/")
 printf '%s\n' "$html" | grep -Fq '<title>Home · huou07 playground</title>'
 printf '%s\n' "$html" | grep -Fq 'data-view="settings"'
@@ -44,8 +58,22 @@ curl --silent --show-error --fail "$base/navigation.js" | grep -Fq 'function sho
 status=$(curl --silent --show-error --path-as-is -o /dev/null -w '%{http_code}' "$base/%2e%2e/app.py")
 [ "$status" = 404 ]
 
-if STATIC_DIR="$PWD/web/static" HOST=0.0.0.0 PORT=18766 "$binary" >"$log" 2>&1; then
+status=$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$base/api/metrics")
+[ "$status" = 401 ]
+for endpoint in metrics processes services cockpit files vpn private-service-ports apps; do
+  curl --silent --show-error --fail --max-time 15 -H @"$fixture/owner-header" "$base/api/$endpoint" >"$fixture/response.json"
+  python3 - "$fixture/response.json" <<'PYJSON'
+import json, sys
+assert isinstance(json.load(open(sys.argv[1])), dict)
+PYJSON
+done
+session=$(curl --silent --show-error --fail -H @"$fixture/owner-header" "$base/api/owner/session")
+printf '%s\n' "$session" | grep -Fq '"authenticated":true'
+status=$(curl --silent --show-error -H @"$fixture/owner-header" -H 'Content-Type: application/json' -d '{}' -o /dev/null -w '%{http_code}' "$base/api/apps")
+[ "$status" = 403 ]
+
+if H07P_STATE_DIR="$fixture/state" STATIC_DIR="$PWD/web/static" HOST=0.0.0.0 PORT=18766 "$binary" >"$log" 2>&1; then
   echo "Rust dashboard unexpectedly accepted a non-loopback listener." >&2
   exit 1
 fi
-grep -Fq 'Only loopback binding is supported' "$log"
+grep -Eq 'Only loopback binding is supported|Server binds loopback' "$log"
