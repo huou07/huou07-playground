@@ -185,11 +185,17 @@ Mac requests through WireGuard succeed; that does not establish Android access.
 Server listeners and UFW cover all nine declared private service ports. Packet
 headers show peer `10.8.0.2` reaching dashboard TCP and the server sending replies.
 This disproves a blanket missing-listener/firewall diagnosis for that peer.
-Large responses were retransmitted; MTU is a working hypothesis, not a confirmed
-root cause. The server wg0 MTU was temporarily reduced from 1420 to 1280 with
-`ip link set dev wg0 mtu 1280`. Saved wg-easy settings remain 1420 until client
-confirmation. Android Address/Endpoint/Allowed IPs and retry feedback were
-requested; no new client profile, keys, tunnel restart or persistent MTU change.
+Large responses were retransmitted. The server wg0 MTU was first temporarily
+reduced from 1420 to 1280. The owner confirmed Android is `10.8.0.2/32`, endpoint
+`123.21.137.86:3478`, allowed destination `10.8.0.1/32`. A subsequent packet-header
+capture at 23:00 showed Android acknowledging large response blocks and opening
+multiple follow-up resource requests, unlike the earlier retransmission stall.
+This supports the mobile-path MTU diagnosis; visual confirmation from the phone
+is still pending. The server/interface and future-profile default MTUs were
+then saved as 1280 in wg-easy and its generated config without restarting the
+tunnel. Existing endpoint, addresses, peers and keys were preserved. The
+[MTU utility](../deploy/configure-wg-mtu.py) retains numeric-only rollback values
+under `/var/backups/h07p-wg-mtu/`; no key copies are made.
 
 A separate real failure was fixed: OmniRoute API/live listeners were bound to
 container loopback, unreachable from Podman's published ports. The existing
@@ -204,7 +210,9 @@ API `/v1/models` 401 (previously empty connection), live HTTP 404 (previously
 empty connection). The live WebSocket accepts an upgrade then rejects a foreign
 origin with `FORBIDDEN_ORIGIN`, and the permitted VPN origin without a login
 with `UNAUTHORIZED`; these are authentication checks, not model/API calls.
-Authenticated native/model workflows and actual Android usability remain
-unverified pending the phone retry. Revert the diagnostic MTU with
-`ip link set dev wg0 mtu 1420` if it is ruled out; a future reboot currently
-restores the saved 1420 setting.
+Authenticated native/model workflows and Android UI acceptance remain
+unverified. Runtime, saved interface config and saved default were each read
+back as 1280. Reboot persistence is configured, not reboot-tested. For rollback,
+restore the numeric interface/default values from the utility's root-only JSON
+record, replace only the MTU line in `wg0.conf`, then set the live interface MTU
+to the restored value. Never dump the WireGuard configuration or database keys.
