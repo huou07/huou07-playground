@@ -119,3 +119,61 @@ a later documentation commit does not retroactively validate new product code.
 A failed gate gets a discriminating next check. Redis requires the architecture
 comparison gate. No production isolation/release claim until the relevant real
 P2/P3/P5 journeys and package gates pass under current owner authorization.
+
+## Owner-requested Mac intake and Debian harness account migration, 2026-10-15
+
+Scope: merge the Debian source/working changes into the existing Mac project,
+preserve the Mac migration history, and deploy three permissive shared-home
+harness users. This is separate from implementing the future Rust policy/NAS
+product. The owner authorizes Debian build/test execution and the host cutover
+for this task; native harness login/model calls are excluded from acceptance.
+
+Source intake preserved Mac `58106d8` and Debian `805861c` through merge
+`ff873ef`; Debian's two modified files and five untracked hardening files are
+preserved in `96121b7`. Mac's previous branch is retained as
+`backup/macos-before-debian-20261015`; Debian's previous dirty tree is retained
+in its named pre-integration stash. Neither history was reset or replaced.
+The shared working branch is `codex/debian-harness-acl`.
+
+Implemented and deployed on Debian: `dsh-worker` (UID 995), `codex-worker`
+(994), `opencode-worker` (993), each with `/home/huou07` as HOME. Existing CLI
+installations are reused. The DSH/OpenCode owner user services are disabled;
+`h07p-dsh.service` and `h07p-opencode.service` run under their respective UIDs.
+Codex has an owner entry point without starting a daemon or signing in.
+See [the account/ACL implementation](../deploy/harness-workers/README.md) for
+the exact direct-access guarantee, private inventory, native store ownership,
+Git shared-home trust, npm configuration, ancestor protection and rollback.
+
+Real host evidence: ACL cutover inventoried 1,259,492 shared paths, 32,103
+read-only paths, 803 private boundaries and six native store roots after
+creating the private owner secret directory. The original root-only ACL/owner
+snapshot is `/var/backups/h07p-harness-workers/20261015-220803/acl.restore`.
+No credential contents were copied into the snapshot or into the Mac checkout.
+Private denials were reconciled after shared grants, including a hardlink
+regression; the additional credential filename sweep found no extra matches.
+
+Verification on Debian:
+
+- Real-UID verification: 119 assertions passed for shared create/read/edit/
+  rename, project AGENTS/skills access, shared installed launchers, Git trust,
+  cross-harness denial of synthetic native secrets, owner secret denial,
+  rename-substitution denial, sudo/owner switching/Docker denial and actual
+  running service UID/no-new-privileges/process-environment separation.
+- Existing Python/shell checks, Rust 1.90 locked format/Clippy/test/release
+  build and real HTTP smoke passed. Rust has four unit tests; the Python suite
+  includes the account-policy regressions.
+- Python browser lane: four tests passed. Actual Rust browser lane: four tests
+  passed. These preserve the previously scoped UI/health/static acceptance;
+  synthetic browser APIs do not establish unimplemented Rust read parity.
+- Live HTTP checks returned 200 for dashboard health, metrics, apps, VPN,
+  files, LiteLLM readiness and OmniRoute health. DSH/OpenCode and the owner
+  launch endpoint rejected unauthenticated access with 401. Both new system
+  units parsed successfully and ran without automatic restarts at inspection.
+
+The pinned Rust 1.90 toolchain and the locked browser test runtime were prepared
+once under the shared owner installation for these authorized tests. No separate
+harness app installation, external model/API call, native CLI login or claim of
+complete future P2/P3 enforcement was made. New public-mode secrets in arbitrary
+shared files and indirect attacks through owner-executed shared code remain
+limitations of the expressly requested permissive model. Future private owner
+data belongs in the protected stores, especially `~/.secrets`.

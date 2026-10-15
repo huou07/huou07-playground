@@ -1,5 +1,10 @@
 # huou07 playground
 
+Current Debian harness deployment: [separate worker UIDs with shared home and
+applications](deploy/harness-workers/README.md). Use this migration for the
+owner-selected account/ACL model; earlier owner-user install instructions are
+historical deployment paths.
+
 An open source, compact Linux control panel evolving from a private Debian
 dashboard. The legacy reference uses Python; the Rust health/static baseline is
 already present. See [implementation](docs/IMPLEMENTATION.md) for actual coverage

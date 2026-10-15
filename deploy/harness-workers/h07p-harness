@@ -5,10 +5,19 @@ set -eu
 harness=${1:-}
 case "$harness" in dsh|codex|opencode) ;; *) echo 'Usage: sudo h07p-harness dsh|codex|opencode [arguments...]' >&2; exit 2;; esac
 shift
-cd /home/huou07/Projects
+case "$harness" in
+    opencode) native_dir=/home/huou07/.config/opencode ;;
+    *) native_dir=/home/huou07/."$harness" ;;
+esac
+case "$PWD" in
+    /home/huou07|/home/huou07/*) cd "$PWD" ;;
+    *) cd /home/huou07/Projects ;;
+esac
 exec runuser -u "$harness-worker" -- env -i \
     HOME=/home/huou07 USER="$harness-worker" LOGNAME="$harness-worker" \
     PATH=/home/huou07/.local/bin:/home/huou07/.cargo/bin:/usr/local/bin:/usr/bin:/bin \
     TERM="${TERM:-xterm-256color}" LANG=C.UTF-8 \
     DSH_HOME=/home/huou07/.dsh CODEX_HOME=/home/huou07/.codex \
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory 'GIT_CONFIG_VALUE_0=/home/huou07/*' \
+    NPM_CONFIG_USERCONFIG="$native_dir/npmrc" \
     setpriv --no-new-privs /home/huou07/.local/bin/"$harness" "$@"

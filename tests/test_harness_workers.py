@@ -20,6 +20,7 @@ class HarnessPolicyTests(unittest.TestCase):
         for path in ('.ssh', '.secrets', '.config/gh/hosts.yml', '.local/share/containers',
                      'Projects/demo/.env', 'Projects/demo/.env.production',
                      'Projects/demo/keys/tls.key', '.npmrc', 'clean-reinstall-20261015',
+                     '.cargo/credentials.toml',
                      '.local/share/huou07-playground-migration', 'AEH/private'):
             self.assertEqual(setup.policy(path, ['AEH/private']), 'private', path)
 
@@ -50,9 +51,19 @@ class HarnessPolicyTests(unittest.TestCase):
     def test_service_drops_privilege_and_retains_shared_application(self):
         unit = setup.service('opencode', '/home/huou07/.local/bin/opencode web')
         for required in ('User=opencode-worker', 'HOME=/home/huou07',
-                         'NoNewPrivileges=yes', 'CapabilityBoundingSet=\n'):
+                         'NoNewPrivileges=yes', 'CapabilityBoundingSet=\n',
+                         'GIT_CONFIG_KEY_0=safe.directory', 'GIT_CONFIG_VALUE_0=/home/huou07/*'):
             self.assertIn(required, unit)
         self.assertNotIn('User=huou07\n', unit)
+
+    def test_refuses_symlinked_native_boundary_before_privileged_mutation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            (home / 'ordinary').mkdir()
+            (home / '.codex').symlink_to(home / 'ordinary', target_is_directory=True)
+            with patch.object(setup, 'HOME', home):
+                with self.assertRaisesRegex(RuntimeError, 'symlink in managed boundary'):
+                    setup.validate_boundaries([])
 
 
 if __name__ == '__main__':

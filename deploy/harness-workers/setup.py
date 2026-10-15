@@ -42,6 +42,7 @@ SECRET_NAMES = {
     '.netrc', '.npmrc', '.pypirc', '.git-credentials', '.bash_history',
     '.zsh_history', '.lesshst', 'auth.json', '.credentials.yaml',
     'credentials.json', 'credentials.yaml', 'credentials.yml', 'credentials',
+    'credentials.toml', '.s3cfg', '.envrc', '.gitcookies',
     'id_rsa', 'id_ed25519', 'id_ecdsa', 'authorized_keys', 'known_hosts',
 }
 
@@ -73,6 +74,16 @@ def policy(relative, extra=()):
 
 def run(*args, **kwargs):
     return subprocess.run([str(a) for a in args], check=True, **kwargs)
+
+
+def validate_boundaries(extra):
+    for relative in (*NATIVE, *PRIVATE, *READONLY, *extra):
+        path = HOME / relative
+        for candidate in (path, *path.parents):
+            if candidate.is_symlink():
+                raise RuntimeError(f'Refusing symlink in managed boundary: {candidate}')
+            if candidate == HOME:
+                break
 
 
 def inventory(extra):
@@ -148,6 +159,17 @@ def install_file(path, content, mode=0o644):
     path.chmod(mode)
 
 
+def protect_ancestors(boundaries):
+    # Prevent substitution of an owner-owned private/launch path via writable parents.
+    for boundary in boundaries:
+        for parent in boundary.parents:
+            if parent == HOME or HOME in parent.parents:
+                if parent.is_dir():
+                    parent.chmod(stat.S_IMODE(parent.stat().st_mode) | stat.S_ISVTX)
+            if parent == HOME:
+                break
+
+
 def service(harness, command):
     envfile = ('EnvironmentFile=/home/huou07/.config/huou07-playground/opencode-web.env\n'
                if harness == 'opencode' else '')
@@ -165,6 +187,10 @@ Environment=HOME=/home/huou07
 Environment=DSH_HOME=/home/huou07/.dsh
 Environment=CODEX_HOME=/home/huou07/.codex
 Environment=PATH=/home/huou07/.local/bin:/home/huou07/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=GIT_CONFIG_COUNT=1
+Environment=GIT_CONFIG_KEY_0=safe.directory
+Environment=GIT_CONFIG_VALUE_0=/home/huou07/*
+Environment=NPM_CONFIG_USERCONFIG=/home/huou07/{'.config/opencode' if harness == 'opencode' else '.' + harness}/npmrc
 {envfile}{runtime}ExecStart={command}
 NoNewPrivileges=yes
 CapabilityBoundingSet=
@@ -198,7 +224,8 @@ def apply(groups, extra):
         for path in paths:
             if path.is_symlink():
                 raise RuntimeError(f'Path changed to a symlink: {path}')
-    for kind, permission in (('private', '---'), ('readonly', 'r-X'), ('shared', 'rwX')):
+    # Denials come last so an ordinary hardlink alias cannot widen a known secret.
+    for kind, permission in (('shared', 'rwX'), ('readonly', 'r-X'), ('private', '---')):
         acl(groups[kind], permission)
     for relative, user in NATIVE.items():
         path = HOME / relative
@@ -218,13 +245,7 @@ def apply(groups, extra):
     # Writable ancestors otherwise permit renaming a private directory out of the way.
     boundaries = [*groups['private'], *(HOME / p for p in NATIVE),
                   *(HOME / p for p in READONLY)]
-    for boundary in boundaries:
-        for parent in boundary.parents:
-            if parent == HOME or HOME in parent.parents:
-                if parent.is_dir():
-                    parent.chmod(stat.S_IMODE(parent.stat().st_mode) | stat.S_ISVTX)
-            if parent == HOME:
-                break
+    protect_ancestors(boundaries)
     # The handoff token is readable only by DSH and the existing dashboard group.
     install_file(Path('/etc/tmpfiles.d/huou07-dsh-link.conf'),
                  'd /run/huou07-dsh-link 2750 dsh-worker huou07-dsh-link -\n')
@@ -266,6 +287,7 @@ def main():
     if not isinstance(extra, list) or any(not isinstance(p, str) or not p
             or p.startswith('/') or '..' in Path(p).parts for p in extra):
         raise RuntimeError('Private paths must be relative paths inside the shared home')
+    validate_boundaries(extra)
     if args.apply:
         if os.geteuid() != 0:
             raise RuntimeError('--apply requires the owner to use sudo')

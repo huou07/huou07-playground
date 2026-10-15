@@ -1,5 +1,16 @@
 # Security and permission contract
 
+## Current owner-selected Debian account model
+
+The 2026-10-15 owner instruction selects three separate harness UIDs with a
+shared owner home and permissive ACLs for ordinary files. The current host
+implementation and limitations are in [harness workers](../deploy/harness-workers/README.md).
+It protects known owner secret stores and cross-harness native stores directly;
+it does not claim a complete policy broker or protection from every indirect
+attack through shared writable project code. Native credentials remain managed
+by their own harness. The stronger product contracts below remain roadmap
+requirements rather than a description of this host deployment.
+
 ## Threat model and immutable boundary
 
 Workers execute arbitrary commands and may call HTTP APIs, follow symlinks,

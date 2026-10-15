@@ -6,6 +6,12 @@ This guide does not grant OS privilege or tools.
 
 ## Scope and authority
 
+Current task exception, 2026-10-15: the owner explicitly authorizes importing the
+Debian checkout into the Mac project, deploying the separate shared-home harness
+worker account/ACL model, and building/testing on Debian without native CLI
+login/model calls. This supersedes the older live-host preparation restriction
+below for that task only. See [the migration](../deploy/harness-workers/README.md).
+
 H07P is the independent huou07-playground repository registered in the Hub.
 Optimize completed owner journeys, latency, resource use and trustworthy isolation;
 commit counts, code volume and checklist completion are not product outcomes.
