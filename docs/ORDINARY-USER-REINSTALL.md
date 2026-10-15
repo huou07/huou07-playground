@@ -18,6 +18,7 @@ Root changes still require a concrete reviewed cutover under the original instru
 
 - Project transfer archive SHA256: `81c3062b91371f1e230176c8152e28dbc312f50c4c825e397e00b8c4f051f2e0` (6.2 GiB; private).
 - Independent clones: AEH `3cb2e4e`, OR `219bcf72`, VCE `0c3c9d88`, H07P `805861cf`; second H07P setup clone `f4cc44a1`. HEAD, staged/unstaged binary diffs, untracked status and Git integrity verified. VCE sparse-checkout metadata retained.
+- All 2,731 preserved worktree files/symlink targets were separately compared against the owner clones, including ignored/untracked contents. Owner clone files are UID1000.
 - Fresh normal-user native packages: Codex 0.162.1, OpenCode 1.19.0, DSH 0.2.0-rc.2, Codex ACP 2.2.2; DSH ACP adapter 0.2.0-rc.2.9 and pnpm 11.7.0 installed in the private preparation directory.
 - Both native ACP initialize handshakes passed under UID1000 without provider login or inference. Fresh DSH browser authentication, forged-cookie rejection and restart passed under UID1000 on a temporary port.
 - The live dashboard source with the proposed one-condition LAN fix passed an actual fresh DSH token/cookie/HTML flow, owner-login denial and forged-cookie rejection on temporary loopback listeners. The production source remains unchanged before approval.
@@ -45,6 +46,8 @@ sudo python3 /root/retire-worker-root-20261015.py retire
 Stop at any failing command. Do not continue to account deletion without `accepted.json` from the real runtime checks. The root script has an explicit retirement manifest; it does not use broad Podman/Docker pruning or delete the owner account, SSH keys, sudo access, dashboard state, WireGuard state or unrelated projects.
 
 `quiesce` checks the source project identities before stopping the exact old units and remaining UID987 processes; saves the worker home and system configuration privately under `/root/huou07-clean-reinstall-20261015`; removes only the retired worker/app identities' ACL entries and reclaims their artifacts in the owner's home; keeps original OR/VCE/AEH worktrees in the private migration directory; moves verified OR/VCE clones into their final locations; changes only the DSH handoff ownership to `huou07` with the existing dashboard read group.
+
+The final safety revision keeps the same production command sequence and scope: Git metadata checks run as the old unprivileged worker with fsmonitor disabled, never as root; the worker login shell is disabled before stopping its remaining processes; source file bytes are checked again after shutdown so recent edits cannot be silently replaced. A partially started root cutover refuses a blind rerun that would overwrite its original backup.
 
 The owner reset exports the exact three gateway volumes before removing their two pods and those volumes, moves old application config/native packages into the private backup, and installs the fresh native packages/profile. The existing installer creates new secrets, empty gateway databases and user units, then checks fresh gateway persistence and health. Standard rootless application containers remain the normal LiteLLM/OmniRoute deployment; the special agent identity and tool restrictions are removed.
 

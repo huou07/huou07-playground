@@ -6,6 +6,7 @@ after fresh application and VPN acceptance. Private backups are not deleted.
 """
 import json
 import grp
+import hashlib
 import os
 from pathlib import Path
 import pwd
@@ -51,7 +52,11 @@ def run(*args, **kwargs):
     return subprocess.run(args, check=True, **kwargs)
 
 def git(path, *args):
-    return subprocess.check_output(['git', '-c', 'safe.directory=*', '-C', str(path), *args])
+    # Repository config belongs to the old worker. Never let a status check
+    # execute its fsmonitor or other repository-controlled helpers as root.
+    return subprocess.check_output(['/usr/sbin/runuser', '-u', 'agents-worker', '--',
+                                    '/usr/bin/git', '-c', 'safe.directory=*',
+                                    '-c', 'core.fsmonitor=false', '-C', str(path), *args])
 
 def save(relative):
     source = Path(relative)
@@ -74,8 +79,10 @@ def dashboard_candidate(source):
 
 def quiesce():
     assert not marker('quiesced').exists(), 'Already quiesced; inspect state before retrying.'
+    assert not (BACKUP / 'original-system-config.tar').exists(), 'Partial cutover exists; inspect before retrying.'
     evidence = json.loads((STAGE / 'projects-verified.json').read_text())
     assert (STAGE / 'shared-docs-verified.json').is_file()
+    assert (STAGE / 'project-contents-verified.json').is_file()
     for item in evidence.values():
         source = Path('/') / item['source']
         assert git(source, 'rev-parse', 'HEAD').decode().strip() == item['head'], source
@@ -89,6 +96,11 @@ def quiesce():
     paths += [str(p).lstrip('/') for p in Path('/etc/systemd/system').glob('*agent-workbench*')]
     paths += [str(p).lstrip('/') for p in Path('/etc/systemd/system').glob('dsh-acp*')]
     run('tar', '-C', '/', '-cpf', str(BACKUP / 'original-system-config.tar'), *paths)
+    account_state = {name: dict(zip(['uid', 'gid', 'home', 'shell'],
+                     [pwd.getpwnam(name).pw_uid, pwd.getpwnam(name).pw_gid,
+                      pwd.getpwnam(name).pw_dir, pwd.getpwnam(name).pw_shell])) for name in ACCOUNTS}
+    (BACKUP / 'accounts-before.json').write_text(json.dumps(account_state, indent=2) + '\n')
+    run('usermod', '--shell', '/usr/sbin/nologin', 'agents-worker')
     for unit in UNITS:
         state = subprocess.run(['systemctl', 'show', '-p', 'LoadState', '--value', unit],
                                capture_output=True, text=True, check=True).stdout.strip()
@@ -99,6 +111,25 @@ def quiesce():
     subprocess.run(['pkill', '-TERM', '-u', '987'], check=False)
     time.sleep(2)
     subprocess.run(['pkill', '-KILL', '-u', '987'], check=False)
+    # Detect edits made after the initial transfer, including ignored/untracked
+    # source contents. Never silently replace a newer original with its snapshot.
+    for item in evidence.values():
+        live = Path('/') / item['source']
+        snapshot = STAGE / 'projects-snapshot' / item['source']
+        assert git(live, 'rev-parse', 'HEAD').decode().strip() == item['head']
+        assert git(live, 'status', '--porcelain').decode() == item['status']
+        for folder, dirs, files in os.walk(snapshot, followlinks=False):
+            if Path(folder) == snapshot:
+                dirs[:] = [name for name in dirs if name != '.git']
+            for name in files + [name for name in dirs if (Path(folder) / name).is_symlink()]:
+                old = Path(folder) / name
+                current = live / old.relative_to(snapshot)
+                assert old.is_symlink() == current.is_symlink(), 'Source link changed since backup'
+                if old.is_symlink():
+                    assert old.readlink() == current.readlink(), 'Source link changed since backup'
+                elif old.is_file():
+                    with old.open('rb') as a, current.open('rb') as b:
+                        assert hashlib.file_digest(a, 'sha256').digest() == hashlib.file_digest(b, 'sha256').digest(), 'Source file changed since backup'
     # Keep the exact remaining worker home privately, including old sessions.
     run('tar', '-C', '/', '-cpf', str(BACKUP / 'worker-home.tar'), 'home/agents-worker')
     # Remove only retired identities' named ACLs, including defaults. Render
