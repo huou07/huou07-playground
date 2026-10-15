@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Owner-reviewed root steps for reverting the retired worker installation.
+
+Run quiesce, then the normal-user reset/install, then connect. Run retire only
+after fresh application and VPN acceptance. Private backups are not deleted.
+"""
+import json
+import grp
+import os
+from pathlib import Path
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+HOME = Path('/home/huou07')
+STAGE = HOME / 'clean-reinstall-20261015'
+BACKUP = Path('/root/huou07-clean-reinstall-20261015')
+UNITS = ['agent-workbench-dsh@3080.service', 'agent-workbench-opencode-web.service',
+         'dsh-acp.socket', 'huou07-dsh.service', 'huou07-opencode-web.service',
+         'huou07-litellm.service', 'huou07-litellm-db.service', 'huou07-omniroute.service']
+ACCOUNTS = ['agents-worker', 'huou07-dsh', 'huou07-opencode', 'huou07-litellm', 'huou07-omniroute']
+RETIRE = [
+    '/home/agents-worker', '/opt/agent-workbench', '/srv/agent-workbench', '/etc/agent-workbench',
+    '/usr/share/agent-workbench', '/usr/local/libexec/agent-workbench',
+    '/usr/local/bin/agent-worker-next', '/usr/local/sbin/agent-workbench-apt',
+    '/usr/local/sbin/agent-workbench-cli-v6', '/usr/local/sbin/agent-workbench-v7',
+    '/usr/local/sbin/agent-workbench-deploy-v2', '/usr/local/sbin/agent-workbench-deploy-v3',
+    '/usr/local/sbin/agent-workbench-repair-v5', '/usr/local/sbin/agent-workbench-repair-v6',
+    '/etc/sudoers.d/agent-workbench-apt',
+    '/etc/systemd/system/agent-workbench-dsh@.service',
+    '/etc/systemd/system/agent-workbench-dsh@.service.d',
+    '/etc/systemd/system/agent-workbench-dsh@3080.service.d',
+    '/etc/systemd/system/agent-workbench-opencode-web.service',
+    '/etc/systemd/system/agent-workbench-opencode-web.service.d',
+    '/etc/systemd/system/dsh-acp.socket', '/etc/systemd/system/dsh-acp@.service',
+    '/etc/systemd/system/dsh-acp@.service.d',
+    '/etc/sysctl.d/60-agent-ptrace-scope.conf',
+    '/opt/huou07-dsh', '/srv/huou07-dsh-workspaces', '/srv/huou07-opencode-workspaces',
+    '/etc/huou07-litellm', '/etc/huou07-omniroute',
+    '/usr/local/libexec/huou07-dsh', '/usr/local/libexec/huou07-opencode',
+    '/usr/local/libexec/huou07-litellm', '/usr/local/libexec/huou07-omniroute',
+    '/var/lib/huou07-dsh', '/var/lib/huou07-opencode', '/var/lib/huou07-litellm', '/var/lib/huou07-omniroute',
+    '/etc/huou07-playground/opencode-web.env',
+]
+RETIRE += ['/etc/systemd/system/' + u for u in UNITS if u.startswith('huou07-')]
+
+def run(*args, **kwargs):
+    return subprocess.run(args, check=True, **kwargs)
+
+def git(path, *args):
+    return subprocess.check_output(['git', '-c', 'safe.directory=*', '-C', str(path), *args])
+
+def save(relative):
+    source = Path(relative)
+    if source.exists() or source.is_symlink():
+        target = BACKUP / 'retired-files' / str(source).lstrip('/')
+        assert not target.exists() and not target.is_symlink(), target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(source, target)
+
+def marker(name):
+    return BACKUP / (name + '.json')
+
+def dashboard_candidate(source):
+    old = 'if self.server.login_handoff and len(request_line) >= 2 and request_line[0] == b"GET" and request_line[1] == b"/":'
+    new = old[:-1] + ' and b"\\r\\ncookie:" not in bytes(header).lower().split(b"\\r\\n\\r\\n", 1)[0]:'
+    assert source.count(old) == 1, 'Live LAN handler changed; review before connecting.'
+    candidate = source.replace(old, new)
+    compile(candidate, 'dashboard candidate', 'exec')
+    return candidate
+
+def quiesce():
+    assert not marker('quiesced').exists(), 'Already quiesced; inspect state before retrying.'
+    evidence = json.loads((STAGE / 'projects-verified.json').read_text())
+    assert (STAGE / 'shared-docs-verified.json').is_file()
+    for item in evidence.values():
+        source = Path('/') / item['source']
+        assert git(source, 'rev-parse', 'HEAD').decode().strip() == item['head'], source
+        assert git(source, 'status', '--porcelain').decode() == item['status'], source
+    # Save system configuration before changing the running services.
+    paths = [str(p).lstrip('/') for p in [Path('/etc/agent-workbench'),
+             Path('/etc/tmpfiles.d/huou07-dsh-link.conf'),
+             Path('/etc/huou07-playground/opencode-proxy.env'),
+             Path('/etc/systemd/system/huou07-playground.service')]
+             if p.exists()]
+    paths += [str(p).lstrip('/') for p in Path('/etc/systemd/system').glob('*agent-workbench*')]
+    paths += [str(p).lstrip('/') for p in Path('/etc/systemd/system').glob('dsh-acp*')]
+    run('tar', '-C', '/', '-cpf', str(BACKUP / 'original-system-config.tar'), *paths)
+    for unit in UNITS:
+        state = subprocess.run(['systemctl', 'show', '-p', 'LoadState', '--value', unit],
+                               capture_output=True, text=True, check=True).stdout.strip()
+        if state != 'not-found':
+            run('systemctl', 'disable', '--now', unit)
+    worker = pwd.getpwnam('agents-worker')
+    assert worker.pw_uid == 987 and worker.pw_dir == '/home/agents-worker'
+    subprocess.run(['pkill', '-TERM', '-u', '987'], check=False)
+    time.sleep(2)
+    subprocess.run(['pkill', '-KILL', '-u', '987'], check=False)
+    # Keep the exact remaining worker home privately, including old sessions.
+    run('tar', '-C', '/', '-cpf', str(BACKUP / 'worker-home.tar'), 'home/agents-worker')
+    # Remove only retired identities' named ACLs, including defaults. Render
+    # GID992 is deliberately unrelated to retired service UID992.
+    retired_uids = {pwd.getpwnam(name).pw_uid for name in ACCOUNTS}
+    retired_gids = {pwd.getpwnam(name).pw_gid for name in ACCOUNTS} | {978, 983}
+    assert retired_uids == {987, 992, 993, 994, 995}
+    assert retired_gids == {977, 978, 980, 981, 982, 983, 984}
+    acl = subprocess.check_output(['getfacl', '-R', '-P', '-p', '-n', str(HOME)], stderr=subprocess.DEVNULL).decode()
+    (BACKUP / 'owner-home-acls.before').write_text(acl)
+    for block in acl.split('\n\n'):
+        lines = block.splitlines()
+        header = next((line[8:] for line in lines if line.startswith('# file: ')), None)
+        if header is None:
+            continue
+        path = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), header)
+        entries = []
+        for identity, ids in [('user', retired_uids), ('group', retired_gids)]:
+            for identifier in ids:
+                for prefix in ['', 'default:']:
+                    if any(line.startswith(f'{prefix}{identity}:{identifier}:') for line in lines):
+                        entries.append(f'{"d:" if prefix else ""}{identity[0]}:{identifier}')
+        if entries:
+            run('setfacl', '-x', ','.join(entries), '--', path)
+    # Reclaim worker-owned project artifacts without following symlinks.
+    for identifier in sorted(retired_uids):
+        run('find', str(HOME), '-xdev', '-uid', str(identifier), '-exec', 'chown', '-h', '1000:1000', '{}', '+')
+    for identifier in sorted(retired_gids):
+        run('find', str(HOME), '-xdev', '-gid', str(identifier), '-exec', 'chgrp', '-h', '1000', '{}', '+')
+    # Keep all old worktrees, including caches, until the owner accepts cleanup.
+    for name in ['OR', 'VCE']:
+        old = HOME / 'Projects' / name
+        target = STAGE / 'original-projects' / name
+        assert not target.exists()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        old.rename(target)
+        (STAGE / 'prepared-projects' / name).rename(old)
+    old_hub = HOME / 'dsh projects'
+    target = STAGE / 'original-projects/AEH'
+    assert not target.exists()
+    old_hub.rename(target)
+    # Normal owner publication; retain the dashboard's existing read group.
+    config = Path('/etc/tmpfiles.d/huou07-dsh-link.conf')
+    config.write_text('d /run/huou07-dsh-link 2750 huou07 huou07-dsh-link -\n')
+    run('systemd-tmpfiles', '--create', str(config))
+    Path('/run/huou07-dsh-link/url').unlink(missing_ok=True)
+    marker('quiesced').write_text(json.dumps({'uid': 1000, 'projects_preserved': True}) + '\n')
+    print('Worker stopped; original projects retained; normal owner handoff prepared.')
+
+def connect():
+    assert marker('quiesced').exists()
+    assert (HOME / '.local/share/huou07-playground/readiness.json').is_file()
+    source = HOME / '.config/huou07-playground/opencode-web.env'
+    assert source.is_file() and not source.is_symlink() and source.stat().st_uid == 1000
+    values = dict(line.split('=', 1) for line in source.read_text().splitlines() if '=' in line)
+    user, password = values['OPENCODE_SERVER_USERNAME'], values['OPENCODE_SERVER_PASSWORD']
+    assert re.fullmatch(r'[A-Za-z0-9_-]+', user) and re.fullmatch(r'[A-Za-z0-9_-]{32,}', password)
+    target = Path('/etc/huou07-playground/opencode-proxy.env')
+    assert not target.is_symlink()
+    target.write_text(f'OPENCODE_PUBLIC_USERNAME={user}\nOPENCODE_PUBLIC_PASSWORD={password}\n'
+                      f'OPENCODE_BACKEND_USERNAME={user}\nOPENCODE_BACKEND_PASSWORD={password}\n')
+    target.chmod(0o600)
+    # A browser that already has its DSH cookie must reach DSH's page rather
+    # than repeatedly entering the LAN token -> cookie -> / redirect loop.
+    app = Path('/opt/huou07-playground/current/web/app.py')
+    source_text = app.read_text()
+    candidate = dashboard_candidate(source_text)
+    shutil.copy2(app, BACKUP / 'dashboard-app.before.py')
+    app.write_text(candidate)
+    run('systemctl', 'restart', 'huou07-playground.service')
+    marker('connected').write_text('{"dashboard_restarted": true}\n')
+    print('Playground authentication connected to the fresh owner OpenCode backend; VPN routes retained.')
+
+def retire():
+    assert marker('connected').exists()
+    # The owner-side acceptance script must create this only after real checks.
+    assert (STAGE / 'accepted.json').is_file(), 'Fresh runtime acceptance has not passed.'
+    assert not marker('retired').exists()
+    for binary in ['codex', 'opencode', 'dsh', 'codegraph', 'rg']:
+        path = HOME / '.local/bin' / binary
+        assert path.exists() and not str(path.resolve()).startswith('/opt/agent-workbench/'), path
+    for source in RETIRE:
+        save(source)
+    Path('/run/dsh-acp.sock').unlink(missing_ok=True)
+    for account in ACCOUNTS:
+        try:
+            record = pwd.getpwnam(account)
+        except KeyError:
+            continue
+        assert record.pw_uid != 1000 and record.pw_name != 'huou07-playground'
+        subprocess.run(['loginctl', 'disable-linger', account], check=False)
+        run('userdel', account)
+    for group in ['agent-skills', 'huou07-opencode-workspaces']:
+        try:
+            grp.getgrnam(group)
+        except KeyError:
+            continue
+        run('groupdel', group)
+    run('systemctl', 'daemon-reload')
+    run('visudo', '-c', stdout=subprocess.DEVNULL)
+    run('sshd', '-t')
+    marker('retired').write_text('{"worker_removed": true, "private_backups_retained": true}\n')
+    print('Old worker and legacy app accounts/configuration retired; private recovery material retained.')
+
+if __name__ == '__main__':
+    assert os.geteuid() == 0 and pwd.getpwnam('huou07').pw_uid == 1000
+    assert len(sys.argv) == 2 and sys.argv[1] in ['quiesce', 'connect', 'retire']
+    assert not BACKUP.is_symlink()
+    BACKUP.mkdir(mode=0o700, exist_ok=True)
+    BACKUP.chmod(0o700)
+    os.umask(0o077)
+    {'quiesce': quiesce, 'connect': connect, 'retire': retire}[sys.argv[1]]()

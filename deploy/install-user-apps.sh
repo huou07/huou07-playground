@@ -13,7 +13,7 @@ OMNIROUTE_CONFIG="$HOME_DIR/.config/omniroute"
 APP_DATA="$HOME_DIR/.local/share/huou07-playground"
 TOOLS_DIR="$APP_DATA/tools"
 READY_FILE="$APP_DATA/readiness.json"
-PORTS="3080 4096 4000 20128 20129 20132"
+PORTS="3080 4097 4000 20128 20129 20132"
 DSH_VERSION=0.2.0-rc.2
 ACP_VERSION=2.2.2
 ADAPTER_VERSION=0.2.0-rc.2.9
@@ -36,7 +36,7 @@ check_identity() {
   command -v python3 >/dev/null || fail 'Python 3 is required for local protocol and health checks.'
   available_kib=$(df -Pk "$HOME_DIR" | awk 'NR == 2 {print $4}')
   [ -n "$available_kib" ] && [ "$available_kib" -ge 8388608 ] || fail 'At least 8 GiB of free space is required for the fresh images and app data.'
-  [ -x "$HOME_DIR/.opencode/bin/opencode" ] || fail 'The existing OpenCode CLI wrapper is missing; install it through the official OpenCode installer first.'
+  [ -x "$HOME_DIR/.local/bin/opencode" ] || fail 'Install the native OpenCode CLI in ~/.local/bin first.'
   [ -x "$HOME_DIR/.local/bin/codex" ] || fail 'Codex CLI is missing; install it through the official Codex instructions first.'
   [ -x /usr/lib/systemd/system-generators/podman-system-generator ] || fail 'Podman Quadlet generator is unavailable.'
   node_major=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null) || fail 'Node.js is unavailable.'
@@ -147,7 +147,7 @@ NODE
 }
 
 check_acp_initialize() {
-  python3 - "$HOME_DIR/.local/bin/codex-acp" "$HOME_DIR/.opencode/bin/opencode" <<'PY'
+  python3 - "$HOME_DIR/.local/bin/codex-acp" "$HOME_DIR/.local/bin/opencode" <<'PY'
 import json, select, subprocess, sys, time
 request = json.dumps({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"huou07-readiness","version":"1"}}}) + "\n"
 agents = (([sys.argv[1]], "Codex ACP"), ([sys.argv[2], "acp"], "OpenCode ACP"))
@@ -347,7 +347,7 @@ prepare() {
   else
     printf 'OWNER_LOGIN_REQUIRED: native Codex CLI is not signed in.\n'
   fi
-  if "$HOME_DIR/.opencode/bin/opencode" auth list >/dev/null 2>&1; then
+  if "$HOME_DIR/.local/bin/opencode" auth list >/dev/null 2>&1; then
     printf 'Native OpenCode authentication state is readable by its CLI (values hidden).\n'
   else
     printf 'OWNER_LOGIN_REQUIRED: OpenCode provider sign-in may be needed.\n'

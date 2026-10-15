@@ -14,8 +14,6 @@ Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 UMask=0077
-NoNewPrivileges=yes
-InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock
 
 [Install]
 WantedBy=default.target

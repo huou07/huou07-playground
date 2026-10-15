@@ -22,11 +22,11 @@ class PublicationError(RuntimeError):
     """The dashboard handoff failed; never include the candidate URL."""
 
 
-def wg_trusted_host() -> str | None:
-    """Trust only the host/port reached through the existing wg0 dashboard relay."""
+def wg_trusted_host(interface: str = 'wg0') -> str | None:
+    """Trust the address of an explicitly selected dashboard relay interface."""
     try:
         result = subprocess.run(
-            ["/usr/sbin/ip", "-j", "-4", "addr", "show", "dev", "wg0"],
+            ["/usr/sbin/ip", "-j", "-4", "addr", "show", "dev", interface],
             check=True,
             capture_output=True,
             text=True,
@@ -107,6 +107,9 @@ def main() -> int:
     host = wg_trusted_host()
     if host:
         argv.extend(["--trusted-host", host])
+    lan_host = wg_trusted_host(os.environ.get('DSH_LAN_INTERFACE', 'wlp0s20f3'))
+    if lan_host and lan_host != host:
+        argv.extend(["--trusted-host", lan_host])
     child = subprocess.Popen(
         argv,
         stdin=subprocess.DEVNULL,

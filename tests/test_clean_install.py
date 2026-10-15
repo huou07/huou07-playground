@@ -342,10 +342,10 @@ class CleanInstallTests(unittest.TestCase):
         self.assertIn("dsh-dashboard-launcher.py", dsh)
         self.assertIn("--host", (ROOT / "deploy/dsh-dashboard-launcher.py").read_text())
         self.assertIn('"--trusted-host", host', (ROOT / "deploy/dsh-dashboard-launcher.py").read_text())
-        self.assertIn("opencode web --hostname 127.0.0.1 --port 4096", opencode)
+        self.assertIn("opencode web --hostname 127.0.0.1 --port 4097", opencode)
         self.assertNotIn("--pure", opencode)
-        self.assertIn("InaccessiblePaths=-/run/docker.sock", dsh)
-        self.assertIn("NoNewPrivileges=yes", opencode)
+        self.assertNotIn("InaccessiblePaths=", dsh)
+        self.assertNotIn("NoNewPrivileges=", opencode)
 
     def test_container_deployments_are_pinned_and_private(self):
         litellm = (ROOT / "deploy/user/litellm.container").read_text()
@@ -367,7 +367,7 @@ class CleanInstallTests(unittest.TestCase):
         self.assertNotIn("sudo ", installer)
         for pinned in ("@deepseek-ai/dsh@$DSH_VERSION", "@agentclientprotocol/codex-acp@$ACP_VERSION", "pnpm@$PNPM_VERSION", "@zaimokuza/dsh-acp-adapter@$ADAPTER_VERSION"):
             self.assertIn(pinned, installer)
-        self.assertIn('"$HOME_DIR/.opencode/bin/opencode" auth list >/dev/null', installer)
+        self.assertIn('"$HOME_DIR/.local/bin/opencode" auth list >/dev/null', installer)
         self.assertIn('login_status=$("$HOME_DIR/.local/bin/codex" login status 2>&1)', installer)
         self.assertIn("npm rebuild --global --prefix", installer)
         self.assertIn("--allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs", installer)

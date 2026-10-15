@@ -10,7 +10,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-ENTRY = Path("/home/huou07/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js")
+ENTRY = Path(os.environ.get("DSH_STAGE_ENTRY", "/home/huou07/.local/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"))
 PORT = 13080
 
 

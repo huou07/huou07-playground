@@ -2,7 +2,6 @@
 """Real OpenCode tool turn, mock provider, fresh HOME, harmless private fixture."""
 import http.server
 import argparse
-import base64
 import json
 import os
 import shlex
@@ -15,8 +14,6 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--protected-fixture", type=Path)
-    parser.add_argument("--gateway-url")
-    parser.add_argument("--gateway-key", default="sk-worker-staging-only-000000000000000000000000000")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="opencode-tool-stage-") as directory:
         home = Path(directory)
@@ -80,7 +77,7 @@ else:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         config = {"provider": {"mock": {"npm": "@ai-sdk/openai-compatible", "name": "Disposable mock",
-                  "options": {"baseURL": args.gateway_url or f"http://127.0.0.1:{server.server_port}/v1", "apiKey": args.gateway_key if args.gateway_url else "staging-only"},
+                  "options": {"baseURL": f"http://127.0.0.1:{server.server_port}/v1", "apiKey": "staging-only"},
                   "models": {"fixture": {"name": "Fixture", "limit": {"context": 16000, "output": 1000}}}}},
                   "model": "mock/fixture", "permission": {"bash": "allow"}}
         (home / "opencode.json").write_text(json.dumps(config))
@@ -90,7 +87,7 @@ else:
                "OPENCODE_DISABLE_AUTOUPDATE": "true", "OPENCODE_DISABLE_MODELS_FETCH": "true"}
         try:
             result = subprocess.run(["/opt/agent-workbench/bin/opencode.real", "run", "--format", "json",
-                                     "--model", "mock/fixture", "fixture-command-base64: " + base64.b64encode(command.encode()).decode() if args.gateway_url else "Run the disposable fixture check with bash."],
+                                     "--model", "mock/fixture", "Run the disposable fixture check with bash."],
                                     cwd=home, env=env, stdin=subprocess.DEVNULL,
                                     capture_output=True, text=True, timeout=50)
         finally:
@@ -99,15 +96,12 @@ else:
         if not marker.is_file():
             # Never forward engine stdout, stderr, request bodies, or headers.
             print(json.dumps({**state, "exit_code": result.returncode, "tool_evidence_created": False}))
-            if args.gateway_url:
-                diagnostic = (result.stderr[-800:] + result.stdout[-1600:]).replace(args.gateway_key, "<fixture-capability>")
-                print(json.dumps({"fixture_engine_diagnostic": diagnostic}))
             raise SystemExit(1)
         evidence = json.loads(marker.read_text())
         print(json.dumps({**state, "exit_code": result.returncode, "tool_evidence": evidence,
                           "controller_uid": os.geteuid(), "tool_runs_as_controller_uid": evidence["uid"] == os.geteuid(),
                           "live_credentials_copied": False}, indent=2))
-        assert result.returncode == 0 and (args.gateway_url or state["tool_requested"])
+        assert result.returncode == 0 and state["tool_requested"]
         if args.protected_fixture:
             assert evidence["protected_fixture_denied"], "Worker could open the protected fixture"
 
