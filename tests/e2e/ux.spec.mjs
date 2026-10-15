@@ -68,7 +68,9 @@ test('representative dark/light desktop and 360px states retain layout evidence'
     await testInfo.attach('home-dark-' + width, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
   }
   await page.goto('/#/settings');
-  await page.getByLabel('Theme', { exact: true }).selectOption('light');
+  const theme = page.getByRole('combobox', { name: 'Theme', exact: true });
+  await expect(theme).toHaveAccessibleName('Theme');
+  await theme.selectOption('light');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await testInfo.attach('settings-light-desktop', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
   await page.goto('/#/files');
