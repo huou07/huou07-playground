@@ -26,6 +26,29 @@ Do not run make check, make acceptance, hub.py verify, installers or runtime
 benchmarks on the owner's machine. Hub verify executes configured project code.
 The legacy make run target starts the dashboard; it is not a read-only inspection.
 
+## Debian development prerequisites
+
+Inspection on 2026-10-15 found Python 3.13.5 and Node 24.21.0 on the worker.
+The legacy server uses Python's standard library; it does not need a pip
+requirements installation. Playwright is a separate locked npm dependency for
+hosted browser acceptance, not a server dependency.
+
+The Rust workspace pins 1.90.0 in [the toolchain file](../rust-toolchain.toml).
+The default Debian compiler is 1.85.0; the worker's existing rustup installation
+currently lists only 1.98.0. Neither establishes a validated 1.90.0 build.
+Keep the project pin and lockfile; use the existing hosted CI, which installs
+1.90.0 explicitly, rather than changing the pin to match an incidental host SDK.
+No local H07P tests, installation, services or deployment were executed for this
+inspection; the execution boundary remains in [WORKING.md](WORKING.md).
+
+After moving a checkout between operating systems, retain source and lockfiles
+but recreate generated `node_modules`, `target` and Python cache directories
+in the authorized build environment. Do not copy macOS binaries into Linux
+tool paths. No dependency upgrade is justified solely by a missing local SDK.
+The Rust server currently implements health/static routes only; absent dashboard
+APIs are migration work, as recorded in [IMPLEMENTATION.md](IMPLEMENTATION.md),
+not evidence that a Debian package is missing.
+
 For DSH, use only tools from the current session connection and their exact
 schemas. Native agent tools retain their own documented loaders/permissions.
 Do not persist a DSH connection identifier or assume a previous caller's tools.
