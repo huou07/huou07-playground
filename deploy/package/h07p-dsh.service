@@ -1,0 +1,26 @@
+[Unit]
+Description=H07P DSH managed policy worker
+After=network-online.target h07p-helper.service
+Requires=h07p-helper.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/huou07/Projects
+Environment=H07P_CONTROL_DIR=/var/lib/h07p-control
+ExecStartPre=/usr/bin/install -d -o dsh-worker -g huou07-dsh-link -m 2750 /run/huou07-dsh-link
+ExecStart=/opt/huou07-playground/current/bin/h07p-server worker dsh --web
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+UMask=0002
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

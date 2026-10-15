@@ -1,0 +1,24 @@
+[Unit]
+Description=H07P privileged typed operation helper
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=huou07-playground
+WorkingDirectory=/opt/huou07-playground/current
+EnvironmentFile=/etc/huou07-playground/dashboard.env
+ExecStart=/opt/huou07-playground/current/bin/h07p-server helper
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=h07p
+RuntimeDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
