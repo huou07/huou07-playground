@@ -62,7 +62,7 @@ def fixture_session(fixture):
     with sqlite3.connect(fixture / 'state/owner.db') as db:
         db.execute('CREATE TABLE sessions(token TEXT PRIMARY KEY,username TEXT,csrf TEXT,expires INTEGER)')
         db.execute('INSERT INTO sessions VALUES(?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), 'synthetic-owner', csrf, int(time.time()) + 600))
-    return {'Cookie': 'h07p_owner=' + token}
+    return {'Cookie': 'h07p_owner=' + token, 'X-H07P-CSRF': csrf}
 
 
 def run(command, base, endpoints, idle, count, fixture, wall_deadline, interval):

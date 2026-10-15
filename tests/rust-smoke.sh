@@ -18,6 +18,8 @@ with sqlite3.connect(root / 'state/owner.db') as db:
     db.execute('INSERT INTO sessions VALUES(?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), 'synthetic-owner', csrf, int(time.time()) + 600))
 (root / 'owner-header').write_text('Cookie: h07p_owner=' + token + '\n')
 (root / 'owner-header').chmod(0o600)
+(root / 'owner-proof-header').write_text((root / 'owner-header').read_text() + 'X-H07P-CSRF: ' + csrf + '\n')
+(root / 'owner-proof-header').chmod(0o600)
 PYFIXTURE
 H07P_STATE_DIR="$fixture/state" APPS_FILE="$fixture/apps.json" STATIC_DIR="$PWD/web/static" HOST=127.0.0.1 PORT="$port" "$binary" >"$log" 2>&1 &
 server_pid=$!
@@ -60,14 +62,26 @@ status=$(curl --silent --show-error --path-as-is -o /dev/null -w '%{http_code}' 
 
 status=$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$base/api/metrics")
 [ "$status" = 401 ]
+status=$(curl --silent --show-error -H @"$fixture/owner-header" -o /dev/null -w '%{http_code}' "$base/api/metrics")
+[ "$status" = 403 ]
+curl --silent --show-error --fail -H @"$fixture/owner-header" "$base/api/owner/session" >"$fixture/cookie-session.json"
+python3 - "$fixture/cookie-session.json" <<'PYSESSION'
+import json, sys
+session = json.load(open(sys.argv[1]))
+assert session.get('authenticated') is False
+assert 'csrf' not in session
+PYSESSION
+owner_get() {
+  curl --silent --show-error --fail --max-time 15 -H @"$fixture/owner-proof-header" "$1"
+}
 for endpoint in metrics processes services cockpit files vpn private-service-ports apps; do
-  curl --silent --show-error --fail --max-time 15 -H @"$fixture/owner-header" "$base/api/$endpoint" >"$fixture/response.json"
+  owner_get "$base/api/$endpoint" >"$fixture/response.json"
   python3 - "$fixture/response.json" <<'PYJSON'
 import json, sys
 assert isinstance(json.load(open(sys.argv[1])), dict)
 PYJSON
 done
-session=$(curl --silent --show-error --fail -H @"$fixture/owner-header" "$base/api/owner/session")
+session=$(owner_get "$base/api/owner/session")
 printf '%s\n' "$session" | grep -Fq '"authenticated":true'
 status=$(curl --silent --show-error -H @"$fixture/owner-header" -H 'Content-Type: application/json' -d '{}' -o /dev/null -w '%{http_code}' "$base/api/apps")
 [ "$status" = 403 ]

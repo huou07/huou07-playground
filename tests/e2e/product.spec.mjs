@@ -405,6 +405,7 @@ test('ticket rejection keeps browser media requests from starting and shows a re
 });
 
 test('app icons use authenticated blobs and harness launch fetches its private URL before navigating', async ({ page }) => {
+  await page.context().route('**/fixture-harness/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Synthetic harness fixture</title><p>Fixture destination</p>' }));
   await page.addInitScript(() => {
     window.fixtureRevoked = [];
     const revoke = URL.revokeObjectURL.bind(URL);
