@@ -47,22 +47,32 @@
     node.showModal();
     return { node, status, actions, close, add: (...nodes) => status.before(...nodes) };
   }
-  async function api(path, options = {}) {
-    const headers = { ...options.headers };
-    const method = options.method || 'GET';
-    if (method !== 'GET') {
-      headers['X-H07P-CSRF'] = csrf;
-      if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  async function ownerFetch(path, options = {}) {
+    const publicEndpoint = ['/api/owner/session', '/api/owner/login'].includes(path);
+    if (!publicEndpoint && !session) {
+      await window.h07pSessionReady;
+      if (!session) { signIn(); throw new Error('Owner sign in required. Sign in, then retry.'); }
     }
-    const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options, headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body) });
-    if (response.status === 401) {
+    const headers = new Headers(options.headers);
+    if (!['GET','HEAD','OPTIONS'].includes(options.method || 'GET')) headers.set('X-H07P-CSRF', csrf);
+    const requestSession = session;
+    const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options, headers });
+    if (!publicEndpoint && requestSession !== session) throw new Error('Owner session changed. Retry after signing in.');
+    if (response.status === 401 && !publicEndpoint) {
       session = null; csrf = ''; account.textContent = 'Owner sign in';
       policy = draft = null; dirty = false; permissions.replaceChildren();
       for (const browser of browsers) browser.clear();
       for (const open of document.querySelectorAll('.product-dialog')) open.close();
-      signIn(); throw new Error('Owner sign in required. Sign in, then retry.');
+      window.dispatchEvent(new CustomEvent('h07p-owner-session', { detail: false }));
+      signIn(); throw new Error('Owner session expired. Sign in, then retry.');
     }
+    return response;
+  }
+  window.h07pFetch = ownerFetch;
+  async function api(path, options = {}) {
+    const headers = { ...options.headers };
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    const response = await ownerFetch(path, { ...options, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
     if (!response.ok) {
       let detail;
       try { const body = await response.json(); detail = body.error || body.message; } catch {}
@@ -70,11 +80,12 @@
     }
     return response.status === 204 ? {} : response.json();
   }
-  async function loadSession() {
+  async function loadSession(notify = true) {
     const data = await api('/api/owner/session');
     session = data.authenticated ? data : null;
     csrf = data.csrf || '';
     account.textContent = session ? session.username + ' · Sign out' : 'Owner sign in';
+    if(notify) window.dispatchEvent(new CustomEvent('h07p-owner-session', { detail: !!session }));
     return session;
   }
   function signIn() {
@@ -102,12 +113,15 @@
       await api('/api/owner/logout', { method: 'POST', body: {} });
       session = null; csrf = ''; policy = draft = null; dirty = false;
       account.textContent = 'Owner sign in'; $('permissions-panel').replaceChildren();
+      window.dispatchEvent(new CustomEvent('h07p-owner-session', { detail: false }));
       for (const browser of browsers) browser.clear();
       for (const open of document.querySelectorAll('.product-dialog')) open.close();
     } catch (error) { const d = dialog('Sign out'); message(d.status, error.message, true); }
   });
   const join = (path, name) => (path === '/' ? '' : path.replace(/\/$/, '')) + '/' + name;
   const fsUrl = (endpoint, area, path) => '/api/fs/' + endpoint + '?' + new URLSearchParams({ area, path });
+  const dateMs = value => typeof value === 'number' ? value * 1000 : Date.parse(value);
+  const displayDate = value => Number.isFinite(dateMs(value)) ? new Date(dateMs(value)).toLocaleString() : 'Unavailable';
   const units = (bytes) => Number.isFinite(Number(bytes)) ? (Number(bytes) / 1073741824).toFixed(2) + ' GiB' : 'Unavailable';
   const fileSize = (bytes) => bytes == null ? '—' : bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KiB' : (bytes / 1048576).toFixed(1) + ' MiB';
   function download(area, path) {
@@ -129,7 +143,7 @@
       message(d.status, 'Loading bounded text preview…');
       const controller = new AbortController(); d.node.addEventListener('close', () => controller.abort());
       try {
-        const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+        const response = await ownerFetch(url, { signal: controller.signal });
         if (response.status === 401) { d.close(); signIn(); return; }
         if (!response.ok) throw new Error('Preview unavailable (' + response.status + ').');
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let text = '', bytes = 0, truncated = false;
@@ -191,7 +205,7 @@
         checkbox.addEventListener('change', () => { if (checkbox.checked) selected.add(entry.path); else selected.delete(entry.path); update(); });
         const cell = el('td'); cell.append(checkbox);
         const name = el('td'); const open = button((entry.kind === 'directory' ? '▤ ' : entry.kind === 'symlink' ? '↗ ' : '') + entry.name, () => entry.kind === 'directory' ? load(entry.path) : preview(area, entry), 'file-open');
-        name.append(open); row.append(cell, name, el('td', entry.kind === 'directory' ? 'Folder' : fileSize(entry.size)), el('td', entry.modified ? String(entry.modified) : '—'));
+        name.append(open); row.append(cell, name, el('td', entry.kind === 'directory' ? 'Folder' : fileSize(entry.size)), el('td', entry.modified ? displayDate(entry.modified) : '—'));
         row.addEventListener('contextmenu', event => { event.preventDefault(); selected = new Set([entry.path]); render(); actions.Rename.focus(); });
         row.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); selected = new Set([entry.path]); render(); actions.Rename.focus(); } });
         body.append(row);
@@ -302,14 +316,14 @@
       if(event.key === 'F2') actions.Rename.click();
     });
     panel.append(heading,capacity,pathbar,crumbs,toolbar,uploadInput,status,table,footer); root.append(panel); update();
-    const browser={ load,clear:()=>{entries=[];selected.clear();clipboard=null;body.replaceChildren();capacity.replaceChildren();crumbs.replaceChildren();path='/';pathInput.value='/';message(status,'Owner sign in required.');update();} };
+    const browser={ load,clear:()=>{entries=[];selected.clear();clipboard=null;total=0;body.replaceChildren();capacity.replaceChildren();crumbs.replaceChildren();path='/';pathInput.value='/';message(status,'Owner sign in required.');update();} };
     browsers.push(browser); return browser;
   }
   const nas=fileBrowser($('nas-browser'),'nas'), storage=fileBrowser($('host-browser'),'storage');
   const permissions=$('permissions-panel');
   function policyBody() { return {expected_revision:draft.revision,preset:draft.preset,workspace:draft.workspace,rules:draft.rules}; }
   function ruleDescription(rule) {
-    return (rule.action === 'block' ? 'Private · Block' : 'Allow') + ' · ' + (rule.operations || []).join(', ') + ' · ' + (rule.worker || 'all managed workers') + (rule.recursive ? ' · recursive' : '') + (rule.expires_at ? ' · expires ' + rule.expires_at : '') + ' · ' + (rule.source || 'manual') + (rule.inherited ? ' · inherited' : '');
+    return (rule.action === 'block' ? 'Private · Block' : 'Allow') + ' · ' + (rule.operations || []).join(', ') + ' · ' + (rule.worker || 'all managed workers') + (rule.recursive ? ' · recursive' : '') + (rule.expires_at ? ' · expires ' + displayDate(rule.expires_at) : '') + ' · ' + (rule.source || 'manual') + (rule.inherited ? ' · inherited' : '');
   }
   function markDirty() { dirty=true; renderPolicy(); }
   function renderPolicy() {
@@ -353,9 +367,9 @@
     if(!(policy.approvals || []).length) approvals.append(el('p','No pending approval requests. Workers request scoped access through the broker.','panel-note'));
     for(const approval of policy.approvals || []) {
       const row=el('article',undefined,'product-rule');
-      row.append(el('strong',approval.worker + ' · ' + approval.operation + ' · ' + approval.target),el('p','Workspace: ' + approval.workspace + ' · Revision ' + (approval.revision ?? approval.policy_revision) + ' · Expires ' + approval.expires_at),el('p',approval.reason || 'No reason supplied.'));
-      const expired=Date.parse(approval.expires_at) <= Date.now() || (approval.revision ?? approval.policy_revision) !== policy.revision || approval.state === 'expired';
-      if(expired) row.append(el('p','Expired or stale request. The worker must request access again.','product-warning'));
+      row.append(el('strong',approval.worker + ' · ' + approval.operation + ' · ' + approval.target),el('p','Workspace: ' + (approval.workspace || policy.workspace) + ' · Revision ' + (approval.revision ?? approval.policy_revision) + ' · Expires ' + displayDate(approval.expires_at)),el('p',approval.reason || 'No reason supplied.'));
+      const expired=!Number.isFinite(dateMs(approval.expires_at)) || dateMs(approval.expires_at) <= Date.now() || (approval.revision ?? approval.policy_revision) !== policy.revision || (approval.state && approval.state !== 'pending');
+      if(expired) row.append(el('p','Request is expired, stale, or already decided. The worker must request access again.','product-warning'));
       const approve=button('Approve once',()=>decideApproval(approval,true),'primary');approve.disabled=expired;
       const deny=button('Deny',()=>decideApproval(approval,false));deny.disabled=expired;
       const actions=el('div',undefined,'product-toolbar');actions.append(approve,deny);row.append(actions);approvals.append(row);
@@ -363,11 +377,18 @@
     const history=el('section',undefined,'panel');history.append(el('h2','Audit and rollback'));
     for(const event of (policy.audit || []).slice().reverse().slice(0,30)) {
       const row=el('article',undefined,'product-rule');
-      row.append(el('p',(event.timestamp || event.time || '') + ' · ' + (event.action || event.event || 'Policy change') + ' · Revision ' + event.revision));
+      row.append(el('p',(event.at || event.timestamp || event.time ? displayDate(event.at || event.timestamp || event.time) : '') + ' · ' + (event.action || event.event || 'Policy change') + (event.revision != null ? ' · Revision ' + event.revision : '')));
       if(event.revision != null && event.revision !== policy.revision) row.append(button('Restore revision ' + event.revision,()=>rollback(event.revision)));
       history.append(row);
     }
     if(!(policy.audit || []).length) history.append(el('p','No audit entries reported.','panel-note'));
+    if(policy.revision > 0) {
+      const revisionForm=el('form',undefined,'product-toolbar'),revisionInput=input('rollback_revision',String(policy.revision-1),'number');
+      revisionInput.min='0';revisionInput.max=String(policy.revision-1);revisionInput.required=true;revisionInput.step='1';
+      const restore=el('button','Review rollback');restore.type='submit';
+      revisionForm.append(label('Revision to restore',revisionInput),restore);
+      revisionForm.addEventListener('submit',event=>{event.preventDefault();rollback(Number(revisionInput.value));});history.append(revisionForm);
+    }
     history.append(el('p','Owner recovery is available through the installed host control plane. Worker sessions cannot use owner recovery.','panel-note'));
     permissions.append(panel,approvals,history);
   }
@@ -409,7 +430,7 @@
     const kind=select([['directory','Directory'],['file','File']],existing.kind || 'directory');
     const recursive=input('recursive','','checkbox');recursive.checked=existing.recursive ?? true;
     const expires=input('expires_at','','datetime-local');
-    if(existing.expires_at && Number.isFinite(Date.parse(existing.expires_at))) { const date=new Date(existing.expires_at); expires.value=new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16); }
+    if(existing.expires_at && Number.isFinite(dateMs(existing.expires_at))) { const date=new Date(dateMs(existing.expires_at)); expires.value=new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16); }
     const operations=el('fieldset'), legend=el('legend','Concrete operations'), checks=el('div',undefined,'checks'), operationInputs=[];
     for(const operation of ['list','read','write','create','delete','execute']) {
       const checkbox=input(operation,'','checkbox');checkbox.checked=(existing.operations || ['list','read','write','create','delete','execute']).includes(operation);
@@ -425,7 +446,7 @@
       event.preventDefault();const selected=operationInputs.filter(box=>box.checked).map(box=>box.name);
       if(!selected.length) {message(d.status,'Select at least one operation.',true);return;}
       if(expires.value && Date.parse(expires.value)<=Date.now()) {message(d.status,'Expiry must be in the future.',true);return;}
-      const rule={...existing,id:existing.id || crypto.randomUUID(),worker:worker.value,target:target.value,kind:kind.value,action:action.value,operations:selected,recursive:recursive.checked,source:existing.source || 'manual',expires_at:expires.value?new Date(expires.value).toISOString():null};
+      const rule={...existing,id:existing.id || crypto.randomUUID(),worker:worker.value,target:target.value,kind:kind.value,action:action.value,operations:selected,recursive:recursive.checked,source:existing.source || 'manual',expires_at:expires.value?Math.floor(Date.parse(expires.value)/1000):null};
       const index=draft.rules.findIndex(item=>item.id===rule.id);
       if(index<0) draft.rules.push(rule);else draft.rules[index]=rule;
       d.close();markDirty();
@@ -473,8 +494,9 @@
   function scan() {
     const d=dialog('Auto Detect · review suggestions'),form=el('form'),scope=input('scope',draft.workspace || '/'),mode=select([['block','Block sensitive candidates'],['allow','Allow ordinary candidates']],'block');
     scope.required=true;scope.pattern='/.*';
+    const content=input('content-scan','','checkbox'), contentLabel=label('Include bounded content scan (Gitleaks)',content);contentLabel.className='check';
     const start=el('button','Start scan','primary');start.type='submit';
-    const results=el('div');form.append(label('Scope (absolute path)',scope),button('Browse scope',()=>browsePath(path=>{scope.value=path;},scope.value || '/')),label('Detection mode',mode),el('p','Metadata-only scan. No matching contents are requested or displayed. Allow means “No known sensitive marker”, never proven safe. Skipped and unreadable paths remain unknown.','product-warning'),start);
+    const results=el('div');form.append(label('Scope (absolute path)',scope),button('Browse scope',()=>browsePath(path=>{scope.value=path;},scope.value || '/')),label('Detection mode',mode),contentLabel,el('p','Metadata detection is the default. Content scanning runs only when selected, within this scope and server limits. Results include paths and reasons only; matching contents are never displayed. Allow means “No known sensitive marker”, never proven safe. Skipped and unreadable paths remain unknown.','product-warning'),start);
     d.add(form,results);
     let controller=null, findings=[],selected=new Set();
     const cancel=button('Cancel scan',()=>{controller?.abort();message(d.status,'Scan canceled. No policy changed.');});cancel.hidden=true;d.actions.prepend(cancel);
@@ -484,7 +506,7 @@
       for(const old of d.actions.querySelectorAll('[data-review]')) old.remove();
       const scanMode=mode.value;message(d.status,'Scanning selected scope… no changes will be applied.');
       try {
-        const data=await api('/api/control/scan',{method:'POST',body:{scope:scope.value,mode:scanMode,content:false},signal:controller.signal});
+        const data=await api('/api/control/scan',{method:'POST',body:{scope:scope.value,mode:scanMode,content:content.checked},signal:controller.signal});
         findings=data.findings || [];
         for(const [index,finding] of findings.entries()) {
           const row=el('div',undefined,'product-scan-row'),check=input('finding','','checkbox');
@@ -492,7 +514,7 @@
           row.append(label(finding.path,check),el('small',finding.reason + ' · Confidence: ' + finding.confidence));results.append(row);
         }
         if(data.skipped?.length) results.append(el('p','Skipped / unknown: ' + data.skipped.map(item=>typeof item==='string'?item:item.path + ': ' + (item.reason || item.error || 'skipped')).join('; '),'product-warning'));
-        message(d.status,(findings.length?'Select individual findings to add to the draft.':'No suggestions found.') + (data.partial?' Partial scan: coverage is incomplete.':'') + ' Nothing has changed.');
+        message(d.status,(findings.length?'Select individual findings to add to the draft.':'No suggestions found.') + (data.partial?' Partial scan: coverage is incomplete.':'') + (data.content_scanned ? ' Bounded content scan completed.' : ' Metadata scan only.') + ' Nothing has changed.');
         const review=button('Review selected',()=>{
           const chosen=[...selected].map(index=>findings[index]),confirm=dialog('Review ' + chosen.length + ' selected suggestions');
           confirm.add(el('p',chosen.map(finding=>finding.path).join('\n')),el('p','These ' + scanMode + ' rules will be added to the draft only. Review impact and Apply are required before enforcement.','product-warning'));
@@ -507,6 +529,7 @@
   }
   $('policy-refresh').addEventListener('click',()=>loadPolicy());
   async function route() {
+    await window.h07pSessionReady;
     const current=location.hash.slice(2);
     if(!['files','storage','permissions'].includes(current)) return;
     if(!session) { signIn(); return; }
@@ -514,8 +537,9 @@
     if(current==='storage') await storage.load();
     if(current==='permissions') await loadPolicy({preserveDraft:true});
   }
-  window.addEventListener('h07p-route',()=>{route();});
-  loadSession().then(route).catch(error=>{
+  window.addEventListener('h07p-route',()=>{route().catch(error=>{account.title=error.message;signIn();});});
+  window.h07pSessionReady = loadSession(false);
+  window.h07pSessionReady.then(() => { if(!session) signIn(); }).catch(error=>{
     account.title=error.message;
     if(['files','storage','permissions'].includes(location.hash.slice(2))) signIn();
   });

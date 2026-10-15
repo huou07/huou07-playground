@@ -70,6 +70,8 @@ try {
     HOST: '127.0.0.1',
     PORT: String(dashboardPort),
     APPS_FILE: registry,
+    H07P_STATE_DIR: join(temp, 'owner-state'),
+    H07P_HELPER_SOCKET: join(temp, 'fixture-no-helper.sock'),
   });
   await Promise.all([
     waitFor(appUrl, appServer, 'Acceptance application'),

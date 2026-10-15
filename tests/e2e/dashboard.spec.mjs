@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test';
 
+// The Python legacy server has no owner API. Keep owner UI fixture setup separate
+// from the real registry/app-launch requests exercised below.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/owner/session', route => route.fulfill({ json: { authenticated: true, username: 'fixture-owner', csrf: 'fixture-csrf' } }));
+  await page.route('**/api/fs/list?**', route => route.fulfill({ json: { path: '/', parent: '/', entries: [], total: 0, private: true } }));
+  await page.route('**/api/control/status', route => route.fulfill({ json: { revision: 0, enforced_revision: 0, preset: 'none', workspace: '/fixtures', rules: [], workers: [], approvals: [], audit: [], capabilities: {} } }));
+});
+
 test('navigation, browser preferences, and app launch work end to end', async ({ page }) => {
   const pageErrors = [];
   const consoleErrors = [];
@@ -57,7 +65,7 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await expect(staticShortcut).toHaveAttribute('rel', 'noopener noreferrer');
   const routes = [
     ['home', 'Home'], ['apps', 'Applications'], ['system', 'System'],
-    ['services', 'Services & Processes'], ['files', 'Files'], ['ssh', 'SSH'],
+    ['services', 'Services & Processes'], ['permissions', 'Permissions'], ['files', 'Files'], ['ssh', 'SSH'],
     ['network', 'Network & VPN'], ['storage', 'Storage'], ['settings', 'Settings'],
   ];
   for (const [route, title] of routes) {

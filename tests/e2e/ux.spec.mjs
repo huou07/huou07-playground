@@ -5,6 +5,8 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const responses = {
+      '/api/owner/session': { authenticated: true, username: 'fixture-owner', csrf: 'fixture-csrf' },
+      '/api/fs/list': { path: '/', parent: '/', entries: [], total: 0, private: true },
       '/api/metrics': {
         supported: true, sampled_at: 1700000000,
         cpu: { usage_percent: 12, logical_cores: 4 },
@@ -45,7 +47,7 @@ test('360px keyboard navigation enters, cycles, closes and restores focus', asyn
   await expect(menu).toBeFocused();
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await page.keyboard.press('Enter');
-  for (let i = 0; i < 7; i++) await page.keyboard.press('Tab');
+  for (let i = 0; i < 8; i++) await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Storage', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Storage', exact: true })).toBeVisible();
@@ -74,7 +76,8 @@ test('representative dark/light desktop and 360px states retain layout evidence'
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await testInfo.attach('settings-light-desktop', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
   await page.goto('/#/files');
-  await expect(page.locator('#file-manager-note')).toHaveText('Synthetic files unavailable');
+  await expect(page.locator('#nas-browser')).toContainText('This folder is empty.');
+  await expect(page.locator('#nas-browser')).toContainText('Private · server confirmed');
   await expect(page.locator('#file-manager-link')).toBeHidden();
   await page.goto('/#/storage');
   await expect(page.getByRole('heading', { name: 'Storage', exact: true })).toBeVisible();

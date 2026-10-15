@@ -13,6 +13,14 @@ test('migrated health and static assets are served by the actual Rust process', 
   const script = await request.get('/navigation.js');
   expect(script.status()).toBe(200);
   expect(await script.text()).toContain('function closeNavigation');
-  // No intercept can turn an unimplemented API into Rust runtime parity.
-  expect((await request.get('/api/metrics')).status()).toBe(404);
+  for (const asset of ['/product.js', '/product.css']) {
+    expect((await request.get(asset)).status()).toBe(200);
+  }
+  // Real Rust responses, with no interception: anonymous callers cannot read
+  // telemetry or owner data, and cannot mutate policy without a session.
+  expect(await (await request.get('/api/owner/session')).json()).toEqual({ authenticated: false });
+  for (const endpoint of ['/api/metrics', '/api/control/status', '/api/fs/list?area=nas&path=/']) {
+    expect((await request.get(endpoint)).status()).toBe(401);
+  }
+  expect((await request.post('/api/control/apply', { data: {} })).status()).toBe(401);
 });

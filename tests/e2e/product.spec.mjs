@@ -47,10 +47,12 @@ test('owner login keeps credentials out of storage and logout clears private bro
   await page.goto('/#/files');
   const login = page.getByRole('dialog', { name: 'Owner sign in' });
   await expect(login).toBeVisible();
+  expect(calls.filter(call => !call.path.startsWith('/api/owner/'))).toHaveLength(0);
   await login.getByLabel('Username').fill('fixture-owner');
   await login.getByLabel('Password').fill('synthetic-password');
   await login.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('button', { name: 'private.txt', exact: true })).toBeVisible();
+  expect(calls.some(call => call.path === '/api/metrics')).toBe(true);
   const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   expect(storage).not.toMatch(/fixture-csrf|synthetic-password/);
   await page.getByRole('button', { name: 'fixture-owner · Sign out' }).click();
@@ -202,4 +204,101 @@ test('partial cut preserves failed items and upload sends raw bytes with CSRF', 
   expect(upload.method).toBe('PUT');
   expect(upload.headers['x-h07p-csrf']).toBe('fixture-csrf');
   expect(upload.url.searchParams.get('path')).toBe('/upload.txt');
+});
+
+test('legacy application editor sends owner CSRF and refreshes telemetry immediately after login', async ({ page }) => {
+  const state = await fixture(page, { authenticated: false });
+  await page.goto('/#/home');
+  const login = page.getByRole('dialog', { name: 'Owner sign in' });
+  await login.getByLabel('Username').fill('fixture-owner');
+  await login.getByLabel('Password').fill('synthetic-password');
+  await login.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.locator('#connection-label')).toHaveText('Connected');
+  await page.locator('#sidebar [data-route="settings"]').click();
+  await page.locator('#app-form input[name="name"]').fill('CSRF fixture');
+  await page.locator('#app-form input[name="url"]').fill('https://fixture.invalid/');
+  await page.getByRole('button', { name: 'Add application', exact: true }).click();
+  await expect(page.locator('#app-form-status')).toHaveText('Saved.');
+  const save = state.calls.find(call => call.path === '/api/apps' && call.method === 'POST');
+  expect(save.headers['x-h07p-csrf']).toBe('fixture-csrf');
+  expect(save.body.app.name).toBe('CSRF fixture');
+});
+
+test('numeric expiry and decided approvals match the Rust helper contract', async ({ page }) => {
+  const state = await fixture(page);
+  const now = Math.floor(Date.now() / 1000);
+  state.setPolicy({ ...state.getPolicy(), approvals: [
+    { id: 'decided', worker: 'worker-a', operation: 'read', target: '/fixtures/decided', revision: 3, expires_at: now + 300, state: 'approved' },
+    { id: 'pending', worker: 'worker-a', operation: 'read', target: '/fixtures/pending', revision: 3, expires_at: now + 300, state: 'pending' },
+  ], audit: [{ at: now, event: 'Fixture audit entry' }] });
+  await page.goto('/#/permissions');
+  await expect(page.getByRole('button', { name: 'Approve once' }).nth(0)).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Approve once' }).nth(1)).toBeEnabled();
+  await expect(page.getByText(/Fixture audit entry/)).toBeVisible();
+  await expect(page.getByText(/Revision undefined/)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Block', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'New permission rule' });
+  await editor.getByLabel('Absolute target path').fill('/fixtures/expiring');
+  const future = new Date((now + 3600) * 1000);
+  const local = new Date(future.getTime() - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  await editor.getByLabel('Expiry').fill(local);
+  await editor.getByRole('button', { name: 'Save draft rule' }).click();
+  await page.getByRole('button', { name: 'Review impact', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Review permission impact' }).getByRole('button', { name: 'Apply changes' })).toBeVisible();
+  const rule = state.calls.find(call => call.path === '/api/control/dry-run').body.rules[0];
+  expect(typeof rule.expires_at).toBe('number');
+  expect(rule.expires_at).toBeGreaterThan(now);
+  expect(rule.expires_at).toBeLessThanOrEqual(now + 3600);
+});
+
+test('content scanning requires explicit scoped opt-in and never displays source excerpts', async ({ page }) => {
+  const state = await fixture(page);
+  await page.goto('/#/permissions');
+  await page.getByRole('button', { name: 'Auto Detect', exact: true }).click();
+  const scan = page.getByRole('dialog', { name: 'Auto Detect · review suggestions' });
+  const content = scan.getByLabel('Include bounded content scan (Gitleaks)', { exact: true });
+  await expect(content).not.toBeChecked();
+  await scan.getByLabel('Scope (absolute path)', { exact: true }).fill('/fixtures/selected-scope');
+  await content.check();
+  await scan.getByRole('button', { name: 'Start scan' }).click();
+  await expect(scan.getByRole('status')).toContainText('Nothing has changed.');
+  expect(state.calls.find(call => call.path === '/api/control/scan').body).toMatchObject({ scope: '/fixtures/selected-scope', content: true });
+  await expect(scan.locator('pre')).toHaveCount(0);
+  await expect(scan.getByRole('button', { name: 'Review selected' })).toBeDisabled();
+});
+
+test('failed login retains username, clears password and permits safe retry', async ({ page }) => {
+  await fixture(page, { authenticated: false });
+  let attempts = 0;
+  await page.route('**/api/owner/login', async route => {
+    if (++attempts === 1) await route.fulfill({ status: 401, json: { error: 'Invalid owner credentials' } });
+    else await route.fallback();
+  });
+  await page.goto('/#/home');
+  const login = page.getByRole('dialog', { name: 'Owner sign in' });
+  await login.getByLabel('Username').fill('fixture-owner');
+  await login.getByLabel('Password').fill('synthetic-wrong');
+  await login.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(login.getByRole('status')).toHaveText('Invalid owner credentials');
+  await expect(login.getByLabel('Username')).toHaveValue('fixture-owner');
+  await expect(login.getByLabel('Password')).toHaveValue('');
+  await login.getByLabel('Password').fill('synthetic-correct');
+  await login.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(login).toHaveCount(0);
+  await expect(page.locator('#connection-label')).toHaveText('Connected');
+});
+
+test('expired session clears private files and telemetry before prompting for sign-in', async ({ page }) => {
+  await fixture(page, { entries: [{ name: 'private-fixture.txt', path: '/private-fixture.txt', kind: 'file', size: 4 }] });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/#/files');
+  await expect(page.getByRole('button', { name: 'private-fixture.txt', exact: true })).toBeVisible();
+  await expect(page.locator('#cpu-value')).toHaveText('12%');
+  await page.route('**/api/fs/list?**', route => route.fulfill({ status: 401, json: { error: 'Owner sign in required' } }));
+  await page.locator('#nas-browser').getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Owner sign in' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'private-fixture.txt', exact: true })).toHaveCount(0);
+  await expect(page.locator('#cpu-value')).toHaveText('N/A');
+  await expect(page.locator('#connection-label')).toHaveText('Owner sign in required');
+  expect(errors).toEqual([]);
 });

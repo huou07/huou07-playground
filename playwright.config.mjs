@@ -3,8 +3,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: process.env.HUOU07_E2E_BACKEND === 'rust'
-    ? ['ux.spec.mjs', 'rust-static.spec.mjs']
-    : ['dashboard.spec.mjs', 'ux.spec.mjs'],
+    ? ['ux.spec.mjs', 'product.spec.mjs', 'rust-static.spec.mjs']
+    : ['dashboard.spec.mjs', 'ux.spec.mjs', 'product.spec.mjs'],
   timeout: 45000,
   expect: { timeout: 8000 },
   outputDir: 'test-results',
