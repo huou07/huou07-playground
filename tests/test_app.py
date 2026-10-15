@@ -65,19 +65,15 @@ class DashboardApiTests(unittest.TestCase):
         with patch.object(app.shutil, "which", return_value="/usr/sbin/ip"), patch.object(app.subprocess, "run", return_value=result):
             self.assertEqual(app.wireguard_interface_addresses(), [])
 
-    def test_dsh_launch_url_only_targets_loopback_or_wireguard_dashboard_host(self):
-        path = "/?token=" + "aBc123_-" * 5 + "xyz"
-        self.assertEqual(app.dsh_launch_url(path, "127.0.0.1:8765"), f"http://127.0.0.1:3080{path}")
-        self.assertEqual(app.dsh_launch_url(path, "127.0.0.1:18765"), f"http://127.0.0.1:3080{path}")
+    def test_dsh_entry_url_only_targets_loopback_or_wireguard_dashboard_host(self):
+        self.assertEqual(app.dsh_entry_url("127.0.0.1:8765"), "http://127.0.0.1:3080/")
+        self.assertEqual(app.dsh_entry_url("127.0.0.1:18765"), "http://127.0.0.1:3080/")
         with patch.object(app, "wireguard_interface_addresses", return_value=["198.51.100.42"]):
-            self.assertEqual(app.dsh_launch_url(path, "198.51.100.42:8765"), f"http://198.51.100.42:3080{path}")
-            self.assertIsNone(app.dsh_launch_url(path, "198.51.100.42:18765"))
-            self.assertIsNone(app.dsh_launch_url(path, "192.0.2.10:8765"))
-        self.assertIsNone(app.dsh_launch_url("/../etc/", "127.0.0.1:8765"))
-        self.assertIsNone(app.dsh_launch_url("/token?target=https://example.test", "127.0.0.1:8765"))
-        self.assertIsNone(app.dsh_launch_url("/?token=short", "127.0.0.1:8765"))
-        self.assertIsNone(app.dsh_launch_url(path + "&target=evil", "127.0.0.1:8765"))
-        self.assertIsNone(app.dsh_launch_url(path, "example.test:8765"))
+            self.assertEqual(app.dsh_entry_url("198.51.100.42:8765"), "http://198.51.100.42:3080/")
+            self.assertIsNone(app.dsh_entry_url("198.51.100.42:18765"))
+            self.assertIsNone(app.dsh_entry_url("192.0.2.10:8765"))
+        for host in ["example.test:8765", "user@127.0.0.1:8765", "127.0.0.1:8765/?token=fixture"]:
+            self.assertIsNone(app.dsh_entry_url(host))
 
     def test_dsh_launch_requires_owner_auth_before_reading_token(self):
         with patch.object(app, "DSH_URL_FILE") as token_file:
@@ -90,7 +86,7 @@ class DashboardApiTests(unittest.TestCase):
     def test_dsh_launch_accepts_owner_and_rejects_worker_or_malformed_auth(self):
         owner = "Basic " + base64.b64encode(b"owner:owner-fixture").decode()
         worker = "Basic " + base64.b64encode(b"worker:worker-fixture").decode()
-        with patch.dict(os.environ, {"OPENCODE_PUBLIC_USERNAME": "owner", "OPENCODE_PUBLIC_PASSWORD": "owner-fixture"}):
+        with patch.dict(os.environ, {"OPENCODE_PUBLIC_USERNAME": "owner", "OPENCODE_PUBLIC_PASSWORD": "owner-fixture", "AGENT_ACCESS_ENABLED": "1"}):
             self.assertTrue(app.owner_launch_authorized(owner))
             for header in [worker, "Basic !!!", "Bearer fixture", "Basic", "Basic a b", None]:
                 self.assertFalse(app.owner_launch_authorized(header))
@@ -102,7 +98,8 @@ class DashboardApiTests(unittest.TestCase):
                     connection.request("GET", "/api/apps/launch?name=DeepSeek+Harness", headers={"Authorization": owner})
                     response = connection.getresponse()
                     self.assertEqual(response.status, 302)
-                    self.assertIn("token=", response.getheader("Location"))
+                    self.assertNotIn("token=", response.getheader("Location"))
+                    token_file.read_text.assert_not_called()
                     response.read()
                 finally:
                     connection.close()

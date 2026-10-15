@@ -28,6 +28,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
+try:
+    from .agent_access import AgentAccessServer
+except ImportError:
+    from agent_access import AgentAccessServer
+
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 try:
@@ -86,13 +91,8 @@ def owner_launch_authorized(header: str | None) -> bool:
     return hmac.compare_digest(actual, f"{username}:{password}".encode("utf-8"))
 
 
-def dsh_launch_url(token_path: str | None, request_host: str | None) -> str | None:
-    """Build a one-time DSH login URL only for loopback or the wg0 dashboard host."""
-    if (
-        not isinstance(token_path, str)
-        or not re.fullmatch(r"/\?token=[A-Za-z0-9_-]{32,128}", token_path)
-    ):
-        return None
+def dsh_entry_url(request_host: str | None) -> str | None:
+    """Redirect to the protected public entry without publishing a bearer token."""
     try:
         authority = urlsplit("//" + (request_host or ""))
         if authority.username or authority.password or authority.path or authority.query or authority.fragment:
@@ -110,7 +110,7 @@ def dsh_launch_url(token_path: str | None, request_host: str | None) -> str | No
             if authority.port != configured_port("dashboard", "wireguard_port", 8765) or host not in wireguard_interface_addresses():
                 return None
         target_host = f"[{host}]" if ":" in host else host
-        return f"http://{target_host}:{configured_port('dsh', 'wireguard_port', 3080)}{token_path}"
+        return f"http://{target_host}:{configured_port('dsh', 'wireguard_port', 3080)}/"
     except ValueError:
         return None
 
@@ -941,13 +941,9 @@ class Handler(BaseHTTPRequestHandler):
             if names != ["DeepSeek Harness"]:
                 self.send_error(404)
                 return
-            try:
-                token_path = "" if DSH_URL_FILE.is_symlink() else DSH_URL_FILE.read_text().strip()
-            except OSError:
-                token_path = ""
-            location = dsh_launch_url(token_path or None, self.headers.get("Host"))
+            location = dsh_entry_url(self.headers.get("Host")) if os.environ.get("AGENT_ACCESS_ENABLED") == "1" else None
             if location is None:
-                self.send_json(503, {"error": "DeepSeek Harness is starting or its private login link is unavailable."})
+                self.send_json(503, {"error": "The protected DSH entry is unavailable."})
                 return
             self.send_response(302)
             self.send_header("Location", location)
@@ -1123,6 +1119,29 @@ class PrivateProxyServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
             _private_proxy_slots.release()
 
 
+def agent_access_servers() -> list[AgentAccessServer]:
+    if os.environ.get("AGENT_ACCESS_ENABLED") != "1":
+        return []
+    servers = []
+    common = {"owner_username": os.environ.get("OPENCODE_PUBLIC_USERNAME", ""),
+              "owner_password": os.environ.get("OPENCODE_PUBLIC_PASSWORD", "")}
+    try:
+        servers.append(AgentAccessServer(
+            ("127.0.0.1", configured_port("dsh", "backend_port", 3080)),
+            backend_port=int(os.environ.get("DSH_INTERNAL_PORT", "13080")),
+            token_file=Path("/run/agent-workbench-dsh-internal/url"), **common))
+        servers.append(AgentAccessServer(
+            ("127.0.0.1", configured_port("opencode-web", "backend_port", 4096)),
+            backend_port=int(os.environ.get("OPENCODE_INTERNAL_PORT", "4097")), kind="opencode",
+            backend_username=os.environ.get("OPENCODE_BACKEND_USERNAME", ""),
+            backend_password=os.environ.get("OPENCODE_BACKEND_PASSWORD", ""), **common))
+    except Exception:
+        for server in servers:
+            server.server_close()
+        raise
+    return servers
+
+
 def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     if host not in {"127.0.0.1", "::1", "localhost"}:
@@ -1130,6 +1149,11 @@ def main() -> None:
     port = int(os.environ.get("PORT", str(configured_port("dashboard", default=8765))))
     servers = [HTTPServer((host, port), Handler)]
     wg_servers = []
+    for server in agent_access_servers():
+        servers.append(server)
+        worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True)
+        worker.start()
+        wg_servers.append(server)
     print(f"huou07 playground loopback listener ready on port {port}")
     for address in wireguard_interface_addresses():
         try:
