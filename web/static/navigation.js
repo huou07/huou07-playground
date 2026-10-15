@@ -1,6 +1,6 @@
 const routeTitles = {
   home: 'Home', apps: 'Applications', system: 'System', services: 'Services & Processes',
-  files: 'Files', ssh: 'SSH', network: 'Network & VPN', storage: 'Storage', settings: 'Settings'
+  files: 'Files', permissions: 'Permissions', ssh: 'SSH', network: 'Network & VPN', storage: 'Storage', settings: 'Settings'
 };
 
 const navigation = document.getElementById('sidebar');
@@ -38,6 +38,7 @@ function showRoute(route) {
   }
   closeNavigation();
   window.scrollTo(0, 0);
+  window.dispatchEvent(new CustomEvent('h07p-route', { detail: route }));
 }
 
 function readRoute() {
