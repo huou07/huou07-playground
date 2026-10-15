@@ -14,7 +14,7 @@ Recheck source before using this map; it is not live host state or a task tracke
 | UI and design | [index](../web/static/index.html), [style](../web/static/style.css), [navigation CSS](../web/static/navigation.css), [navigation JS](../web/static/navigation.js), [app JS](../web/static/app.js) | Existing nine views, themes/preferences and dashboard; Permissions is not present |
 | Linux collectors | [power](../deploy/power.py), [GPU](../deploy/gpu.py), [VPN](../deploy/wg_status.py) | Legacy OS integration; not ported to Rust |
 | File integration | [Cockpit move helper](../deploy/cockpit/huou07-move-files/move) | External Cockpit workflow, not the new private NAS or integrated Storage browser |
-| Verification | [workflow](../.github/workflows/ci.yml), [Makefile](../Makefile), [Rust smoke](../tests/rust-smoke.sh), [browser runner](../tests/e2e/run.mjs) | Hosted legacy checks, Rust gates and HTTP smoke; browser runner starts Python |
+| Verification | [workflow](../.github/workflows/ci.yml), [Makefile](../Makefile), [Rust smoke](../tests/rust-smoke.sh), [browser runner](../tests/e2e/run.mjs) | Hosted legacy checks, Rust gates and HTTP smoke; browser matrix selects Python or the actual Rust binary; coverage is scoped by backend |
 
 The Python implementation is a parity reference, not the intended security model.
 Its same-origin mutation check is not independent owner authentication. Never
@@ -34,8 +34,11 @@ publish new private/control APIs by inheriting that check.
 
 Existing [Python tests](../tests/test_app.py) contain useful fixtures and some
 mocked system/service checks. Their pass cannot establish worker isolation.
-The [browser spec](../tests/e2e/dashboard.spec.mjs) also intercepts several APIs;
-it proves selected Python UI journeys, not Rust read APIs or real OS boundaries.
+The [browser spec](../tests/e2e/dashboard.spec.mjs) intercepts several APIs and
+proves selected Python UI journeys. The [UX spec](../tests/e2e/ux.spec.mjs) uses
+synthetic APIs on both servers; [Rust slice checks](../tests/e2e/rust-static.spec.mjs)
+exercise real health/static endpoints. Configured coverage is not a passed run,
+and none of these lanes proves unported Rust read APIs or real OS boundaries.
 
 ## Inspect only the surface needed
 

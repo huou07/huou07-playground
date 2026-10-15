@@ -15,7 +15,7 @@ Choose the references needed for the task; this index is not a preload list.
 | Backend, migration or caching | [Architecture](docs/ARCHITECTURE.md) — Rust boundaries, parity and optional Redis |
 | Permissions, approvals or isolation | [Security](docs/SECURITY.md) — rule semantics and actual OS enforcement |
 | User-visible flow or design | [UX](docs/UX.md) — existing design, interaction states and file/security flows |
-| Tests, performance, packaging or release | [Validation](docs/VALIDATION.md) — hosted CI and evidence requirements |
+| Tests, performance, packaging or release | [Validation](docs/VALIDATION.md) — evidence classes, browser lanes, disposable OS lab and hosted acceptance |
 | Current task or next product slice | [Roadmap](docs/ROADMAP.md) — single tracker with source/run evidence |
 | Reuse a dependency or upstream source | [Reuse](docs/REUSE.md) — candidates, provenance and licensing |
 | Baseline source findings | [Source audit](docs/AUDIT-2026-10-15.md) — dated inspection and its limitations |

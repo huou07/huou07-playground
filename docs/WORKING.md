@@ -10,8 +10,11 @@ H07P is the independent huou07-playground repository registered in the Hub.
 Optimize completed owner journeys, latency, resource use and trustworthy isolation;
 commit counts, code volume and checklist completion are not product outcomes.
 
-The owner's Debian machine is not a test target. Do not run project tests,
-benchmarks, installers, services, package installation or deployment there.
+The owner's live Debian environment is not a test target. Do not run project
+tests, benchmarks, installers, services, package installation or deployment there.
+The owner permits a disposable isolated OS security guest under the resource and
+isolation contract in [VALIDATION.md](VALIDATION.md#disposable-local-os-security-lab);
+that exception never permits changing live agent permissions or owner state.
 Repository inspection, authorized edits and Git operations are permitted.
 Executable validation runs on disposable GitHub-hosted Linux infrastructure;
 sudo there is permitted for synthetic fixtures, systemd, namespaces and .deb tests.

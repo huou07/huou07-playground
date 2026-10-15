@@ -2,8 +2,10 @@
 
 ## Allowed environment
 
-All executable tests/builds/benchmarks/package lifecycle checks run on disposable
-GitHub-hosted Linux infrastructure. The owner's Debian machine is not authorized.
+Product tests/builds/benchmarks/package lifecycle checks run on disposable
+GitHub-hosted Linux infrastructure. The owner's live Debian environment is not a
+fixture. The sole local security exception is the isolated guest design below;
+its current prerequisites are blocked.
 Never use a self-hosted runner, SSH into the owner host or invoke deploy scripts
 there. Sudo is allowed inside the disposable CI guest. Read-only source/Git review
 does not establish runtime behavior.
@@ -14,6 +16,30 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for source coverage. The browser runn
 starts Python, uses a temporary apps registry/fixture app server and intercepts
 several APIs; its pass does not prove Rust UI/backend parity or permissions/NAS.
 Hosted Ubuntu tests do not establish Debian package or OS isolation acceptance.
+
+## Evidence classes and current UI lanes
+
+Use AEH's shared evidence contract when available. This repository maps its
+existing words without rewriting history: implemented =
+IMPLEMENTED; executed source checks = VERIFIED_SOURCE; actual ARIA assertions =
+VERIFIED_SEMANTIC; completed browser journeys = VERIFIED_BEHAVIORAL; reviewed
+screenshots/layout measurements = VERIFIED_VISUAL; real OS/package journeys =
+VERIFIED_NATIVE. CI-verified/owner-accepted requires the corresponding exact-SHA
+authoritative gates (ACCEPTED only within that scope). BLOCKED and UNVERIFIED
+never mean PASS. A class does not automatically establish every preceding class.
+
+The browser matrix runs the Python reference and actual Rust server separately.
+Python retains the real registry/app journey. Both exercise synthetic UI
+loading/error/retry, 360px keyboard navigation and representative dark/light
+captures. Rust additionally proves actual health/static responses and requires
+the unported metrics endpoint to remain an explicit 404. API-intercepted UI
+behavior is not Rust read parity or security enforcement.
+
+Failure traces and a small canonical screenshot set are uploaded for seven days,
+bound to the CI run/SHA/backend. No full pixel golden suite or platform pixel
+identity is required. Permissions/NAS and dialog focus acceptance remain
+UNVERIFIED because those product surfaces do not yet exist. Mobile navigation
+is tested as navigation, not advertised as an implemented permission dialog.
 
 ## Required gates as slices land
 
@@ -114,6 +140,79 @@ unrelated services. Destructive user-data deletion is a separate explicit owner
 operation, not an uninstall side effect. Verify retained hashes and service/
 worker identity after each lifecycle transition. Legacy deploy scripts are not
 the future .deb lifecycle proof.
+
+## Disposable local OS security lab
+
+The owner permits a local isolated guest for this mission. Host product tests
+remain prohibited. The live Playground, real permission policy, DSH state,
+credentials and NAS are never fixtures. Containers establish no OS isolation
+claim. Do not install a general self-hosted runner on this machine.
+
+Preflight on 2026-10-15: QEMU/qemu-img 10.0.13, genisoimage and xorriso exist;
+20 logical CPUs, roughly 7.4 GiB available RAM and 211 GiB free product storage
+were observed while OR's bounded native lane was active. No guest was created or
+launched. Current UID 987 cannot read/write root:kvm 0660 /dev/kvm. No reviewed
+read-only Debian base image/guest fixture was supplied. Local security execution
+is BLOCKED by those prerequisites; no chmod, group membership or live agent
+permission change was attempted. P2/P3 enforcement is also unimplemented:
+a guest DAC smoke alone cannot become H07P security acceptance.
+
+Reviewed design (QEMU CLI and cloud-init; no new orchestration service):
+
+- One Debian 13 genericcloud base, verified against Debian's signed checksum
+  manifest, with its resolved version/URL/hash recorded and mode 0444. Inspect
+  image metadata; reject backing chains, external data files and host devices.
+- One disposable qcow2 overlay and read-only NoCloud seed ISO. Synthetic
+  lab-owner and lab-worker accounts; locked passwords; fake private files,
+  NAS tree and services created only inside the guest. Boot cloud-init/systemd
+  to run the fixture and power off. Never inject real keys/tokens.
+- Hard budget: one guest, 2 vCPUs, 2048 MiB guest RAM, 180s runtime, 8 GiB
+  maximum virtual disk, 2 GiB overlay allocation and 10 MiB retained log.
+  Require at least 6 GiB MemAvailable and 8 GiB free disk before any image
+  creation; stop if available RAM drops below 3 GiB or overlay/log budget is
+  exceeded. Refuse concurrent OR/VCE native work using the same
+  /tmp/aeh-native-ui-UID.lock and inspect other QEMU processes first.
+- Fixed launch options: q35/KVM, no default devices, no user config,
+  -display none -monitor none -serial stdio -nic none -no-reboot,
+  virtio overlay plus read-only seed only, and QEMU sandbox enabled.
+  No host filesystem sharing, clipboard, guest agent, SSH agent sockets,
+  USB passthrough, credentials, network or live management endpoint access.
+- Enforce timeout/process-group cleanup and delete only that run's resolved
+  overlay/seed/temp directory after collecting bounded synthetic results.
+  Verify the base hash again. Reuse the immutable base; never clone full disks
+  or accumulate per-run overlays.
+
+Owner-only provisioning, if local feedback is still desired: use a dedicated
+unprivileged lab account with KVM access and an empty private home. Review/copy
+the guest fixture into an owner-controlled read-only location, provision the
+verified base, and execute QEMU under that account. Do not grant agents-worker
+new KVM/owner access merely for acceptance. No agent may invoke an elevated
+worker-writable fixture or bypass the current /dev/kvm denial.
+
+After those prerequisites are reviewed, the native command shape is:
+
+```sh
+qemu-img create -f qcow2 -F qcow2 -b "$reviewed_base" "$run_dir/guest.qcow2"
+timeout --kill-after=5s 180s qemu-system-x86_64 \\
+  -no-user-config -nodefaults -machine q35,accel=kvm -cpu host -smp 2 -m 2048 \\
+  -display none -monitor none -serial stdio -nic none -no-reboot \\
+  -sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny \\
+  -drive "file=$run_dir/guest.qcow2,format=qcow2,if=virtio" \\
+  -drive "file=$run_dir/seed.iso,format=raw,media=cdrom,readonly=on"
+```
+
+This is a reviewed command shape, not an executed acceptance result or a complete
+launcher: resource monitoring, approved base/seed and safe cleanup are required.
+Start with real positive worker-workspace access plus negative private-file,
+alias, forged API and descendant cases from the matrix above. Revoke/open-FD,
+same-UID, package lifecycle and P2/P3 policy journeys need their actual implemented
+H07P boundaries. Keep GitHub-hosted Debian VM execution as independent acceptance;
+an ephemeral guest runner is deferred until it provides measured value.
+
+References: [Debian cloud images](https://cloud.debian.org/images/cloud/),
+[QEMU disk images](https://www.qemu.org/docs/master/system/images.html) and
+[cloud-init NoCloud](https://cloudinit.readthedocs.io/en/latest/reference/datasources/nocloud.html).
+External instructions do not grant host privilege.
 
 ## CI trust and publication
 

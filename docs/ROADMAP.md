@@ -81,6 +81,20 @@ parity must not reproduce an insecure access model.
   bodies were read as repository references; live H07P project-skill discovery
   and model-routing performance remain unverified.
 
+## Product verification refresh, 2026-10-15
+
+Implemented: required 360px coverage, desktop dark/light screenshots, navigation
+focus entry/cycling/restore and Escape, persistent live save status, failure trace
+artifacts and a separate Rust health/static browser lane. UI fixtures remain
+synthetic; the existing Python registry journey is retained. CI results for this
+implementation must be attached to its exact commit before marking it CI-verified.
+
+Local OS lab design and preflight are in
+[VALIDATION](VALIDATION.md#disposable-local-os-security-lab). No guest or live
+security test ran. Current worker KVM access and a reviewed immutable base are
+missing; P2/P3 enforcement is still unimplemented. No new host permissions,
+self-hosted runner or production policy were introduced.
+
 ## Acceptance gaps and working rules
 
 Metrics/read parity, owner authentication, real worker isolation/revocation,
