@@ -1,8 +1,25 @@
 import { test, expect } from '@playwright/test';
 
+const automaticSignIn = new WeakSet();
+async function signInOwner(page) {
+  const login = page.getByRole('dialog', { name: 'Owner sign in' });
+  await expect(login).toBeVisible();
+  await login.getByLabel('Username').fill('fixture-owner');
+  await login.getByLabel('Password').fill('synthetic-password');
+  await login.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(login).toHaveCount(0);
+}
+async function gotoOwner(page, path) {
+  await page.goto(path);
+  if (!automaticSignIn.has(page)) return;
+  await page.evaluate(() => window.h07pSessionReady);
+  if (!(await page.locator('#owner-account').textContent()).includes('Sign out')) await signInOwner(page);
+}
+
 // Browser interaction contracts use synthetic responses; they do not prove OS isolation.
-async function fixture(page, { authenticated = true, entries = [], failList = false } = {}) {
-  const calls = [], files = [...entries];
+async function fixture(page, { authenticated = true, entries = [], apps = [], failList = false } = {}) {
+  const calls = [], files = [...entries], tickets = new Map();
+  if (authenticated) automaticSignIn.add(page);
   let signedIn = authenticated, listFailure = failList;
   let policy = { revision: 3, enforced_revision: 3, preset: 'none', workspace: '/fixtures', workers: [{ name: 'worker-a', state: 'running', preset: 'none' }], rules: [], approvals: [], audit: [], capabilities: { mechanism: 'acl', independent_directory_rights: false } };
   await page.route('**/api/**', async route => {
@@ -10,8 +27,12 @@ async function fixture(page, { authenticated = true, entries = [], failList = fa
     let body; try { body = request.postDataJSON(); } catch {}
     calls.push({ path, method: request.method(), body, headers: request.headers(), url });
     let response = {}, status = 200;
-    if (path === '/api/owner/session') response = { authenticated: signedIn, username: signedIn ? 'fixture-owner' : undefined, csrf: signedIn ? 'fixture-csrf' : undefined };
-    else if (path === '/api/owner/login') { signedIn = true; response = { ok: true }; }
+    const proof = request.headers()['x-h07p-csrf'] === 'fixture-csrf';
+    const ticket = tickets.get(url.searchParams.get('ticket'));
+    const ticketAllowed = ticket && path === '/api/fs/' + ticket.kind && url.searchParams.get('area') === ticket.area && url.searchParams.get('path') === ticket.path;
+    if (!path.startsWith('/api/owner/') && path !== '/api/health' && (!signedIn || (!proof && !ticketAllowed))) return route.fulfill({ status: 401, json: { error: 'Owner proof required' } });
+    if (path === '/api/owner/session') response = { authenticated: signedIn && proof, username: signedIn && proof ? 'fixture-owner' : undefined };
+    else if (path === '/api/owner/login') { signedIn = true; response = { authenticated: true, username: 'fixture-owner', csrf: 'fixture-csrf' }; }
     else if (path === '/api/owner/logout') { signedIn = false; response = { ok: true }; }
     else if (path === '/api/control/status') response = policy;
     else if (path === '/api/control/dry-run') response = { ok: true, impact: { restart_workers: ['worker-a'], grants: [], revocations: [ '/fixtures/private' ] } };
@@ -19,7 +40,10 @@ async function fixture(page, { authenticated = true, entries = [], failList = fa
       if (body.expected_revision !== policy.revision) { status = 409; response = { error: 'Stale revision. Refresh and retry.' }; }
       else { policy = { ...policy, ...body, revision: 4, enforced_revision: 4 }; response = { ok: true, revision: 4, enforced_revision: 4 }; }
     } else if (path === '/api/control/scan') response = { findings: [{ path: '/fixtures/.env', reason: 'credential filename', confidence: 'high' }, { path: '/fixtures/readme.md', reason: 'No known sensitive marker', confidence: 'medium' }], skipped: [{ path: '/fixtures/unreadable', reason: 'Permission denied' }], partial: true };
-    else if (path === '/api/fs/list') {
+    else if (path === '/api/fs/ticket') {
+      const ticket = 'fixture-ticket-' + tickets.size; tickets.set(ticket, body);
+      response = { url: '/api/fs/' + body.kind + '?' + new URLSearchParams({ area: body.area, path: body.path, ticket }) };
+    } else if (path === '/api/fs/list') {
       if (listFailure) { listFailure = false; status = 403; response = { error: 'Permission denied for fixture path' }; }
       else response = { path: url.searchParams.get('path'), parent: '/', private: url.searchParams.get('area') === 'nas', entries: files, total: files.length, capacity: { total: 10737418240, used: 2147483648, free: 8589934592, available: 7516192768 } };
     } else if (path === '/api/fs/mutate') {
@@ -27,11 +51,17 @@ async function fixture(page, { authenticated = true, entries = [], failList = fa
       if (body.action === 'rename') { const entry = files.find(item => item.path === body.path); if (entry) { entry.path = body.destination; entry.name = body.destination.split('/').at(-1); } }
       if (body.action === 'delete') { const index = files.findIndex(item => item.path === body.path); if (index >= 0) files.splice(index, 1); }
       response = { ok: true };
+    } else if (path === '/api/fs/download') {
+      return route.fulfill({ contentType: 'application/octet-stream', headers: { 'Content-Disposition': 'attachment; filename=fixture.bin' }, body: 'fixture-download' });
     } else if (path === '/api/fs/preview') {
+      if (/\.png$/.test(url.searchParams.get('path'))) return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') });
+      if (/\.webm$/.test(url.searchParams.get('path'))) return route.fulfill({ contentType: 'video/webm', body: '' });
       return route.fulfill({ contentType: 'text/plain', body: '<img src=x onerror="window.fixtureExecuted=true"> fixture text' });
     } else if (path === '/api/fs/upload') response = { ok: true };
     else if (path === '/api/metrics') response = { supported: true, sampled_at: 1700000000, cpu: { usage_percent: 12, logical_cores: 4 }, memory: { total: 8589934592, used: 2147483648, available: 6442450944, percent: 25 }, storage: { total: 107374182400, used: 21474836480, free: 85899345920, percent: 20 }, storage_devices: [], system: { hostname: 'fixture', os: 'Debian fixture' } };
-    else if (path === '/api/apps') response = { available: true, total: 0, apps: [] };
+    else if (path === '/api/apps') response = { available: true, total: apps.length, apps };
+    else if (path === '/api/apps/icon') return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') });
+    else if (path === '/api/apps/launch' && url.searchParams.get('format') === 'json') response = { url: url.origin + '/fixture-harness/?token=synthetic-onetime' };
     else if (path === '/api/processes') response = { available: true, total: 0, processes: [] };
     else if (path === '/api/services') response = { available: true, total: 0, services: [] };
     else if (path === '/api/files') response = { available: false, installed: false, reason: 'Legacy integration not configured' };
@@ -44,7 +74,7 @@ async function fixture(page, { authenticated = true, entries = [], failList = fa
 
 test('owner login keeps credentials out of storage and logout clears private browser data', async ({ page }) => {
   const { calls } = await fixture(page, { authenticated: false, entries: [{ name: 'private.txt', path: '/private.txt', kind: 'file', size: 12 }] });
-  await page.goto('/#/files');
+  await gotoOwner(page, '/#/files');
   const login = page.getByRole('dialog', { name: 'Owner sign in' });
   await expect(login).toBeVisible();
   expect(calls.filter(call => !call.path.startsWith('/api/owner/'))).toHaveLength(0);
@@ -63,7 +93,7 @@ test('owner login keeps credentials out of storage and logout clears private bro
 test('permission drafts require dry-run and explicit apply; backend confirmation controls enforced status', async ({ page }) => {
   const { calls } = await fixture(page);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/permissions');
   await expect(page.getByText('Desired revision 3 · Enforced revision 3', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Block', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'New permission rule' });
@@ -84,7 +114,7 @@ test('permission drafts require dry-run and explicit apply; backend confirmation
 
 test('metadata scan is partial, starts unselected and only selected candidates enter the draft', async ({ page }) => {
   const { calls } = await fixture(page);
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/permissions');
   await page.getByRole('button', { name: 'Auto Detect', exact: true }).click();
   const scan = page.getByRole('dialog', { name: 'Auto Detect · review suggestions' });
   await scan.getByRole('button', { name: 'Start scan' }).click();
@@ -101,7 +131,7 @@ test('metadata scan is partial, starts unselected and only selected candidates e
 
 test('NAS safely previews text, downloads active formats and requires permanent-delete confirmation', async ({ page }) => {
   const { calls } = await fixture(page, { entries: [{ name: 'note.txt', path: '/note.txt', kind: 'file', size: 50 }, { name: 'active.svg', path: '/active.svg', kind: 'file', size: 30 }] });
-  await page.goto('/#/files');
+  await gotoOwner(page, '/#/files');
   await page.getByRole('button', { name: 'note.txt', exact: true }).click();
   const preview = page.getByRole('dialog', { name: 'note.txt' });
   await expect(preview.locator('pre')).toContainText('<img src=x onerror=');
@@ -124,7 +154,7 @@ test('NAS safely previews text, downloads active formats and requires permanent-
 test('host errors retry and desktop/mobile themes retain usable layout', async ({ page }, testInfo) => {
   await fixture(page, { failList: true, entries: [{ name: 'ordinary-file-with-long-name.txt', path: '/ordinary-file-with-long-name.txt', kind: 'file', size: 4 }] });
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('/#/storage');
+  await gotoOwner(page, '/#/storage');
   const browser=page.locator('#host-browser');
   await expect(browser.getByRole('status').first()).toContainText('Permission denied');
   await browser.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -140,7 +170,7 @@ test('host errors retry and desktop/mobile themes retain usable layout', async (
       await testInfo.attach('storage-' + theme + '-' + width, { path: screenshot, contentType: 'image/png' });
     }
   }
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/permissions');
   await expect(page.getByRole('button', { name: 'Review impact', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
   const screenshot = testInfo.outputPath('permissions-light-360.png');
@@ -151,14 +181,14 @@ test('host errors retry and desktop/mobile themes retain usable layout', async (
 
 test('refreshing server status preserves a draft base revision and stale apply retains inputs', async ({ page }) => {
   const state = await fixture(page);
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/permissions');
   await page.getByRole('button', { name: 'Block', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'New permission rule' });
   await editor.getByLabel('Absolute target path').fill('/fixtures/preserve-me');
   await editor.getByRole('button', { name: 'Save draft rule' }).click();
   state.setPolicy({ ...state.getPolicy(), revision: 7, enforced_revision: 7 });
-  await page.goto('/#/home');
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/home');
+  await gotoOwner(page, '/#/permissions');
   await expect(page.getByText(/Desired revision 7/)).toBeVisible();
   await page.getByRole('button', { name: 'Review impact', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review permission impact' });
@@ -172,7 +202,7 @@ test('refreshing server status preserves a draft base revision and stale apply r
 test('unsupported ACL combinations surface backend rejection without applying policy', async ({ page }) => {
   const state = await fixture(page);
   await page.route('**/api/control/dry-run', route => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Directory write/create/delete cannot be independently enforced by ACLs.' }) }));
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/permissions');
   await page.getByRole('button', { name: 'Review impact', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review permission impact' });
   await expect(review.getByRole('status')).toContainText('cannot be independently enforced');
@@ -187,7 +217,7 @@ test('partial cut preserves failed items and upload sends raw bytes with CSRF', 
     if (body.path === '/collision.txt') await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'Destination exists. Original file preserved.' }) });
     else await route.fallback();
   });
-  await page.goto('/#/files');
+  await gotoOwner(page, '/#/files');
   const nas = page.locator('#nas-browser');
   await nas.getByLabel('Select all visible files').check();
   await nas.getByRole('button', { name: 'Cut', exact: true }).click();
@@ -208,7 +238,7 @@ test('partial cut preserves failed items and upload sends raw bytes with CSRF', 
 
 test('legacy application editor sends owner CSRF and refreshes telemetry immediately after login', async ({ page }) => {
   const state = await fixture(page, { authenticated: false });
-  await page.goto('/#/home');
+  await gotoOwner(page, '/#/home');
   const login = page.getByRole('dialog', { name: 'Owner sign in' });
   await login.getByLabel('Username').fill('fixture-owner');
   await login.getByLabel('Password').fill('synthetic-password');
@@ -231,7 +261,7 @@ test('numeric expiry and decided approvals match the Rust helper contract', asyn
     { id: 'decided', worker: 'worker-a', operation: 'read', target: '/fixtures/decided', revision: 3, expires_at: now + 300, state: 'approved' },
     { id: 'pending', worker: 'worker-a', operation: 'read', target: '/fixtures/pending', revision: 3, expires_at: now + 300, state: 'pending' },
   ], audit: [{ at: now, event: 'Fixture audit entry' }] });
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/permissions');
   await expect(page.getByRole('button', { name: 'Approve once' }).nth(0)).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Approve once' }).nth(1)).toBeEnabled();
   await expect(page.getByText(/Fixture audit entry/)).toBeVisible();
@@ -253,7 +283,7 @@ test('numeric expiry and decided approvals match the Rust helper contract', asyn
 
 test('content scanning requires explicit scoped opt-in and never displays source excerpts', async ({ page }) => {
   const state = await fixture(page);
-  await page.goto('/#/permissions');
+  await gotoOwner(page, '/#/permissions');
   await page.getByRole('button', { name: 'Auto Detect', exact: true }).click();
   const scan = page.getByRole('dialog', { name: 'Auto Detect · review suggestions' });
   const content = scan.getByLabel('Include bounded content scan (Gitleaks)', { exact: true });
@@ -274,7 +304,7 @@ test('failed login retains username, clears password and permits safe retry', as
     if (++attempts === 1) await route.fulfill({ status: 401, json: { error: 'Invalid owner credentials' } });
     else await route.fallback();
   });
-  await page.goto('/#/home');
+  await gotoOwner(page, '/#/home');
   const login = page.getByRole('dialog', { name: 'Owner sign in' });
   await login.getByLabel('Username').fill('fixture-owner');
   await login.getByLabel('Password').fill('synthetic-wrong');
@@ -291,7 +321,7 @@ test('failed login retains username, clears password and permits safe retry', as
 test('expired session clears private files and telemetry before prompting for sign-in', async ({ page }) => {
   await fixture(page, { entries: [{ name: 'private-fixture.txt', path: '/private-fixture.txt', kind: 'file', size: 4 }] });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/#/files');
+  await gotoOwner(page, '/#/files');
   await expect(page.getByRole('button', { name: 'private-fixture.txt', exact: true })).toBeVisible();
   await expect(page.locator('#cpu-value')).toHaveText('12%');
   await page.route('**/api/fs/list?**', route => route.fulfill({ status: 401, json: { error: 'Owner sign in required' } }));
@@ -301,4 +331,106 @@ test('expired session clears private files and telemetry before prompting for si
   await expect(page.locator('#cpu-value')).toHaveText('N/A');
   await expect(page.locator('#connection-label')).toHaveText('Owner sign in required');
   expect(errors).toEqual([]);
+});
+
+
+test('cookie alone reveals no owner proof and reload requires signing in again', async ({ page }) => {
+  const { calls } = await fixture(page);
+  await page.goto('/#/files');
+  await expect(page.getByRole('dialog', { name: 'Owner sign in' })).toBeVisible();
+  expect(calls.filter(call => !call.path.startsWith('/api/owner/'))).toHaveLength(0);
+  await signInOwner(page);
+  const confirmation = calls.filter(call => call.path === '/api/owner/session').at(-1);
+  expect(confirmation.headers['x-h07p-csrf']).toBe('fixture-csrf');
+  const beforeReload = calls.length;
+  await page.reload();
+  await expect(page.getByRole('dialog', { name: 'Owner sign in' })).toBeVisible();
+  const afterReload = calls.slice(beforeReload);
+  expect(afterReload.filter(call => !call.path.startsWith('/api/owner/'))).toHaveLength(0);
+  expect(afterReload.find(call => call.path === '/api/owner/session').headers['x-h07p-csrf']).toBeUndefined();
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain('fixture-csrf');
+});
+
+test('login proof accompanies every private API GET including text preview and session confirmation', async ({ page }) => {
+  const { calls } = await fixture(page, { entries: [{ name: 'proof.txt', path: '/proof.txt', kind: 'file', size: 8 }] });
+  await gotoOwner(page, '/#/files');
+  await page.getByRole('button', { name: 'proof.txt', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'proof.txt' }).locator('pre')).toBeVisible();
+  const privateReads = calls.filter(call => call.method === 'GET' && !['/api/owner/session', '/api/health'].includes(call.path));
+  expect(privateReads.some(call => call.path === '/api/metrics')).toBe(true);
+  expect(privateReads.some(call => call.path === '/api/fs/preview')).toBe(true);
+  for (const call of privateReads) expect(call.headers['x-h07p-csrf'], call.path).toBe('fixture-csrf');
+  expect(calls.filter(call => call.path === '/api/owner/session').at(-1).headers['x-h07p-csrf']).toBe('fixture-csrf');
+});
+
+test('image video and download browser requests use path-scoped tickets without owner proof in URLs', async ({ page }) => {
+  const { calls } = await fixture(page, { entries: [{ name: 'photo.png', path: '/photo.png', kind: 'file', size: 90 }, { name: 'clip.webm', path: '/clip.webm', kind: 'file', size: 100 }] });
+  await gotoOwner(page, '/#/files');
+  await page.getByRole('button', { name: 'photo.png', exact: true }).click();
+  const image = page.getByRole('dialog', { name: 'photo.png' }).getByRole('img');
+  await expect(image).toHaveAttribute('src', /ticket=fixture-ticket-/);
+  expect(new URL(await image.getAttribute('src')).searchParams.get('path')).toBe('/photo.png');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'clip.webm', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'clip.webm' }).locator('video')).toHaveAttribute('src', /ticket=fixture-ticket-/);
+  await page.keyboard.press('Escape');
+  await page.getByLabel('Select photo.png', { exact: true }).check();
+  const downloaded = page.waitForEvent('download');
+  await page.locator('#nas-browser').getByRole('button', { name: 'Download', exact: true }).click();
+  await downloaded;
+  const tickets = calls.filter(call => call.path === '/api/fs/ticket');
+  expect(tickets.some(call => call.body.kind === 'preview' && call.body.path === '/photo.png')).toBe(true);
+  expect(tickets.some(call => call.body.kind === 'preview' && call.body.path === '/clip.webm')).toBe(true);
+  expect(tickets.some(call => call.body.kind === 'download')).toBe(true);
+  for (const call of tickets) expect(call.headers['x-h07p-csrf']).toBe('fixture-csrf');
+  for (const call of calls.filter(call => ['/api/fs/preview', '/api/fs/download'].includes(call.path))) {
+    expect(call.url.searchParams.get('ticket')).toMatch(/^fixture-ticket-/);
+    expect(call.url.href).not.toContain('fixture-csrf');
+    expect(call.headers['x-h07p-csrf']).toBeUndefined();
+  }
+});
+
+test('ticket rejection keeps browser media requests from starting and shows a recoverable error', async ({ page }) => {
+  const { calls } = await fixture(page, { entries: [{ name: 'blocked.png', path: '/blocked.png', kind: 'file', size: 90 }] });
+  await page.route('**/api/fs/ticket', route => route.fulfill({ status: 403, json: { error: 'File access denied. Retry after signing in.' } }));
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await gotoOwner(page, '/#/files');
+  await page.getByRole('button', { name: 'blocked.png', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: 'blocked.png' });
+  await expect(preview.getByRole('status')).toContainText('File access denied');
+  await expect(preview.getByRole('img')).toHaveCount(0);
+  await expect(preview.getByRole('link', { name: 'Download file' })).toHaveCount(0);
+  expect(calls.filter(call => ['/api/fs/preview', '/api/fs/download'].includes(call.path))).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test('app icons use authenticated blobs and harness launch fetches its private URL before navigating', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.fixtureRevoked = [];
+    const revoke = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = value => { window.fixtureRevoked.push(value); revoke(value); };
+  });
+  const { calls } = await fixture(page, { apps: [
+    { name: 'DeepSeek Harness', url: 'http://127.0.0.1:3080/', category: 'Tools', status: 'available' },
+    { name: 'Ordinary', url: 'https://example.invalid/ordinary', category: 'Tools', status: 'unmonitored' },
+  ] });
+  await gotoOwner(page, '/#/apps');
+  await expect(page.locator('.app-icon').first()).toHaveAttribute('src', /^blob:/);
+  const iconCalls = calls.filter(call => call.path === '/api/apps/icon');
+  expect(iconCalls.length).toBeGreaterThan(0);
+  for (const call of iconCalls) expect(call.headers['x-h07p-csrf']).toBe('fixture-csrf');
+  const ordinary = page.getByRole('link', { name: 'Open Ordinary', exact: true });
+  await expect(ordinary).toHaveAttribute('href', 'https://example.invalid/ordinary');
+  const opened = page.waitForEvent('popup');
+  await page.getByRole('link', { name: 'Open DeepSeek Harness', exact: true }).click();
+  const popup = await opened;
+  await expect(popup).toHaveURL(/fixture-harness\/\?token=synthetic-onetime/);
+  const launch = calls.find(call => call.path === '/api/apps/launch');
+  expect(launch.url.searchParams.get('format')).toBe('json');
+  expect(launch.headers['x-h07p-csrf']).toBe('fixture-csrf');
+  expect(launch.url.href).not.toContain('fixture-csrf');
+  await popup.close();
+  await page.getByRole('button', { name: 'fixture-owner · Sign out' }).click();
+  await expect(page.locator('.app-icon')).toHaveCount(0);
+  expect((await page.evaluate(() => window.fixtureRevoked)).length).toBeGreaterThan(0);
 });

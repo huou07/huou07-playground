@@ -1524,12 +1524,15 @@ fn launch_url(token: &str, host: &str, addresses: &[String]) -> Option<String> {
     };
     Some(format!("http://{host}:{}{token}", port("dsh", 3080)))
 }
-async fn launch(
-    State(api): State<Shared>,
-    headers: HeaderMap,
-    Query(query): Query<Vec<(String, String)>>,
-) -> Response {
+fn launch_format(query: &[(String, String)]) -> Option<bool> {
+    let json_format = query.len() == 2
+        && query
+            .iter()
+            .filter(|(key, value)| key == "format" && value == "json")
+            .count()
+            == 1;
     if query.len() > 2
+        || query.iter().any(|(key, _)| key == "format") && !json_format
         || query
             .iter()
             .filter(|(k, _)| k == "name")
@@ -1537,8 +1540,18 @@ async fn launch(
             .collect::<Vec<_>>()
             != ["DeepSeek Harness"]
     {
-        return StatusCode::NOT_FOUND.into_response();
+        return None;
     }
+    Some(json_format)
+}
+async fn launch(
+    State(api): State<Shared>,
+    headers: HeaderMap,
+    Query(query): Query<Vec<(String, String)>>,
+) -> Response {
+    let Some(json_format) = launch_format(&query) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
     let host = headers
         .get("host")
         .and_then(|h| h.to_str().ok())
@@ -1564,6 +1577,9 @@ async fn launch(
     let Some(location) = location else {
         return(StatusCode::SERVICE_UNAVAILABLE,Json(json!({"error":"DeepSeek Harness is starting or its private login link is unavailable."}))).into_response();
     };
+    if json_format {
+        return json_response(json!({"url": location}));
+    }
     let mut response = StatusCode::FOUND.into_response();
     response
         .headers_mut()
@@ -1591,6 +1607,46 @@ mod tests {
         ));
         fs::create_dir(&p).unwrap();
         p
+    }
+    #[test]
+    fn launch_json_requires_exact_format_and_one_harness_name() {
+        let query = |items: &[(&str, &str)]| {
+            items
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            launch_format(&query(&[("name", "DeepSeek Harness")])),
+            Some(false)
+        );
+        assert_eq!(
+            launch_format(&query(&[("name", "DeepSeek Harness"), ("format", "json")])),
+            Some(true)
+        );
+        assert_eq!(
+            launch_format(&query(&[("name", "DeepSeek Harness"), ("format", "html")])),
+            None
+        );
+        assert_eq!(
+            launch_format(&query(&[("name", "other"), ("format", "json")])),
+            None
+        );
+        assert_eq!(
+            launch_format(&query(&[
+                ("name", "DeepSeek Harness"),
+                ("name", "DeepSeek Harness")
+            ])),
+            None
+        );
+        assert_eq!(
+            launch_format(&query(&[
+                ("name", "DeepSeek Harness"),
+                ("format", "json"),
+                ("extra", "1")
+            ])),
+            None
+        );
     }
     #[test]
     fn collectors_bound_commands_and_reject_stale_or_boolean_samples() {

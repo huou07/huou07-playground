@@ -54,7 +54,7 @@
       if (!session) { signIn(); throw new Error('Owner sign in required. Sign in, then retry.'); }
     }
     const headers = new Headers(options.headers);
-    if (!['GET','HEAD','OPTIONS'].includes(options.method || 'GET')) headers.set('X-H07P-CSRF', csrf);
+    if (csrf && path.startsWith('/api/')) headers.set('X-H07P-CSRF', csrf);
     const requestSession = session;
     const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options, headers });
     if (!publicEndpoint && requestSession !== session) throw new Error('Owner session changed. Retry after signing in.');
@@ -83,7 +83,7 @@
   async function loadSession(notify = true) {
     const data = await api('/api/owner/session');
     session = data.authenticated ? data : null;
-    csrf = data.csrf || '';
+    csrf = session ? (data.csrf || csrf) : '';
     account.textContent = session ? session.username + ' · Sign out' : 'Owner sign in';
     if(notify) window.dispatchEvent(new CustomEvent('h07p-owner-session', { detail: !!session }));
     return session;
@@ -99,8 +99,10 @@
     form.addEventListener('submit', async (event) => {
       event.preventDefault(); submit.disabled = true; message(d.status, 'Signing in…');
       try {
-        await api('/api/owner/login', { method: 'POST', body: { username: username.value, password: password.value } });
-        password.value = ''; await loadSession(); d.close(); loginDialog = null; await route();
+        const login = await api('/api/owner/login', { method: 'POST', body: { username: username.value, password: password.value } });
+        csrf = typeof login.csrf === 'string' ? login.csrf : '';
+        if (!csrf) throw new Error('Owner sign-in proof is unavailable. Retry signing in.');
+        password.value = ''; if (!await loadSession()) throw new Error('Owner session could not be confirmed. Retry signing in.'); d.close(); loginDialog = null; await route();
       } catch (error) { password.value = ''; message(d.status, error.message, true); }
       finally { submit.disabled = false; }
     });
@@ -124,27 +126,43 @@
   const displayDate = value => Number.isFinite(dateMs(value)) ? new Date(dateMs(value)).toLocaleString() : 'Unavailable';
   const units = (bytes) => Number.isFinite(Number(bytes)) ? (Number(bytes) / 1073741824).toFixed(2) + ' GiB' : 'Unavailable';
   const fileSize = (bytes) => bytes == null ? '—' : bytes < 1024 ? bytes + ' B' : bytes < 1048576 ? (bytes / 1024).toFixed(1) + ' KiB' : (bytes / 1048576).toFixed(1) + ' MiB';
-  function download(area, path) {
-    const link = el('a'); link.href = fsUrl('download', area, path); link.download = ''; document.body.append(link); link.click(); link.remove();
+  async function fileTicket(kind, area, path, signal) {
+    const data = await api('/api/fs/ticket', { method: 'POST', body: { area, path, kind }, signal });
+    const url = new URL(data.url, location.origin);
+    if (url.origin !== location.origin || url.pathname !== '/api/fs/' + kind || url.searchParams.get('area') !== area || url.searchParams.get('path') !== path || !url.searchParams.get('ticket')) {
+      throw new Error('File access link is unavailable. Retry after signing in.');
+    }
+    return url.href;
+  }
+  async function download(area, path) {
+    const url = await fileTicket('download', area, path);
+    const link = el('a'); link.href = url; link.download = ''; document.body.append(link); link.click(); link.remove();
   }
   async function preview(area, entry) {
-    const d = dialog(entry.name);
-    const link = el('a', 'Download file'); link.href = fsUrl('download', area, entry.path); link.download = ''; d.add(link);
+    const d = dialog(entry.name), controller = new AbortController();
+    d.node.addEventListener('close', () => controller.abort());
+    const link = el('a', 'Download file'); link.download = ''; d.add(link);
     const extension = entry.name.split('.').at(-1).toLowerCase();
-    const url = fsUrl('preview', area, entry.path);
-    if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp'].includes(extension)) {
-      const image = el('img'); image.alt = entry.name; image.loading = 'lazy'; image.src = url;
-      image.addEventListener('error', () => message(d.status, 'Image preview unavailable. Download the file to inspect it.', true)); d.add(image);
-    } else if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(extension)) {
-      const video = el('video'); video.controls = true; video.preload = 'metadata'; video.src = url;
-      video.addEventListener('error', () => message(d.status, 'This browser cannot play this video. Download the original file.', true));
-      d.add(video); d.node.addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); });
-    } else if (['txt','md','json','csv','log','toml','yaml','yml','rs','py','js','css','sh','conf','ini'].includes(extension)) {
-      message(d.status, 'Loading bounded text preview…');
-      const controller = new AbortController(); d.node.addEventListener('close', () => controller.abort());
-      try {
-        const response = await ownerFetch(url, { signal: controller.signal });
-        if (response.status === 401) { d.close(); signIn(); return; }
+    message(d.status, 'Preparing private file access…');
+    try {
+      link.href = await fileTicket('download', area, entry.path, controller.signal);
+      if (!d.node.isConnected) return;
+      if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp'].includes(extension)) {
+        const url = await fileTicket('preview', area, entry.path, controller.signal);
+        if (!d.node.isConnected) return;
+        const image = el('img'); image.alt = entry.name; image.loading = 'lazy'; image.src = url;
+        image.addEventListener('error', () => message(d.status, 'Image preview unavailable. Download the file to inspect it.', true)); d.add(image);
+        message(d.status, 'Image preview · the private access link expires after 15 minutes. Reopen to refresh.');
+      } else if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(extension)) {
+        const url = await fileTicket('preview', area, entry.path, controller.signal);
+        if (!d.node.isConnected) return;
+        const video = el('video'); video.controls = true; video.preload = 'metadata'; video.src = url;
+        video.addEventListener('error', () => message(d.status, 'This browser cannot play this video. Download the original file.', true));
+        d.add(video); d.node.addEventListener('close', () => { video.pause(); video.removeAttribute('src'); video.load(); });
+        message(d.status, 'Video preview · reopen after 15 minutes to refresh private access.');
+      } else if (['txt','md','json','csv','log','toml','yaml','yml','rs','py','js','css','sh','conf','ini'].includes(extension)) {
+        message(d.status, 'Loading bounded text preview…');
+        const response = await ownerFetch(fsUrl('preview', area, entry.path), { signal: controller.signal });
         if (!response.ok) throw new Error('Preview unavailable (' + response.status + ').');
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let text = '', bytes = 0, truncated = false;
         while (true) {
@@ -152,10 +170,10 @@
           const remaining = 262144 - bytes; text += decoder.decode(part.value.subarray(0, remaining), { stream: true }); bytes += part.value.length;
           if (bytes >= 262144) { truncated = true; await reader.cancel(); break; }
         }
-        text += decoder.decode(); d.add(el('pre', text));
+        text += decoder.decode(); if (!d.node.isConnected) return; d.add(el('pre', text));
         message(d.status, truncated ? 'Preview limited to 256 KiB. Download for the complete file.' : 'Text preview · content is displayed as text.');
-      } catch (error) { if (error.name !== 'AbortError') message(d.status, error.message, true); }
-    } else message(d.status, 'Preview unavailable for this format. HTML, SVG, and active documents are download only.');
+      } else message(d.status, 'Preview unavailable for this format. HTML, SVG, and active documents are download only.');
+    } catch (error) { if (error.name !== 'AbortError' && d.node.isConnected) message(d.status, error.message, true); }
   }
   function fileBrowser(root, area) {
     root.classList.add('product');
@@ -274,7 +292,7 @@
       if (d.node.isConnected) { progress.value = 100; message(d.status,results.join('\n')); d.actions.firstChild.textContent = 'Close'; }
       await load();
     }
-    action('Download', () => { for(const entry of selectedEntries()) if(entry.kind !== 'directory') download(area,entry.path); else message(status,'Download individual files; folder archives are not supported.'); });
+    action('Download', async () => { for(const entry of selectedEntries()) { if(entry.kind === 'directory') { message(status,'Download individual files; folder archives are not supported.'); continue; } try { await download(area,entry.path); } catch(error) { message(status,error.message,true); break; } } });
     action('Preview', () => preview(area,selectedEntries()[0]));
     action('Rename', () => { const entry=selectedEntries()[0]; nameDialog('Rename',entry.name,name => mutate('rename',entry.path,join(path,name))); });
     for (const name of ['Cut','Copy']) action(name, () => { clipboard={action:name === 'Cut' ? 'move' : 'copy',entries:selectedEntries()}; update(); });
