@@ -105,6 +105,12 @@ def prepare():
     backup = base / str(time.time_ns())
     backup.mkdir(mode=0o700)
     states = service_state()
+    for key in ('active', 'enabled'):
+        (backup / (key + '-units')).write_text(''.join(name + '\n' for name in SERVICES if states.get(name, {}).get(key)))
+    restored = path('/var/lib/huou07-package/workers-restored')
+    if restored.exists():
+        path('/var/lib/huou07-package/adoption.json').unlink(missing_ok=True)
+        restored.unlink()
     (backup / 'services.json').write_text(json.dumps(states))
     known = {
         'huou07-playground.service': ('ExecStart=/usr/bin/python3 /opt/huou07-playground/current/web/app.py', 'ExecStart=/opt/huou07-playground/current/bin/h07p-server'),
@@ -293,7 +299,7 @@ def configure():
 
 
 def main():
-    script = Path(sys.argv[0]).name
+    script = os.environ.get('H07P_MAINT_SCRIPT', Path(sys.argv[0]).name)
     for name in ('preinst', 'postinst', 'prerm', 'postrm'):
         if script.endswith('.' + name):
             script = name

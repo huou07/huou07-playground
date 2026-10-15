@@ -4,6 +4,8 @@ set -eu
 # Fixed synthetic build timestamp; the disposable source copy need not contain .git.
 SOURCE_DATE_EPOCH=1700000000
 export SOURCE_DATE_EPOCH
+H07P_PACKAGE_FIXTURE=1
+export H07P_PACKAGE_FIXTURE
 PATH=/usr/local/sbin:/usr/sbin:/sbin:$PATH
 export PATH
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -53,10 +55,21 @@ printf 'failed migration\n' > "$root/var/lib/h07p-control/policy.db"
 DPKG_ROOT="$root" python3 "$repo/deploy/package/lifecycle.py" rollback
 case "$(readlink "$root/opt/huou07-playground/current")" in /opt/huou07-playground/releases/rollback-*) ;; *) exit 1;; esac
 [ "$state_hash" = "$(sha256sum "$root/var/lib/huou07-playground/apps.json" "$root/var/lib/h07p-control/policy.db" "$root/var/lib/h07p-private/nas/retained.txt")" ]
+# postrm removal still works when Python and other non-essential tools are absent.
+mkdir "$fixture/essential-bin"
+for command in sed rm cp grep; do ln -s "$(command -v "$command")" "$fixture/essential-bin/$command"; done
+DPKG_ROOT="$root" PATH="$fixture/essential-bin" /bin/sh "$repo/deploy/package/postrm" remove
 dpkg_fixture --remove huou07-playground
 [ "$legacy_hash" = "$(sha256sum "$root/etc/systemd/system/h07p-dsh.service" "$root/etc/systemd/system/h07p-opencode.service" "$root/usr/local/sbin/h07p-harness")" ]
 [ "$state_hash" = "$(sha256sum "$root/var/lib/huou07-playground/apps.json" "$root/var/lib/h07p-control/policy.db" "$root/var/lib/h07p-private/nas/retained.txt")" ]
+printf 'Environment=OWNER_CHANGED_AFTER_REMOVE=retained\n' >> "$root/etc/systemd/system/h07p-dsh.service"
+legacy_hash=$(sha256sum "$root/etc/systemd/system/h07p-dsh.service" "$root/etc/systemd/system/h07p-opencode.service" "$root/usr/local/sbin/h07p-harness")
 dpkg_fixture --purge huou07-playground
+[ "$legacy_hash" = "$(sha256sum "$root/etc/systemd/system/h07p-dsh.service" "$root/etc/systemd/system/h07p-opencode.service" "$root/usr/local/sbin/h07p-harness")" ]
+[ "$state_hash" = "$(sha256sum "$root/var/lib/huou07-playground/apps.json" "$root/var/lib/h07p-control/policy.db" "$root/var/lib/h07p-private/nas/retained.txt")" ]
+# A fresh adoption after removal must preserve the owner's newer original configuration.
+dpkg_fixture --install "$fixture/dist/huou07-playground_0.0.1_amd64.deb"
+dpkg_fixture --remove huou07-playground
 [ "$legacy_hash" = "$(sha256sum "$root/etc/systemd/system/h07p-dsh.service" "$root/etc/systemd/system/h07p-opencode.service" "$root/usr/local/sbin/h07p-harness")" ]
 [ "$state_hash" = "$(sha256sum "$root/var/lib/huou07-playground/apps.json" "$root/var/lib/h07p-control/policy.db" "$root/var/lib/h07p-private/nas/retained.txt")" ]
 echo 'PASS: repeat-build checksum, isolated dpkg install/upgrade/failed-upgrade automatic rollback/manual rollback/remove/purge retained synthetic state and original worker entry points; real server installation acceptance remains separate.'

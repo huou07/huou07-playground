@@ -4,10 +4,17 @@ Build on Linux amd64 Debian/Ubuntu with systemd >= 254, Python3, acl and
 Gitleaks >= 8.16, from an already validated locked release binary:
 
 ```sh
+# cargo-audit must be on PATH; AUDIT_DB names a writable dedicated database directory.
+python3 tools/release-audit.py --advisory-db "$AUDIT_DB"
 cargo build --release --locked
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) tools/build-deb.sh 0.2.0
 (cd dist && sha256sum -c huou07-playground_0.2.0_amd64.deb.sha256)
 ```
+
+The builder requires passing audit artifacts matching Cargo.lock under
+`artifacts/release-audit` (or `H07P_RELEASE_AUDIT_DIR`), bundles their SBOM/notices,
+strips the ELF and excludes macOS resource forks. Synthetic lifecycle fixtures
+explicitly set `H07P_PACKAGE_FIXTURE=1`.
 
 Build output is root-owned and timestamp-normalized; compare repeat artifact hashes
 on the same toolchain/dpkg version. Only Linux amd64 is supported. The package does
