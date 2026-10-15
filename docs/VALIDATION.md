@@ -189,6 +189,28 @@ verified base, and execute QEMU under that account. Do not grant agents-worker
 new KVM/owner access merely for acceptance. No agent may invoke an elevated
 worker-writable fixture or bypass the current /dev/kvm denial.
 
+Reviewed owner-only host preparation (not executed by this task): first confirm
+that `h07p-lab` and the paths below are unused. If they exist, inspect ownership
+and contents; do not reuse or overwrite them blindly. These commands create no
+VM, runner, live policy or permission grant for agents-worker.
+
+```sh
+sudo useradd --system --user-group --create-home --home-dir /var/lib/h07p-lab-home --shell /usr/sbin/nologin h07p-lab
+sudo chmod 0700 /var/lib/h07p-lab-home
+sudo usermod --append --groups kvm h07p-lab
+sudo install -d -o root -g root -m 0755 /var/lib/h07p-security-lab
+sudo install -d -o root -g h07p-lab -m 0550 /var/lib/h07p-security-lab/base /var/lib/h07p-security-lab/fixtures
+sudo install -d -o h07p-lab -g h07p-lab -m 0700 /var/lib/h07p-security-lab/runs
+sudo -u h07p-lab test -r /dev/kvm
+sudo -u h07p-lab test -w /dev/kvm
+```
+
+Stop after this capability check until the signed base identity, synthetic seed
+and bounded launcher are reviewed. Install the reviewed base/fixture as root-owned
+read-only files under the protected directories; run only QEMU as h07p-lab, never
+a worker-writable script with sudo. Recheck current headroom immediately before
+image creation. No base download or VM launch is implied by this example.
+
 After those prerequisites are reviewed, the native command shape is:
 
 ```sh
