@@ -177,3 +177,34 @@ complete future P2/P3 enforcement was made. New public-mode secrets in arbitrary
 shared files and indirect attacks through owner-executed shared code remain
 limitations of the expressly requested permissive model. Future private owner
 data belongs in the protected stores, especially `~/.secrets`.
+
+## Android VPN timeout investigation, 2026-10-15
+
+The owner reports Android WireGuard timing out at `http://10.8.0.1:8765/`.
+Mac requests through WireGuard succeed; that does not establish Android access.
+Server listeners and UFW cover all nine declared private service ports. Packet
+headers show peer `10.8.0.2` reaching dashboard TCP and the server sending replies.
+This disproves a blanket missing-listener/firewall diagnosis for that peer.
+Large responses were retransmitted; MTU is a working hypothesis, not a confirmed
+root cause. The server wg0 MTU was temporarily reduced from 1420 to 1280 with
+`ip link set dev wg0 mtu 1280`. Saved wg-easy settings remain 1420 until client
+confirmation. Android Address/Endpoint/Allowed IPs and retry feedback were
+requested; no new client profile, keys, tunnel restart or persistent MTU change.
+
+A separate real failure was fixed: OmniRoute API/live listeners were bound to
+container loopback, unreachable from Podman's published ports. The existing
+Quadlet now binds those listeners to the container interface and permits the
+VPN dashboard origin. Host publication remains on 127.0.0.1 and existing wg0
+relays; no LAN/public port publication was introduced. The owner Quadlet was
+updated and only OmniRoute restarted, retaining its data and Redis pod.
+
+Actual Mac-over-WireGuard evidence after deployment: dashboard 200, Cockpit
+HTTPS 200, LiteLLM 200, wg-easy 302, DSH/OpenCode 401, OmniRoute web health 200,
+API `/v1/models` 401 (previously empty connection), live HTTP 404 (previously
+empty connection). The live WebSocket accepts an upgrade then rejects a foreign
+origin with `FORBIDDEN_ORIGIN`, and the permitted VPN origin without a login
+with `UNAUTHORIZED`; these are authentication checks, not model/API calls.
+Authenticated native/model workflows and actual Android usability remain
+unverified pending the phone retry. Revert the diagnostic MTU with
+`ip link set dev wg0 mtu 1420` if it is ruled out; a future reboot currently
+restores the saved 1420 setting.
