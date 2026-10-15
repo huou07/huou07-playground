@@ -86,8 +86,13 @@ parity must not reproduce an insecure access model.
 Implemented: required 360px coverage, desktop dark/light screenshots, navigation
 focus entry/cycling/restore and Escape, persistent live save status, failure trace
 artifacts and a separate Rust health/static browser lane. UI fixtures remain
-synthetic; the existing Python registry journey is retained. CI results for this
-implementation must be attached to its exact commit before marking it CI-verified.
+synthetic; the existing Python registry journey is retained. Exact product source
+`dee548fc9175b4b2b1e5c740f359f0cf8a763147` passed all four jobs in
+[hosted run 38678354948](https://github.com/huou07/huou07-playground/actions/runs/38678354948):
+framework, existing checks, Python browser and actual Rust browser. Both browser
+lanes passed four tests, including the stable Theme combobox name regression.
+This accepts those scoped contracts, not backend read parity or visual polish;
+the retained screenshots still need human/vision review.
 
 Local OS lab design and preflight are in
 [VALIDATION](VALIDATION.md#disposable-local-os-security-lab). No guest or live

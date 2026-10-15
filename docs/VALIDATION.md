@@ -11,10 +11,10 @@ there. Sudo is allowed inside the disposable CI guest. Read-only source/Git revi
 does not establish runtime behavior.
 
 Current CI: framework structure/routing guard, legacy make check, locked Rust
-format/Clippy/test/release/HTTP smoke, and existing Python browser acceptance.
+format/Clippy/test/release/HTTP smoke, and separate Python/Rust browser lanes.
 See [IMPLEMENTATION.md](IMPLEMENTATION.md) for source coverage. The browser runner
-starts Python, uses a temporary apps registry/fixture app server and intercepts
-several APIs; its pass does not prove Rust UI/backend parity or permissions/NAS.
+selects the actual backend, uses a temporary apps registry/fixture app server and
+intercepts several APIs; its pass does not prove Rust read parity or permissions/NAS.
 Hosted Ubuntu tests do not establish Debian package or OS isolation acceptance.
 
 ## Evidence classes and current UI lanes
