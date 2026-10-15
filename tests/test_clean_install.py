@@ -307,8 +307,32 @@ class CleanInstallTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mode & 0o777, 0o640)
             self.assertNotIn(token, stdout.getvalue())
             path.unlink()
-            launcher.save_url(f"dsh web: http://0.0.0.0:3080/?token={token}")
+            with self.assertRaises(launcher.PublicationError):
+                launcher.save_url(f"dsh web: http://0.0.0.0:3080/?token={token}")
             self.assertFalse(path.exists())
+
+    def test_dsh_publication_failure_is_sanitized_and_cleans_temporary_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / "url"
+            token = "fixture-secret-" * 4
+            with patch.object(launcher, "URL_FILE", path), patch.object(launcher.os, "replace", side_effect=PermissionError(token)):
+                with self.assertRaises(launcher.PublicationError) as caught:
+                    launcher.save_url(f"dsh web: http://127.0.0.1:3080/?token={token}")
+            self.assertNotIn(token, str(caught.exception))
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_dsh_launcher_stops_child_and_exits_nonzero_when_handoff_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake_dsh = root / "dsh"
+            fake_dsh.write_text("#!/bin/sh\necho 'dsh web: http://127.0.0.1:3080/?token=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'\nexec sleep 60\n")
+            fake_dsh.chmod(0o700)
+            stderr = io.StringIO()
+            with patch.object(launcher, "DSH", fake_dsh), patch.object(launcher, "URL_FILE", root / "missing/url"), patch.object(launcher, "wg_trusted_host", return_value=None), contextlib.redirect_stderr(stderr):
+                self.assertEqual(launcher.main(), 1)
+            self.assertIn("publication failed", stderr.getvalue())
+            self.assertNotIn("A" * 40, stderr.getvalue())
 
     def test_native_service_templates_use_home_and_loopback(self):
         dsh = (ROOT / "deploy/user/dsh.service").read_text()

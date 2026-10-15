@@ -18,6 +18,10 @@ TOKEN_URL = re.compile(r"^/\?token=[A-Za-z0-9_-]{32,128}$")
 DSH = Path.home() / ".local/bin/dsh"
 
 
+class PublicationError(RuntimeError):
+    """The dashboard handoff failed; never include the candidate URL."""
+
+
 def wg_trusted_host() -> str | None:
     """Trust only the host/port reached through the existing wg0 dashboard relay."""
     try:
@@ -39,19 +43,22 @@ def wg_trusted_host() -> str | None:
 
 
 def save_url(line: str) -> None:
+    if "dsh web:" not in line:
+        return
     match = re.search(r"dsh web:\s+(https?://\S+)", line)
     if not match:
-        return
+        raise PublicationError("DSH login-link publication failed: invalid launch URL.")
+    temp = None
     try:
         url = urlsplit(match.group(1))
         query = parse_qsl(url.query, keep_blank_values=True, strict_parsing=True)
-        if url.scheme != "http" or url.hostname != "127.0.0.1" or url.port != PORT:
-            return
+        if url.scheme != "http" or url.hostname != "127.0.0.1" or url.port != PORT or url.username or url.password:
+            raise ValueError
         if url.path not in {"", "/"} or url.fragment or len(query) != 1 or query[0][0] != "token":
-            return
+            raise ValueError
         value = f"/?token={query[0][1]}"
         if not TOKEN_URL.fullmatch(value):
-            return
+            raise ValueError
         temp = URL_FILE.with_name(f".url-{os.getpid()}")
         fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
         try:
@@ -66,14 +73,34 @@ def save_url(line: str) -> None:
         os.replace(temp, URL_FILE)
         print("DSH Web login link refreshed for the private dashboard.", file=sys.stderr, flush=True)
     except (OSError, ValueError):
-        return
+        raise PublicationError("DSH login-link publication failed: check handoff ownership and permissions.") from None
+    finally:
+        if temp is not None:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def stop_child(child: subprocess.Popen) -> None:
+    if child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
 
 
 def main() -> int:
     if not DSH.is_file() or not os.access(DSH, os.X_OK):
         print(f"DSH executable is missing: {DSH}", file=sys.stderr)
         return 1
-    URL_FILE.unlink(missing_ok=True)
+    try:
+        URL_FILE.unlink(missing_ok=True)
+    except OSError:
+        print("DSH login-link cleanup failed: check handoff ownership and permissions.", file=sys.stderr)
+        return 1
     env = os.environ.copy()
     env.update({"HOME": str(Path.home()), "DSH_HOME": str(Path.home() / ".dsh")})
     argv = [str(DSH), "--profile", "web", "--no-open", "--host", "127.0.0.1", "--port", str(PORT)]
@@ -97,8 +124,16 @@ def main() -> int:
             if "dsh web:" not in line:
                 print(line, end="", file=sys.stderr, flush=True)
         return child.wait()
+    except PublicationError as error:
+        print(str(error), file=sys.stderr, flush=True)
+        return 1
     finally:
-        URL_FILE.unlink(missing_ok=True)
+        stop_child(child)
+        child.stdout.close()
+        try:
+            URL_FILE.unlink(missing_ok=True)
+        except OSError:
+            print("DSH login-link cleanup failed: check handoff ownership and permissions.", file=sys.stderr)
 
 
 if __name__ == "__main__":
