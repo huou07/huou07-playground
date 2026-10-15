@@ -1,0 +1,13 @@
+[package]
+name = "h07p-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+
+[dependencies]
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
+tokio = { version = "=1.53.3", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tower-http = { version = "=0.7.1", default-features = false, features = ["fs"] }
+
+[dev-dependencies]
+tower = { version = "=0.5.2", features = ["util"] }

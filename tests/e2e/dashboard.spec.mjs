@@ -92,7 +92,7 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await inactiveToggle.click();
   await expect(stoppedService).toBeHidden();
 
-  await page.setViewportSize({ width: 375, height: 812 });
+  await page.setViewportSize({ width: 360, height: 812 });
   await expect.poll(() => page.locator('#sidebar').evaluate(sidebar => sidebar.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
   const mobileBrand = page.locator('.mobile-brand');
   await expect(mobileBrand).toBeVisible();
@@ -108,7 +108,7 @@ test('navigation, browser preferences, and app launch work end to end', async ({
   await expect(staticShortcut).not.toHaveAttribute('target', /.+/);
   await applicationLinkSetting.selectOption('new-tab');
   await expect(staticShortcut).toHaveAttribute('target', '_blank');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
 
   const gpuSetting = page.locator('[data-metric-setting="gpu"]');
   await gpuSetting.uncheck();

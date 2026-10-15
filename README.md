@@ -1,6 +1,23 @@
 # huou07 playground
 
-A private dashboard for one Debian user. The dashboard remains a small Python service; coding tools and app services use the owner account `huou07` and its existing home. WireGuard is the primary remote path, with SSH tunnels kept for recovery.
+An open source, compact Linux control panel evolving from a private Debian
+dashboard. The legacy reference uses Python; the Rust health/static baseline is
+already present. See [implementation](docs/IMPLEMENTATION.md) for actual coverage
+and [product](docs/PRODUCT.md) for the intended customizable, extensible product.
+
+## Product direction (2026-10-15)
+
+H07P is being organized for Rust backend/OS integration, owner-controlled worker
+isolation, private NAS and an integrated Storage browser. Health/static serving
+exists in Rust; remaining migration and new features are incomplete. Preserve the existing design. Start at [docs/README.md](docs/README.md)
+and [AGENTS.md](AGENTS.md); implementation handoff is
+[docs/prompts/IMPLEMENT-H07P.md](docs/prompts/IMPLEMENT-H07P.md).
+
+All tests/builds/package acceptance for this initiative run on disposable
+GitHub-hosted infrastructure. Do not run the commands below, install or deploy
+on the owner's Debian machine without a later explicit request. The following
+sections describe the legacy implementation and historical owner operations;
+they do not establish current host state or authorize agents to execute them.
 
 ## What runs where
 

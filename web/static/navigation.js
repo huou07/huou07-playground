@@ -3,11 +3,19 @@ const routeTitles = {
   files: 'Files', ssh: 'SSH', network: 'Network & VPN', storage: 'Storage', settings: 'Settings'
 };
 
+const navigation = document.getElementById('sidebar');
+const menuButton = document.getElementById('menu');
+const narrowNavigation = matchMedia('(max-width:700px)');
+
 function closeNavigation() {
-  document.getElementById('sidebar').classList.remove('open');
+  const restore = navigation.classList.contains('open') && navigation.contains(document.activeElement);
+  navigation.classList.remove('open');
   document.getElementById('scrim').classList.remove('show');
-  document.getElementById('menu').setAttribute('aria-expanded', 'false');
+  menuButton.setAttribute('aria-expanded', 'false');
+  if (restore) menuButton.focus();
+  navigation.inert = narrowNavigation.matches;
 }
+narrowNavigation.addEventListener('change', closeNavigation);
 
 function showRoute(route) {
   if (!Object.hasOwn(routeTitles, route)) route = 'home';
@@ -46,13 +54,26 @@ document.addEventListener('click', event => {
   const link = event.target.closest('[data-route]');
   if (link) closeNavigation();
 });
-document.getElementById('menu').addEventListener('click', () => {
-  const open = document.getElementById('sidebar').classList.contains('open');
-  document.getElementById('menu').setAttribute('aria-expanded', String(open));
+menuButton.addEventListener('click', () => {
+  if (navigation.classList.contains('open')) return closeNavigation();
+  navigation.inert = false;
+  navigation.classList.add('open');
+  document.getElementById('scrim').classList.add('show');
+  menuButton.setAttribute('aria-expanded', 'true');
+  navigation.querySelector('a[aria-current="page"]').focus();
 });
 document.getElementById('scrim').addEventListener('click', closeNavigation);
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeNavigation();
+  if (event.key === 'Tab' && narrowNavigation.matches && navigation.classList.contains('open')) {
+    const links = [...navigation.querySelectorAll('a[href]')];
+    const first = links[0], last = links.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault(); first.focus();
+    }
+  }
 });
 readRoute();
 
