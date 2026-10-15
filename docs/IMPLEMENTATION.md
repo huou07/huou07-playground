@@ -54,3 +54,19 @@ browser responses alone cannot prove that path.
 [ROADMAP.md](ROADMAP.md) owns remaining work and source/run evidence.
 [ARCHITECTURE.md](ARCHITECTURE.md) owns proposed boundaries;
 [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) retains the earlier source audit.
+
+
+## Current product integration (2026-10-15)
+
+The Linux Rust entry point now dispatches unprivileged HTTP, the typed root helper,
+permanent worker drop/sandbox, descriptor-relative file actors and the worker
+broker. Source: `crates/server/src/{api,helper,files,broker,sandbox,scan,relays,telemetry}.rs`.
+`web/static/product.js` supplies owner sessions, permissions and NAS/Storage.
+The legacy dashboard uses the same memory-only proof bridge. Package lifecycle
+and protected worker entry points live in `deploy/package`; `tools/build-deb.sh`
+builds the versioned Linux amd64 artifact. Native regressions live in
+`tests/native` and `tests/package-*.sh`.
+
+See [dated evidence](evidence/product-native-20261015.md) for executed tests and
+release gaps. Historical unimplemented/404 descriptions above refer to the old
+baseline, not this branch.

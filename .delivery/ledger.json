@@ -1,0 +1,26 @@
+{
+  "base": "5cd55c9",
+  "boundaries": {
+    "must_not_lower": [
+      "owner authentication",
+      "private NAS",
+      "worker secret separation",
+      "real enforcement evidence",
+      "data integrity"
+    ],
+    "out_of_scope": [
+      "provider credentials",
+      "host power tuning",
+      "owner data deletion"
+    ]
+  },
+  "branch": "codex/h07p-product",
+  "closed": {},
+  "created_at": "2026-10-15T16:07:55Z",
+  "delegation": "Owner explicitly requests complete product implementation, Debian testing and deployment in this conversation",
+  "objective": "Complete and deploy H07P P1-P7 with real Debian acceptance and preserved owner data",
+  "schema_version": 1,
+  "state_digest_at_init": "5da316256d25a0a37c8dc0370c8a141f45f37d1350a3bf2f17f9e5d510ee48fb",
+  "state_path": "/Users/meomeo/Documents/vibecode projects/huou07 playground/docs/delivery-authority.json",
+  "units": []
+}

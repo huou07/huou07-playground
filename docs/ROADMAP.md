@@ -5,7 +5,17 @@ ARCHITECTURE, source coverage in IMPLEMENTATION and dated evidence below.
 Vocabulary: planned, in progress, implemented, CI-verified, owner-accepted, blocked.
 A check or source artifact never implies owner acceptance.
 
-## Outcomes and dependencies
+
+## Current authorized product integration, 2026-10-15
+
+P1–P7 now have integrated Rust/UI/package implementations on
+`codex/h07p-product`; the historical baseline rows below are not current source
+coverage. [Native evidence](evidence/product-native-20261015.md) records the exact
+executed boundaries and remaining release gates. This delivery is **in progress**:
+production cutover, final package/advisory checks and VPN verification are pending.
+The earlier permissive shared-home model remains the default `none` preset.
+
+## Historical outcomes and dependencies at the planning baseline
 
 | Slice | Observable result | State / prerequisite |
 | --- | --- | --- |

@@ -2,6 +2,16 @@
 
 ## Allowed environment
 
+For the current product delivery, the owner explicitly authorized build, test,
+deployment and application on their Debian host in this conversation. That newer
+authorization supersedes the historical hosted-only restrictions below for this
+delivery. Use synthetic temporary data, isolated namespaces where appropriate,
+separate test ports/control state, bounded fixture units, protected backups and
+verified rollback. Never use owner credentials or NAS contents as test fixtures.
+See [current native evidence](evidence/product-native-20261015.md).
+
+The following hosted-only description records the earlier baseline policy:
+
 Product tests/builds/benchmarks/package lifecycle checks run on disposable
 GitHub-hosted Linux infrastructure. The owner's live Debian environment is not a
 fixture. The sole local security exception is the isolated guest design below;

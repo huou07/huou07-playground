@@ -1,0 +1,8 @@
+{
+  "units": [{"id": "product", "requirements": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]}],
+  "current_next": "product",
+  "completed": [],
+  "authorization": "Owner request: complete the H07P product plan, deploy and apply on the owner's Debian; retain the earlier permissive three-harness shared-home model as default.",
+  "base": "5cd55c9",
+  "exclusions": ["changing or reading provider credentials", "unrequested host power tuning", "deleting existing owner data", "claiming human acceptance or measured energy without evidence"]
+}
