@@ -193,11 +193,11 @@ After those prerequisites are reviewed, the native command shape is:
 
 ```sh
 qemu-img create -f qcow2 -F qcow2 -b "$reviewed_base" "$run_dir/guest.qcow2"
-timeout --kill-after=5s 180s qemu-system-x86_64 \\
-  -no-user-config -nodefaults -machine q35,accel=kvm -cpu host -smp 2 -m 2048 \\
-  -display none -monitor none -serial stdio -nic none -no-reboot \\
-  -sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny \\
-  -drive "file=$run_dir/guest.qcow2,format=qcow2,if=virtio" \\
+timeout --kill-after=5s 180s qemu-system-x86_64 \
+  -no-user-config -nodefaults -machine q35,accel=kvm -cpu host -smp 2 -m 2048 \
+  -display none -monitor none -serial stdio -nic none -no-reboot \
+  -sandbox on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny \
+  -drive "file=$run_dir/guest.qcow2,format=qcow2,if=virtio" \
   -drive "file=$run_dir/seed.iso,format=raw,media=cdrom,readonly=on"
 ```
 
