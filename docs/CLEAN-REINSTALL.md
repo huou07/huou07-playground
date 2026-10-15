@@ -1,5 +1,7 @@
 # Fresh application installation
 
+> Historical procedure. The 2026-10-15 owner-approved normal-user reinstall and retirement have completed. See [the current installation report](ORDINARY-USER-REINSTALL.md) and `/home/huou07/AEH/docs/normal-user-runtime.md`. Do not run the legacy switch or recovery commands below against the new installation.
+
 This procedure prepares the replacement applications while the existing services stay online. It does not change the dashboard registry, dashboard UI, WireGuard, SSH, Cockpit, UFW, rootful Docker, AN3, LAN Arcade, AdGuard Home, personal files, or native Codex/OpenCode authentication. It does not delete legacy application data.
 
 ## Preparation

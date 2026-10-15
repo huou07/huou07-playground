@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """One-time, explicit reset of the owner's five applications, without sudo."""
 import os
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,6 +20,22 @@ def preserve(relative):
         assert not target.exists() and not target.is_symlink(), target
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(source, target)
+
+def preserve_owner_skills():
+    source = HOME / '.agents'
+    if not source.exists():
+        return
+    target = HOME / 'AEH/docs/writing-agents-md/legacy-owner-agents'
+    assert not target.exists()
+    shutil.copytree(source, target, symlinks=True)
+    for path in source.rglob('*'):
+        copied = target / path.relative_to(source)
+        if path.is_symlink():
+            assert copied.is_symlink() and path.readlink() == copied.readlink()
+        elif path.is_file():
+            assert hashlib.sha256(path.read_bytes()).digest() == hashlib.sha256(copied.read_bytes()).digest()
+    preserve('.agents')
+    print('Former owner-global skills preserved as AEH documents; retired runtime copies archived.')
 
 def main():
     assert os.getuid() == 1000 and Path.home() == HOME
@@ -68,6 +85,7 @@ def main():
         shutil.copy2(path, OLD / filename)
         lines = path.read_text().splitlines(keepends=True)
         path.write_text(''.join(line for line in lines if line.strip() != '. "$HOME/.opencode/data/../bin/env"'))
+    preserve_owner_skills()
     run('systemctl', '--user', 'daemon-reload')
     print('Old owner application configuration and gateway data preserved privately; active paths reset.')
 

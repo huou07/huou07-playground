@@ -132,33 +132,73 @@ def quiesce():
                         assert hashlib.file_digest(a, 'sha256').digest() == hashlib.file_digest(b, 'sha256').digest(), 'Source file changed since backup'
     # Keep the exact remaining worker home privately, including old sessions.
     run('tar', '-C', '/', '-cpf', str(BACKUP / 'worker-home.tar'), 'home/agents-worker')
+    finish_quiesce()
+
+def finish_quiesce():
     # Remove only retired identities' named ACLs, including defaults. Render
     # GID992 is deliberately unrelated to retired service UID992.
     retired_uids = {pwd.getpwnam(name).pw_uid for name in ACCOUNTS}
     retired_gids = {pwd.getpwnam(name).pw_gid for name in ACCOUNTS} | {978, 983}
     assert retired_uids == {987, 992, 993, 994, 995}
     assert retired_gids == {977, 978, 980, 981, 982, 983, 984}
-    acl = subprocess.check_output(['getfacl', '-R', '-P', '-p', '-n', str(HOME)], stderr=subprocess.DEVNULL).decode()
-    (BACKUP / 'owner-home-acls.before').write_text(acl)
-    for block in acl.split('\n\n'):
-        lines = block.splitlines()
-        header = next((line[8:] for line in lines if line.startswith('# file: ')), None)
-        if header is None:
-            continue
-        path = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), header)
-        entries = []
-        for identity, ids in [('user', retired_uids), ('group', retired_gids)]:
-            for identifier in ids:
-                for prefix in ['', 'default:']:
-                    if any(line.startswith(f'{prefix}{identity}:{identifier}:') for line in lines):
-                        entries.append(f'{"d:" if prefix else ""}{identity[0]}:{identifier}')
-        if entries:
-            run('setfacl', '-x', ','.join(entries), '--', path)
+    original_acl = BACKUP / 'owner-home-acls.before'
+    if not original_acl.exists():
+        with original_acl.open('w') as sink:
+            run('getfacl', '-R', '-P', '-p', '-n', str(HOME), stdout=sink, stderr=subprocess.DEVNULL)
+    # Restore only affected ACL records in one native operation. Large npm and
+    # container caches can hold over a million records; one process per file
+    # would make the application outage unnecessarily long.
+    entry = re.compile(r'^(?:default:)?(user|group):(\d+):')
+    cleaned_acl = BACKUP / 'owner-home-acls.cleaned'
+    def write_block(block, sink):
+        changed = False
+        kept = []
+        path = None
+        for line in block:
+            if line.startswith('# file: '):
+                path = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), line[8:].rstrip('\n'))
+            match = entry.match(line)
+            if match and int(match[2]) in (retired_uids if match[1] == 'user' else retired_gids):
+                changed = True
+            else:
+                kept.append(line)
+        if changed and path and os.path.lexists(path):
+            sink.writelines(kept)
+            sink.write('\n')
+    with original_acl.open() as source, cleaned_acl.open('w') as sink:
+        block = []
+        for line in source:
+            if line.strip():
+                block.append(line)
+            else:
+                write_block(block, sink)
+                block = []
+        write_block(block, sink)
+    errors = BACKUP / 'acl-cleanup-errors.log'
+    legacy_git_config = HOME / 'Projects/VCE/.git/config'
+    if legacy_git_config.is_file():
+        # The retired framework made this one Git config immutable. Preserve
+        # its original attribute record, then release that obsolete restriction.
+        attributes = BACKUP / 'vce-git-config-attributes.before'
+        if not attributes.exists():
+            attributes.write_bytes(subprocess.check_output(['lsattr', str(legacy_git_config)]))
+        run('chattr', '-i', str(legacy_git_config))
+    with errors.open('w') as sink:
+        result = subprocess.run(['setfacl', '--restore', str(cleaned_acl)], stderr=sink,
+                                env={**os.environ, 'LC_ALL': 'C'})
+    if result.returncode:
+        messages = [line for line in errors.read_text().splitlines() if line]
+        assert messages and all(line.endswith(': No such file or directory') for line in messages), 'ACL cleanup failed; inspect private error log'
+        print(f'Skipped {len(messages)} cache files already removed during maintenance.')
     # Reclaim worker-owned project artifacts without following symlinks.
-    for identifier in sorted(retired_uids):
-        run('find', str(HOME), '-xdev', '-uid', str(identifier), '-exec', 'chown', '-h', '1000:1000', '{}', '+')
-    for identifier in sorted(retired_gids):
-        run('find', str(HOME), '-xdev', '-gid', str(identifier), '-exec', 'chgrp', '-h', '1000', '{}', '+')
+    for flag, identifiers, command, owner in [('-uid', retired_uids, 'chown', '1000:1000'),
+                                             ('-gid', retired_gids, 'chgrp', '1000')]:
+        predicate = []
+        for identifier in sorted(identifiers):
+            if predicate:
+                predicate.append('-o')
+            predicate.extend([flag, str(identifier)])
+        run('find', str(HOME), '-xdev', '(', *predicate, ')', '-exec', command, '-h', owner, '{}', '+')
     # Keep all old worktrees, including caches, until the owner accepts cleanup.
     for name in ['OR', 'VCE']:
         old = HOME / 'Projects' / name
@@ -178,6 +218,14 @@ def quiesce():
     Path('/run/huou07-dsh-link/url').unlink(missing_ok=True)
     marker('quiesced').write_text(json.dumps({'uid': 1000, 'projects_preserved': True}) + '\n')
     print('Worker stopped; original projects retained; normal owner handoff prepared.')
+
+def resume_quiesce():
+    assert not marker('quiesced').exists()
+    assert (BACKUP / 'worker-home.tar').is_file() and (BACKUP / 'owner-home-acls.before').is_file()
+    assert not (STAGE / 'original-projects').exists(), 'Project moves already started; inspect before resuming.'
+    assert pwd.getpwnam('agents-worker').pw_shell == '/usr/sbin/nologin'
+    assert subprocess.run(['pgrep', '-u', '987'], stdout=subprocess.DEVNULL).returncode == 1
+    finish_quiesce()
 
 def connect():
     assert marker('quiesced').exists()
@@ -208,6 +256,7 @@ def retire():
     # The owner-side acceptance script must create this only after real checks.
     assert (STAGE / 'accepted.json').is_file(), 'Fresh runtime acceptance has not passed.'
     assert not marker('retired').exists()
+    retire_legacy_broker()
     for binary in ['codex', 'opencode', 'dsh', 'codegraph', 'rg']:
         path = HOME / '.local/bin' / binary
         assert path.exists() and not str(path.resolve()).startswith('/opt/agent-workbench/'), path
@@ -234,11 +283,36 @@ def retire():
     marker('retired').write_text('{"worker_removed": true, "private_backups_retained": true}\n')
     print('Old worker and legacy app accounts/configuration retired; private recovery material retained.')
 
+def retire_legacy_broker():
+    assert (STAGE / 'accepted.json').is_file()
+    if marker('broker-retired').exists():
+        return
+    socket_unit = 'aeh-capabilities.socket'
+    state = subprocess.check_output(['systemctl', 'show', '-p', 'LoadState', '--value', socket_unit], text=True).strip()
+    if state != 'not-found':
+        run('systemctl', 'disable', '--now', socket_unit)
+        run('systemctl', 'stop', 'aeh-capabilities@*.service', 'aeh-tests.slice')
+        subprocess.run(['systemctl', 'reset-failed', 'aeh-capabilities@*.service'], check=False)
+    for path in ['/usr/local/bin/aehctl', '/usr/local/libexec/aeh-capabilities',
+                 '/etc/systemd/system/aeh-capabilities.socket',
+                 '/etc/systemd/system/aeh-capabilities@.service',
+                 '/etc/systemd/system/aeh-tests.slice', '/var/lib/aeh-instruction-ledger']:
+        save(path)
+    runtime = Path('/run/aeh-capabilities')
+    if runtime.exists():
+        run('tar', '-C', '/run', '-cpf', str(BACKUP / 'broker-runtime.tar'), 'aeh-capabilities')
+        shutil.rmtree(runtime)
+    Path('/run/aeh-capabilities.sock').unlink(missing_ok=True)
+    run('systemctl', 'daemon-reload')
+    marker('broker-retired').write_text('{"old_worker_capability_broker_removed": true}\n')
+    print('Retired worker-only AEH broker removed; project verification lab data left intact.')
+
 if __name__ == '__main__':
     assert os.geteuid() == 0 and pwd.getpwnam('huou07').pw_uid == 1000
-    assert len(sys.argv) == 2 and sys.argv[1] in ['quiesce', 'connect', 'retire']
+    assert len(sys.argv) == 2 and sys.argv[1] in ['quiesce', 'resume-quiesce', 'connect', 'retire', 'retire-broker']
     assert not BACKUP.is_symlink()
     BACKUP.mkdir(mode=0o700, exist_ok=True)
     BACKUP.chmod(0o700)
     os.umask(0o077)
-    {'quiesce': quiesce, 'connect': connect, 'retire': retire}[sys.argv[1]]()
+    {'quiesce': quiesce, 'resume-quiesce': resume_quiesce, 'connect': connect,
+     'retire': retire, 'retire-broker': retire_legacy_broker}[sys.argv[1]]()

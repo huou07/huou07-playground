@@ -1,7 +1,9 @@
 # DSH boundary repair — partial implementation, 15 October 2026
 
-**The isolation objective is NOT achieved. Production credentials remain exposed to UID 987.**
-No production service, credential, SSH setting, sudo policy, token directory permission, or ACP socket permission was changed. No root command was executed. The disabled legacy unit was not started. This is a tested containment candidate and reproducible staging work, not a completed migration.
+> Historical staging record. The owner subsequently replaced the isolation objective with a clean ordinary-user installation. That approved migration has completed; `agents-worker` and its runtime have been removed. See [current installation and runtime evidence](../ORDINARY-USER-REINSTALL.md). The new shared-user setup deliberately does not implement a separate credential/tool boundary. Do not treat the historical commands below as current deployment instructions.
+
+**At the original audit checkpoint, the isolation objective was not achieved and credentials were accessible to UID 987.**
+At that checkpoint no production service, credential, SSH setting, sudo policy, token directory permission, or ACP socket permission had been changed by this staging implementation. No root command had been executed and the disabled legacy unit had not been started. The sections below describe that containment candidate and reproducible staging work.
 
 ## 1. Observed execution boundary
 

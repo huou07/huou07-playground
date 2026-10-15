@@ -1,5 +1,9 @@
 # Owner-requested clean reinstall — 2026-10-15
 
+**Completed with owner approval.** The five applications now use the normal `huou07` account (standard rootless containers for the two gateways). `agents-worker`, four obsolete application accounts, their units/wrappers/ACLs and the worker-only AEH capability broker have been retired. Provider inference was intentionally excluded by the owner.
+
+Current usage and retained instruction documents are also recorded in `/home/huou07/AEH/docs/normal-user-runtime.md`. Routine maintenance uses the normal user services; do not rerun this one-time cutover.
+
 The owner replaced the former credential-isolation objective with a clean normal-user installation. Run DSH, OpenCode, Codex and their ACP adapters as `huou07`; run the standard rootless LiteLLM/PostgreSQL and OmniRoute/Redis deployment in that account. Remove `agents-worker`, its services, wrappers, ACLs and worker-only controls. Keep the existing Playground, VPN and unrelated services.
 
 Preserve AEH at `/home/huou07/AEH`, OR and VCE at `/home/huou07/Projects/OR` and `VCE`, and H07P at `/home/huou07/Projects/H07P`. Preserve both pre-existing H07P histories, all local branches, staged/unstaged changes, untracked project files and VCE scratch archives. Build/dependency caches are reproducible and excluded from the initial transfer; a tracked-file check must reject an exclusion that removed tracked source.
@@ -22,13 +26,13 @@ Root changes still require a concrete reviewed cutover under the original instru
 - Fresh normal-user native packages: Codex 0.162.1, OpenCode 1.19.0, DSH 0.2.0-rc.2, Codex ACP 2.2.2; DSH ACP adapter 0.2.0-rc.2.9 and pnpm 11.7.0 installed in the private preparation directory.
 - Both native ACP initialize handshakes passed under UID1000 without provider login or inference. Fresh DSH browser authentication, forged-cookie rejection and restart passed under UID1000 on a temporary port.
 - The live dashboard source with the proposed one-condition LAN fix passed an actual fresh DSH token/cookie/HTML flow, owner-login denial and forged-cookie rejection on temporary loopback listeners. The production source remains unchanged before approval.
-- All 97 repository tests passed; shell and migration Python syntax checked. Privileged cutover, new gateway production databases and final localhost/VPN acceptance are still pending approval.
+- All 97 repository tests passed; shell and migration Python syntax checked. Privileged cutover, new production databases and final localhost/VPN acceptance subsequently completed; see the runtime results below.
 - Exact shared skills contents and shared AGENTS.md verified against their AEH document copies. Old instruction history and Git history are private migration material.
 - Fresh LiteLLM/PostgreSQL and OmniRoute/Redis instances passed UI, health and persistence across restart with disposable new credentials/data. All their temporary containers, pods and volumes were removed; existing production gateways were untouched.
 
-## Exact production commands for owner approval
+## Approved production procedure (completed)
 
-Run from the owner's normal SSH shell. `deployment` is a frozen Git checkout of this change, with no old credentials. Expected application downtime is approximately 5–10 minutes; package/image downloads are prepared first. SSH and VPN configuration are untouched.
+The owner approved the complete transition and cleanup in this conversation. It was executed from the owner's normal SSH shell. `deployment` records the initial frozen checkout (`10a7178`); the root helper was subsequently repaired within the approved scope as described below. The original downtime estimate was 5–10 minutes; enumerating old ACLs took longer than expected and was changed to a native batch operation. SSH and VPN configuration were untouched.
 
 ```sh
 cd /home/huou07/clean-reinstall-20261015/deployment
@@ -49,6 +53,8 @@ Stop at any failing command. Do not continue to account deletion without `accept
 
 The final safety revision keeps the same production command sequence and scope: Git metadata checks run as the old unprivileged worker with fsmonitor disabled, never as root; the worker login shell is disabled before stopping its remaining processes; source file bytes are checked again after shutdown so recent edits cannot be silently replaced. A partially started root cutover refuses a blind rerun that would overwrite its original backup.
 
+Execution repair: the old home contained 1,537,304 ACL records. The per-file cleanup was stopped before project moves and resumed from its saved ACL snapshot using one native `setfacl --restore` operation, preserving all unrelated entries. VCE's old immutable `.git/config` flag was recorded and removed. No original backup was overwritten. The final root helper and original helper are retained under `/root` for audit. The later-discovered AEH socket accepted only the retired worker; its root broker, socket/template/slice, CLI and ledger were moved to the root-only recovery directory. The separate `h07p-lab` product verification fixture and owner-only preparation helper were preserved as project test infrastructure; none of the applications uses that identity.
+
 The owner reset exports the exact three gateway volumes before removing their two pods and those volumes, moves old application config/native packages into the private backup, and installs the fresh native packages/profile. The existing installer creates new secrets, empty gateway databases and user units, then checks fresh gateway persistence and health. Standard rootless application containers remain the normal LiteLLM/OmniRoute deployment; the special agent identity and tool restrictions are removed.
 
 `connect` replaces the dashboard's OpenCode public/backend login with the new owner-generated login, retaining public localhost4096/VPN14096 and backend4097. It fixes one existing LAN handoff condition so a browser with its DSH cookie reaches the page rather than looping through the login redirect. DSH trusts the explicit wg0 and LAN interface addresses. Provider login files are never imported.
@@ -64,3 +70,18 @@ After quiesce, keep the old worker stopped. Original projects remain intact unde
 Before connect, the original dashboard is unchanged. After connect, the original application source is `/root/huou07-clean-reinstall-20261015/dashboard-app.before.py` and original configuration is in `original-system-config.tar`. To undo only a failed dashboard edit, install that saved Python file back to `/opt/huou07-playground/current/web/app.py`, then restart `huou07-playground.service`. Keep the fresh matching OpenCode login when running the new backend.
 
 After retirement, no destructive deletion of private recovery material is performed. Account/service restoration would require owner review because it reinstates the retired execution model and potentially old provider credentials. The final acceptance record explicitly distinguishes host-side VPN route checks from an external device's VPN connection, and does not claim successful provider inference.
+
+## Final runtime results
+
+- Native versions: Codex 0.162.1, OpenCode 1.19.0, DSH 0.2.0-rc.2; both native ACP initialize handshakes passed again after the old binaries were removed. Developer tools, including CodeGraph 1.6.0, have independent owner installations.
+- DSH and OpenCode service processes are UID1000. Both report `NoNewPrivileges=no` and no `InaccessiblePaths` override. Owner lingering and both native service enablement were verified. No old provider-key environment variables were present in the user manager.
+- Fresh LiteLLM/PostgreSQL and OmniRoute/Redis passed health, UI and restart/persistence tests. Generated administrator passwords were then used successfully over VPN: OmniRoute issued an authenticated management session and LiteLLM opened its admin UI; the LiteLLM deployed model list is empty.
+- Post-retirement application restart, DSH token-to-cookie exchange, authenticated DSH HTML, Playground launch, OpenCode authenticated health and anonymous denial all passed on the actual installation.
+- External verification from the owner's Mac used its direct `utun5` VPN route, with HTTP proxies disabled: Playground launched real DSH HTML, its cookie remained usable, OpenCode UI/health and both gateway UIs loaded, and ports 20129/20132 accepted connections. This is additional evidence beyond the host-side VPN checks.
+- AEH, OR, VCE and H07P are owner-owned at their requested paths. Both H07P histories are available in the active H07P clone, with the older setup branches under `refs/remotes/preserved-setup/`; fetching them did not change its working branch or uncommitted work.
+- AEH document preservation is committed locally as `ef2a8de` on `codex/normal-user-runtime`. Shared skill bodies and shared AGENTS.md remain byte-for-byte copies; older owner-global skills and the former AEH guide are retained as labelled documents. Original unrelated dirty/untracked project work remains intact. Secret scans of the preserved skills and instruction documents reported zero findings.
+- SSH, WireGuard gateway and Playground remain active. The old five accounts, worker binaries/controllers and both old control sockets are absent. No provider credentials were imported into the fresh login stores.
+
+Private runtime receipts are under `/home/huou07/clean-reinstall-20261015`: `accepted.json`, `external-vpn-accepted.json`, `gateway-admin-login-accepted.json`, `post-retirement-acp.json`, project/content manifests and redacted secret-scan reports. Root-only original configuration, old service data, worker home, ACL/attribute records and retired files are under `/root/huou07-clean-reinstall-20261015`.
+
+The clean login configuration does not revoke historical OAuth sessions or API keys at external providers. Those can be revoked separately by the owner. New provider sign-in and actual model inference remain owner-managed as requested; this normal shared-user deployment is not a credential/tool isolation boundary.
