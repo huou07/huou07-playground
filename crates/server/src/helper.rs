@@ -18,7 +18,7 @@ type Result<T> = std::result::Result<T, String>;
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
-fn dir() -> PathBuf {
+pub(crate) fn dir() -> PathBuf {
     std::env::var_os("H07P_CONTROL_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| "/var/lib/h07p-control".into())
@@ -28,6 +28,7 @@ pub(crate) fn db() -> Result<Connection> {
     c.busy_timeout(Duration::from_secs(10)).map_err(err)?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS history(revision INTEGER PRIMARY KEY,body TEXT NOT NULL);CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,at INTEGER,event TEXT);CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY,worker TEXT,path TEXT,operation TEXT,revision INTEGER,expires INTEGER,state TEXT,dev INTEGER,ino INTEGER);").map_err(err)?;
     crate::broker::migrate(&c)?;
+    crate::guard::migrate(&c)?;
     Ok(c)
 }
 fn initial() -> Value {
@@ -770,6 +771,11 @@ fn client(stream: UnixStream, broker: bool, lock: &Mutex<()>) {
         reply(input.get_mut(), broker_request(uid, &v));
         return;
     }
+    if op.starts_with("guard_") {
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        reply(input.get_mut(), crate::guard::control(op, &v));
+        return;
+    }
     if op.starts_with("fs_") {
         if let Err(e) = file_request(&v, &mut input) {
             reply(input.get_mut(), Err(e));
@@ -830,6 +836,7 @@ pub fn run() -> Result<()> {
             crate::bounded_spawn(move || client(s, true, &l));
         }
     });
+    std::thread::spawn(crate::guard::watch_loop);
     if std::env::var("H07P_RELAYS").as_deref() != Ok("false") {
         std::thread::spawn(crate::relays::run);
     }

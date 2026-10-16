@@ -4,6 +4,7 @@ After=network.target h07p-helper.service
 Requires=h07p-helper.service
 
 [Service]
+LimitCORE=0
 Type=simple
 User=huou07-playground
 Group=huou07-playground

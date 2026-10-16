@@ -193,7 +193,7 @@ fn unlink(dir: &File, name: &str, directory: bool) -> Result<()> {
     }
 }
 fn mkdir(dir: &File, name: &str) -> Result<()> {
-    if unsafe { libc::mkdirat(dir.as_raw_fd(), c(name)?.as_ptr(), 0o750) } != 0 {
+    if unsafe { libc::mkdirat(dir.as_raw_fd(), c(name)?.as_ptr(), 0o770) } != 0 {
         Err(io(std::io::Error::last_os_error()))
     } else {
         Ok(())
@@ -254,9 +254,9 @@ fn copy_entry(
         dst,
         dest,
         libc::O_RDWR | libc::O_CREAT | libc::O_EXCL,
-        0o640,
+        0o660,
     )?;
-    let result = (|| {
+    let result: Result<()> = (|| {
         let mut hash = Sha256::new();
         let mut buf = [0; 65536];
         let mut bytes = 0u64;
@@ -295,10 +295,8 @@ fn copy_entry(
         dst.sync_all().map_err(io)?;
         Ok(())
     })();
-    if result.is_err() {
-        let _ = unlink(dst, dest, false);
-    }
     result
+        .map_err(|error| format!("{error}; a partial destination may remain for owner inspection"))
 }
 fn remove_entry(dir: &File, name: &str, depth: usize) -> Result<()> {
     if depth > 32 {
@@ -335,6 +333,138 @@ fn expected(file: &File, request: &Value, parent: bool) -> Result<()> {
         return Err("Approved object changed".into());
     }
     Ok(())
+}
+fn replace_from_input(
+    dir: &File,
+    name: &str,
+    request: &Value,
+    input: &mut impl Read,
+    length: u64,
+    private_result: bool,
+) -> Result<()> {
+    let original = open_at(dir, name, libc::O_WRONLY | libc::O_NONBLOCK, 0)?;
+    expected(&original, request, false)?;
+    let old = original.metadata().map_err(io)?;
+    if !old.is_file() || old.nlink() != 1 || old.uid() != unsafe { libc::geteuid() } {
+        return Err("Replace requires one owner-owned non-aliased regular file".into());
+    }
+    let stage = format!(".h07p-replace-{}", crate::random_token()?);
+    if unsafe { libc::mkdirat(dir.as_raw_fd(), c(&stage)?.as_ptr(), 0o700) } != 0 {
+        return Err(io(std::io::Error::last_os_error()));
+    }
+    let private = open_at(dir, &stage, libc::O_RDONLY | libc::O_DIRECTORY, 0)?;
+    if private.metadata().map_err(io)?.uid() != old.uid() {
+        return Err("Private staging directory changed".into());
+    }
+    let mut retain_recovery = false;
+    let result = (|| {
+        let mut file = open_at(
+            &private,
+            "replacement",
+            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL,
+            0o600,
+        )?;
+        let copied = std::io::copy(&mut input.take(length), &mut file).map_err(io)?;
+        if copied != length {
+            return Err("Replacement interrupted; original retained".into());
+        }
+        // Do not inherit a broader directory ACL. A normal broker write preserves
+        // the original ACL/group; cleaned log exports deliberately become private.
+        if unsafe { libc::fremovexattr(file.as_raw_fd(), c"system.posix_acl_access".as_ptr()) } != 0
+            && !matches!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ENODATA | libc::EOPNOTSUPP)
+            )
+        {
+            return Err("Could not clear inherited staging ACL".into());
+        }
+        if !private_result {
+            if file.metadata().map_err(io)?.gid() != old.gid()
+                && unsafe { libc::fchown(file.as_raw_fd(), u32::MAX, old.gid()) } != 0
+            {
+                return Err("Cannot preserve the original file group".into());
+            }
+            let mut acl = vec![0u8; 65536];
+            let n = unsafe {
+                libc::fgetxattr(
+                    original.as_raw_fd(),
+                    c"system.posix_acl_access".as_ptr(),
+                    acl.as_mut_ptr() as *mut _,
+                    acl.len(),
+                )
+            };
+            if n > 0
+                && unsafe {
+                    libc::fsetxattr(
+                        file.as_raw_fd(),
+                        c"system.posix_acl_access".as_ptr(),
+                        acl.as_ptr() as *const _,
+                        n as usize,
+                        0,
+                    )
+                } != 0
+            {
+                return Err("Could not preserve the original ACL".into());
+            }
+            if n < 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::ENODATA) {
+                return Err("Could not inspect the original ACL".into());
+            }
+        }
+        if unsafe {
+            libc::fchmod(
+                file.as_raw_fd(),
+                if private_result {
+                    0o600
+                } else {
+                    old.mode() & 0o777
+                },
+            )
+        } != 0
+        {
+            return Err(io(std::io::Error::last_os_error()));
+        }
+        file.sync_all().map_err(io)?;
+        expected(&original, request, false)?;
+        // Keep a stable name CString alive across the syscall.
+        let target = c(name)?;
+        let rc = unsafe {
+            libc::syscall(
+                libc::SYS_renameat2,
+                private.as_raw_fd(),
+                c"replacement".as_ptr(),
+                dir.as_raw_fd(),
+                target.as_ptr(),
+                libc::RENAME_EXCHANGE,
+            )
+        };
+        if rc != 0 {
+            return Err(io(std::io::Error::last_os_error()));
+        }
+        retain_recovery = true;
+        let moved = stat_at(&private, "replacement")?;
+        if moved.st_dev != old.dev() || moved.st_ino != old.ino() {
+            let _ = unsafe {
+                libc::syscall(
+                    libc::SYS_renameat2,
+                    private.as_raw_fd(),
+                    c"replacement".as_ptr(),
+                    dir.as_raw_fd(),
+                    target.as_ptr(),
+                    libc::RENAME_EXCHANGE,
+                )
+            };
+            return Err(format!("Target changed; retained recovery data in {stage}"));
+        }
+        dir.sync_all().map_err(io)?;
+        unlink(&private, "replacement", false)?;
+        retain_recovery = false;
+        Ok(())
+    })();
+    if result.is_err() && !retain_recovery {
+        let _ = unlink(&private, "replacement", false);
+    }
+    let _ = unlink(dir, &stage, true);
+    result
 }
 fn broker_mutate(area: &str, path: &str, op: &str, request: &Value) -> Result<()> {
     let (dir, name) = parent(area, path)?;
@@ -418,15 +548,14 @@ fn broker_mutate(area: &str, path: &str, op: &str, request: &Value) -> Result<()
             let _ = unlink(&dir, &stage, true);
             result?;
         } else {
-            let mut file = open_at(&dir, &name, libc::O_WRONLY | libc::O_NONBLOCK, 0)?;
-            expected(&file, request, false)?;
-            let m = file.metadata().map_err(io)?;
-            if !m.is_file() || m.nlink() != 1 {
-                return Err("Approved write requires one non-aliased regular file".into());
-            }
-            file.set_len(0).map_err(io)?;
-            file.write_all(content).map_err(io)?;
-            file.sync_all().map_err(io)?;
+            replace_from_input(
+                &dir,
+                &name,
+                request,
+                &mut std::io::Cursor::new(content),
+                content.len() as u64,
+                false,
+            )?;
         }
     }
     dir.sync_all().map_err(io)
@@ -448,6 +577,15 @@ pub fn actor() -> Result<()> {
     let path = request["path"].as_str().unwrap_or("/");
     let op = request["op"].as_str().unwrap_or("");
     match op {
+        "fs_guard_replace" => {
+            let length = request["length"]
+                .as_u64()
+                .filter(|n| *n <= 1024 * 1024)
+                .ok_or("Replacement exceeds 1 MiB")?;
+            let (dir, name) = parent(area, path)?;
+            replace_from_input(&dir, &name, &request, &mut input, length, true)?;
+            println!("{}", json!({"ok":true,"data":{"ok":true,"bytes":length}}));
+        }
         "fs_broker_write" | "fs_broker_create" | "fs_broker_delete" => {
             broker_mutate(area, path, op, &request)?;
             println!("{}", json!({"ok":true,"data":{"ok":true}}));
@@ -537,7 +675,7 @@ pub fn actor() -> Result<()> {
                 &dir,
                 &temp,
                 libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
-                0o640,
+                if area == "nas" { 0o640 } else { 0o660 },
             )?;
             if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
                 return Err("Could not lock upload staging file".into());

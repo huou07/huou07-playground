@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/navigation.css">
   <link rel="stylesheet" href="/product.css">
   <script src="/product.js" defer></script>
+  <script src="/guard.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/navigation.js" defer></script>
 </head>
@@ -90,6 +91,7 @@
         <section class="page-view product" id="page-permissions" data-view="permissions" aria-labelledby="permissions-title" hidden>
           <div class="section-heading"><h1 id="permissions-title">Permissions</h1><button type="button" id="policy-refresh">Refresh status</button></div>
           <div id="permissions-panel"></div>
+          <section class="panel" id="credential-guard"><h2>Credential Guard · Logs</h2><p class="product-status">Sign in to view Guard status.</p></section>
         </section>
 
         <section class="page-view" id="page-ssh" data-view="ssh" aria-labelledby="ssh-title" hidden>

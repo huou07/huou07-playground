@@ -345,6 +345,19 @@ async fn listing(Query(q): Query<std::collections::HashMap<String, String>>) -> 
     let v = json!({"op":"fs_list","area":q.get("area").map_or("nas",String::as_str),"path":q.get("path").map_or("/",String::as_str),"offset":q.get("offset").and_then(|s|s.parse::<u64>().ok()).unwrap_or(0)});
     rpc_response(rpc(&v).await)
 }
+async fn guard_get(Path(op): Path<String>) -> Response {
+    if !["status", "events"].contains(&op.as_str()) {
+        return fail(StatusCode::NOT_FOUND, "Unknown Guard view");
+    }
+    rpc_response(rpc(&json!({"op":format!("guard_{op}")})).await)
+}
+async fn guard_post(Path(op): Path<String>, Json(mut v): Json<Value>) -> Response {
+    if !["configure", "ack", "plan", "clean", "restore"].contains(&op.as_str()) {
+        return fail(StatusCode::NOT_FOUND, "Unknown Guard operation");
+    }
+    v["op"] = format!("guard_{op}").into();
+    rpc_response(rpc(&v).await)
+}
 async fn mutate(Json(mut v): Json<Value>) -> Response {
     v["op"] = "fs_mutate".into();
     rpc_response(rpc(&v).await)
@@ -568,6 +581,10 @@ pub fn app(static_root: PathBuf) -> Result<Router, String> {
         .route("/api/owner/logout", post(logout))
         .route("/api/control/status", get(status))
         .route("/api/control/{op}", post(control))
+        .route(
+            "/api/security/credential-guard/{op}",
+            get(guard_get).post(guard_post),
+        )
         .route("/api/fs/list", get(listing))
         .route("/api/fs/mutate", post(mutate))
         .route("/api/fs/ticket", post(ticket))

@@ -118,6 +118,25 @@ if chroot "$fixture" /h07p-server worker dsh none >/dev/null 2>&1; then
     exit 1
 fi
 echo 'PASS: invalid policy fails closed; all fixtures synthetic; no native login or model invocation.'
+printf '{"preset":"none","workspace":"/home/huou07/Projects","rules":[]}\n' > "$fixture/var/lib/h07p-control/policy.json"
+# /usr is a read-only bind. Shadow only /usr/local inside this private namespace.
+mount -t tmpfs -o mode=0755 tmpfs "$fixture/usr/local"
+mkdir -p "$fixture/usr/local/libexec/h07p"
+cat > "$fixture/usr/local/libexec/h07p/dsh-dashboard-launcher.py" <<'PY'
+import os
+import sys
+assert os.getuid() == 65001 and os.getgroups() == []
+for byte in b'Authorization: Bearer synthetic-web-credential\nnormal startup\n':
+    os.write(1, bytes([byte]))
+os.write(2, b'-----BEGIN PRIVATE KEY-----\nsynthetic-private-body\n-----END PRIVATE KEY-----\nnormal diagnostic\n')
+PY
+chroot "$fixture" /h07p-server worker dsh --web > "$fixture/web-output" 2> "$fixture/web-error"
+if grep -q 'synthetic-web-credential\|synthetic-private-body' "$fixture/web-output" "$fixture/web-error"; then
+    echo 'Native secret reached web-service output.' >&2; exit 1
+fi
+grep -q 'normal startup' "$fixture/web-output"
+grep -q 'normal diagnostic' "$fixture/web-error"
+echo 'PASS: actual permanent-UID web worker redacts stdout/stderr before parent output; normal diagnostics retained.'
 cp "$wrapper" "$fixture/h07p-harness"
 chmod 0755 "$fixture/h07p-harness"
 cat > "$fixture/fake-systemd-run" <<'PY'

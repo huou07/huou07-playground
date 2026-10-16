@@ -5,7 +5,10 @@ mod broker;
 #[cfg(target_os = "linux")]
 mod files;
 #[cfg(target_os = "linux")]
+mod guard;
+#[cfg(target_os = "linux")]
 mod helper;
+mod redact;
 #[cfg(target_os = "linux")]
 mod relays;
 #[cfg(target_os = "linux")]

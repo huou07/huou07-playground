@@ -160,6 +160,27 @@ def main():
             check(hashlib.sha256((root / "browser-download.bin").read_bytes()).digest() == hashlib.sha256(payload).digest(),
                   "real browser download hash")
             print(report.decode().strip())
+        if os.environ.get("H07P_NATIVE_CLI_DIR"):
+            # Optional operator-controlled Playwright CLI lane, synthetic login only.
+            cli = Path(os.environ['H07P_NATIVE_CLI_DIR'])
+            assert cli.is_dir() and cli.stat().st_uid == 0 and cli.stat().st_mode & 0o077 == 0
+            export = workspace / 'log-exports'
+            export.mkdir(mode=0o700)
+            os.chown(export, owner.pw_uid, owner.pw_gid)
+            log_export = export / 'closed.log'
+            log_export.write_text('normal startup\nAuthorization: Bearer synthetic-cli-secret\nnormal end\n')
+            os.chown(log_export, owner.pw_uid, owner.pw_gid)
+            log_export.chmod(0o600)
+            fixture_file = cli / 'fixture.json'
+            fixture_file.write_text(json.dumps(dict(base=base, username=account, password=password, exports=str(export), path=str(log_export))))
+            fixture_file.chmod(0o600)
+            print(json.dumps({'playwright_cli': 'ready', 'port': port}), flush=True)
+            for _ in range(600):
+                if (cli / 'continue').exists():
+                    break
+                time.sleep(1)
+            else:
+                raise AssertionError('Playwright CLI lane timed out')
         code, headers, body = request("/api/fs/download?" + query, headers={"Range": "bytes=4-15"})
         check(code == 206 and body == payload[4:16], "single byte range")
         check(headers.get("content-range") == f"bytes 4-15/{len(payload)}", "range metadata")

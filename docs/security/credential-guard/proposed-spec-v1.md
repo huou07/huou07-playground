@@ -1,10 +1,10 @@
 # H07P Credential Guard — Technical Specification v1.0
 
-**Project:** Huou07 Playground (H07P)  
-**Target:** Debian Linux, x86_64  
-**Core language:** Rust  
-**Status:** DESIGN / NOT IMPLEMENTED  
-**Priority:** Security-critical  
+**Project:** Huou07 Playground (H07P)
+**Target:** Debian Linux, x86_64
+**Core language:** Rust
+**Status:** DESIGN / NOT IMPLEMENTED
+**Priority:** Security-critical
 **Deployment:** Self-hosted, single owner, WireGuard-only access
 
 ## 1. Mục tiêu và phạm vi

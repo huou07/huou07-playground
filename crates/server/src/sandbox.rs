@@ -385,6 +385,34 @@ mod linux {
         if unsafe { libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, 0u32) } != 0 {
             return Err(failure("Close inherited worker descriptors"));
         }
+        if web {
+            // Preserve interactive CLI terminal behavior; web-service logs are
+            // classified in bounded buffers before systemd/journald receives them.
+            let mut child = command
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|_| "Native web worker could not start")?;
+            let stdout = child.stdout.take().ok_or("Native output unavailable")?;
+            let stderr = child
+                .stderr
+                .take()
+                .ok_or("Native error output unavailable")?;
+            let out = std::thread::spawn(move || crate::redact::stream(stdout, std::io::stdout()));
+            let err = std::thread::spawn(move || crate::redact::stream(stderr, std::io::stderr()));
+            let status = child.wait().map_err(|_| "Native web worker wait failed")?;
+            out.join()
+                .map_err(|_| "Log redaction worker failed")?
+                .map_err(|_| "Log output failed")?;
+            err.join()
+                .map_err(|_| "Log redaction worker failed")?
+                .map_err(|_| "Log output failed")?;
+            return if status.success() {
+                Ok(())
+            } else {
+                Err("Native web worker exited; inspect the redacted service log".into())
+            };
+        }
         Err(format!("Native worker exec failed: {}", command.exec()))
     }
 }

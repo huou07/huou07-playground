@@ -55,6 +55,25 @@ def main():
         response, _ = actor(dict(op='fs_upload', area='nas', path='/short.bin', length=1000), b'partial')
         check(not response['ok'] and not (nas/'short.bin').exists(), 'canceled/short upload is not published')
         check(not list(nas.glob('.h07p-upload-*')), 'short upload cleans temporary files')
+        original = nas / 'original.log'
+        original.write_bytes(b'original must survive failed replacement')
+        os.chown(original, user.pw_uid, user.pw_gid)
+        original.chmod(0o600)
+        filler = nas / 'filler'
+        filler.write_bytes(b'x' * (1536 * 1024))
+        st = original.stat()
+        replacement = dict(op='fs_guard_replace', area='nas', path='/original.log',
+                           length=1024*1024, expected_dev=st.st_dev, expected_ino=st.st_ino,
+                           expected_ctime=st.st_ctime_ns//10**9, expected_ctime_nsec=st.st_ctime_ns%10**9)
+        response, _ = actor(replacement, b'r' * (1024*1024))
+        check(not response['ok'], 'atomic replacement fails on ENOSPC')
+        check(original.read_bytes() == b'original must survive failed replacement', 'ENOSPC replacement preserves original')
+        check(not list(nas.glob('.h07p-replace-*')), 'failed replacement cleans its private staging directory')
+        filler.unlink()
+        replacement['length'] = 100
+        response, _ = actor(replacement, b'short')
+        check(not response['ok'] and original.read_bytes() == b'original must survive failed replacement', 'short replacement retains original')
+        original.unlink()
         response, _ = actor(dict(op='fs_list', area='nas', path='/'))
         check(response['data']['capacity']['total'] == 2*1024*1024, 'capacity reflects actual selected mount')
         orphan = nas / ('.h07p-upload-' + 'a'*64)

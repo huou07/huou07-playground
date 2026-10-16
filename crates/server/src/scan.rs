@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn excluded_filesystem(path: &std::path::Path) -> bool {
+pub(crate) fn excluded_filesystem(path: &std::path::Path) -> bool {
     let Ok(path) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
         return true;
     };
@@ -64,6 +64,13 @@ fn content(path: &std::path::Path, meta: &fs::Metadata) -> Result<bool, String> 
         .map_err(|_| "adapter_read")?;
     if !actor.wait().map_err(|_| "adapter_wait")?.success() || bytes.len() > 1024 * 1024 {
         return Err("content_changed_or_budget".into());
+    }
+    detect_bytes(bytes)
+}
+
+pub(crate) fn detect_bytes(mut bytes: Vec<u8>) -> Result<bool, String> {
+    if bytes.len() > 1024 * 1024 {
+        return Err("content_budget".into());
     }
     let scanner = std::env::var("H07P_SCANNER").unwrap_or_else(|_| "/usr/bin/gitleaks".into());
     let config = std::env::var("H07P_SCANNER_CONFIG")

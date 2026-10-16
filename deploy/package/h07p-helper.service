@@ -3,6 +3,7 @@ Description=H07P privileged typed operation helper
 After=network.target
 
 [Service]
+LimitCORE=0
 Type=simple
 User=root
 Group=huou07-playground
