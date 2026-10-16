@@ -1,0 +1,140 @@
+{
+  "method": "Playwright CLI, synthetic PAM, 16-second visible NAS windows; 20 warmed NAS list requests per run",
+  "baseline": "0.2.2",
+  "candidate": "installed 0.3.0",
+  "runs": [
+    {
+      "variant": "baseline",
+      "samples": [
+        {
+          "seconds": 16,
+          "requests": {
+            "/api/metrics": 3,
+            "/api/services": 1,
+            "/api/processes": 1,
+            "/api/cockpit": 1,
+            "/api/files": 1,
+            "/api/apps": 1,
+            "/api/vpn": 1
+          },
+          "total": 9
+        }
+      ],
+      "nas_list_ms": {
+        "median": 9.300000011920929,
+        "p95": 11.799999997019768
+      },
+      "browser_errors": 0,
+      "synthetic_login": true,
+      "production_credentials_used": false,
+      "run": "baseline-1.txt"
+    },
+    {
+      "variant": "baseline",
+      "samples": [
+        {
+          "seconds": 16,
+          "requests": {
+            "/api/metrics": 3,
+            "/api/services": 1,
+            "/api/processes": 1,
+            "/api/cockpit": 1,
+            "/api/files": 1,
+            "/api/apps": 1,
+            "/api/vpn": 1
+          },
+          "total": 9
+        }
+      ],
+      "nas_list_ms": {
+        "median": 9.799999997019768,
+        "p95": 12.5
+      },
+      "browser_errors": 0,
+      "synthetic_login": true,
+      "production_credentials_used": false,
+      "run": "baseline-2.txt"
+    },
+    {
+      "variant": "baseline",
+      "samples": [
+        {
+          "seconds": 16,
+          "requests": {
+            "/api/metrics": 3,
+            "/api/services": 1,
+            "/api/processes": 1,
+            "/api/cockpit": 1,
+            "/api/files": 1,
+            "/api/apps": 1,
+            "/api/vpn": 1
+          },
+          "total": 9
+        }
+      ],
+      "nas_list_ms": {
+        "median": 10.599999994039536,
+        "p95": 13.199999988079071
+      },
+      "browser_errors": 0,
+      "synthetic_login": true,
+      "production_credentials_used": false,
+      "run": "baseline3-1.txt"
+    },
+    {
+      "variant": "candidate",
+      "samples": [
+        {
+          "seconds": 16,
+          "requests": {},
+          "total": 0
+        }
+      ],
+      "nas_list_ms": {
+        "median": 8.299999997019768,
+        "p95": 10.799999997019768
+      },
+      "browser_errors": 0,
+      "synthetic_login": true,
+      "production_credentials_used": false,
+      "run": "candidate3-1.txt"
+    },
+    {
+      "variant": "candidate",
+      "samples": [
+        {
+          "seconds": 16,
+          "requests": {},
+          "total": 0
+        }
+      ],
+      "nas_list_ms": {
+        "median": 10.299999997019768,
+        "p95": 12.299999997019768
+      },
+      "browser_errors": 0,
+      "synthetic_login": true,
+      "production_credentials_used": false,
+      "run": "candidate3-2.txt"
+    },
+    {
+      "variant": "candidate",
+      "samples": [
+        {
+          "seconds": 16,
+          "requests": {},
+          "total": 0
+        }
+      ],
+      "nas_list_ms": {
+        "median": 7.9000000059604645,
+        "p95": 9.400000005960464
+      },
+      "browser_errors": 0,
+      "synthetic_login": true,
+      "production_credentials_used": false,
+      "run": "candidate3-4.txt"
+    }
+  ],
+  "limits": "Resource observations only; no claim of watt savings or minimum possible resource use."
+}

@@ -613,3 +613,21 @@ test('file and permission views do not poll unrelated telemetry collectors',asyn
   expect(calls.some(call=>call.path==='/api/apps')).toBe(false);
   expect(calls.some(call=>call.path==='/api/vpn')).toBe(false);
 });
+
+
+test('generated login exports update selected entries without requiring whole-file replacement', async ({page})=>{
+  await fixture(page);
+  let saved;
+  await page.route('**/api/setup/logins',async route=>{
+    if(route.request().method()==='GET')return route.fulfill({json:{file:{exists:true,version:'fixture-version',merge_supported:true},sources:[{id:'opencode-public',name:'Existing public web login',available:true}],note:'Existing logins only'}});
+    saved=route.request().postDataJSON();return route.fulfill({json:{saved:true}});
+  });
+  await gotoOwner(page,'/#/settings');
+  await page.getByRole('button',{name:'Detect passwords',exact:true}).click();
+  const d=page.getByRole('dialog',{name:'Selected app login passwords'});
+  await expect(d).toContainText('other saved app logins will be kept');
+  await d.getByRole('checkbox',{name:'Existing public web login'}).check();
+  await d.getByRole('button',{name:'Save selected logins to NAS'}).click();
+  await expect(d).toContainText('Saved privately');
+  expect(saved).toMatchObject({mode:'merge',replace:false,expected_version:'fixture-version',selected:['opencode-public']});
+});

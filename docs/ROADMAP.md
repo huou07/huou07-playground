@@ -5,7 +5,7 @@ ARCHITECTURE, source coverage in IMPLEMENTATION and dated evidence below.
 Vocabulary: planned, in progress, implemented, CI-verified, owner-accepted, blocked.
 A check or source artifact never implies owner acceptance.
 
-## GUI setup and discovery amendment, 2026-10-16 — in progress
+## GUI setup and discovery amendment, 2026-10-16 — implemented and Dell package-verified
 
 The owner requests scoped filename search in NAS/Storage; beginner onboarding;
 GUI harness detection and managed worker create/edit/disable/delete without
@@ -24,7 +24,7 @@ Implementation proceeds through dependency-safe increments under the frozen
 `delivery-authority-gui.json` delegation. Optimization uses repeated baseline and
 after measurements, bounded scans/work, no hidden-view polling and a diminishing
 returns stop rule; it cannot prove that no conceivable optimization remains.
-Current source baseline is deployed 0.2.2; new features are not deployed yet.
+Historical baseline was 0.2.2. The final 0.3.0 deployment and scoped acceptance are recorded below.
 
 Owner clarification: preserve safety when optimizing. Apps without an existing
 password keep their existing authentication behavior; do not add a password,
@@ -309,6 +309,25 @@ export defaults, filename search and mobile worker layout passed without page er
 Generated login files support version-bound selected-entry merge; manual edits
 disable automatic merge and require explicit replacement. No authentication is
 added to anonymous apps. Packaging/deployment acceptance remains pending here.
+
+## GUI deployment acceptance — 0.3.0
+
+Source `0378a1d` was packaged reproducibly, passed Lintian, and installed on Dell
+through the guided updater. Doctor reports 0.3.0 and all four managed services
+active. Real encrypted WireGuard transport passed all nine declared services and
+the 70,642-byte GUI asset. Three installed-candidate Playwright CLI runs each had
+zero unrelated NAS-view requests; synthetic authenticated GUI and mobile checks
+passed. Final verification: 41 Rust tests, Clippy, 105 legacy checks, 85 native
+PAM/API checks, 37 filesystem checks, 27 account/ACL checks, 19 dynamic relay
+checks, 31 Guard checks, 34 browser contracts and actual sandbox/cgroup/package
+lifecycle fixtures. Production metadata checks confirm three distinct worker UIDs,
+shared home, no sudo and protected store denial without reading credential values.
+
+[Deployment evidence](evidence/gui-deployed-20261016.md) records exact artifacts,
+measured resource observations and limits. This completes the Dell GUI amendment
+within the supported adapters; it is not human Android acceptance, arbitrary-app
+password recovery or universal fresh VPN/router bootstrap. Frozen delegation state
+remains owner-controlled.
 
 ## Android VPN timeout investigation, 2026-10-15
 
