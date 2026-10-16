@@ -5,7 +5,7 @@ After=network.target
 [Service]
 LimitCORE=0
 Type=simple
-User=root
+# Default root is required for typed actors to drop permanently to owner/service UIDs.
 Group=huou07-playground
 WorkingDirectory=/opt/huou07-playground/current
 EnvironmentFile=/etc/huou07-playground/dashboard.env

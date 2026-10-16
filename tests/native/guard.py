@@ -60,8 +60,31 @@ def main():
         path.chmod(0o600)
         return path
 
+    systemd = os.environ.get('H07P_GUARD_SYSTEMD') == 'true'
+    unit = 'h07p-test-guard-' + str(os.getpid()) + '.service'
+
+    def start_helper(environment):
+        command = [binary, 'helper']
+        if systemd:
+            properties = ['Group=huou07-playground', 'NoNewPrivileges=yes', 'ProtectKernelTunables=yes',
+                          'ProtectKernelModules=yes', 'RestrictSUIDSGID=yes', 'LockPersonality=yes',
+                          'LimitCORE=0', 'RuntimeMaxSec=60']
+            variables = ['H07P_CONTROL_DIR', 'H07P_HELPER_SOCKET', 'H07P_NAS_DIR', 'H07P_RELAYS',
+                         'H07P_MANAGED_UNITS', 'H07P_SCANNER', 'H07P_SCANNER_CONFIG']
+            command = ['systemd-run', '--quiet', '--wait', '--pipe', '--collect', '--unit='+unit,
+                       '--service-type=exec'] + ['--property='+p for p in properties] + [
+                           '--setenv='+k+'='+environment[k] for k in variables if k in environment] + command
+        return subprocess.Popen(command, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def stop_helper():
+        if systemd:
+            subprocess.run(['systemctl', 'stop', unit], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            process.terminate()
+        process.wait(timeout=10)
+
     try:
-        process = subprocess.Popen([binary, 'helper'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        process = start_helper(env)
         for _ in range(200):
             if admin.exists():
                 break
@@ -141,9 +164,8 @@ def main():
         for user in ['dsh-worker', 'codex-worker', 'opencode-worker']:
             result = subprocess.run(['runuser', '-u', user, '--', 'test', '-r', str(backup)], capture_output=True)
             check(result.returncode != 0, 'quarantine denied with detection off: ' + user)
-        process.terminate()
-        process.wait(timeout=10)
-        process = subprocess.Popen([binary, 'helper'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stop_helper()
+        process = start_helper(env)
         for _ in range(100):
             try:
                 status = good('status')
@@ -151,10 +173,8 @@ def main():
             except (ConnectionRefusedError, FileNotFoundError):
                 time.sleep(.05)
         check(status['config']['revision'] == 2 and len(status['quarantine']) == 1, 'restart retains config and recovery manifest')
-        process.terminate()
-        process.wait(timeout=10)
-        process = subprocess.Popen([binary, 'helper'], env={**env, 'H07P_SCANNER': '/bin/false'},
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stop_helper()
+        process = start_helper({**env, 'H07P_SCANNER': '/bin/false'})
         for _ in range(100):
             try:
                 good('status')
@@ -162,11 +182,10 @@ def main():
             except (ConnectionRefusedError, FileNotFoundError):
                 time.sleep(.05)
         check(not rpc('plan', path=str(path))['ok'], 'scanner failure blocks cleanup rather than reporting safe')
-        print(json.dumps({'result': 'passed', 'checks': checks, 'scope': 'synthetic helper/UID/inotify/closed exports; no native auth access'}))
+        print(json.dumps({'result': 'passed', 'checks': checks, 'scope': 'synthetic helper/UID/inotify/closed exports; no native auth access', 'systemd_hardening': systemd}))
     finally:
         if process:
-            process.terminate()
-            process.wait(timeout=10)
+            stop_helper()
         shutil.rmtree(exports)
         shutil.rmtree(root)
 
