@@ -528,3 +528,21 @@ test('VPN setup reviews a selected app and preserves anonymous app authenticatio
   expect(call.headers['x-h07p-csrf']).toBe('fixture-csrf');
   expect(calls.filter(call=>call.path==='/api/apps'&&call.method==='POST')).toHaveLength(0);
 });
+
+test('password export starts unselected, requires replace confirmation and never changes anonymous apps', async ({page})=>{
+  const {calls}=await fixture(page);
+  await page.route('**/api/setup/logins',route=>route.request().method()==='GET'?route.fulfill({json:{file:{exists:true,version:'fixture-version'},sources:[{id:'opencode-public',name:'Existing public web login',available:true,description:'Web login only'}],note:'Apps without passwords need no entry.'}}):route.fulfill({json:{saved:true,path:'/apps-login-password.md',credentials_returned:false}}));
+  await gotoOwner(page,'/#/settings');
+  await page.getByRole('button',{name:'Detect passwords',exact:true}).click();
+  const d=page.getByRole('dialog',{name:'Selected app login passwords'});
+  await expect(d.getByRole('checkbox',{name:'Existing public web login'})).not.toBeChecked();
+  await expect(d).toContainText('Apps without passwords need no entry');
+  await d.getByRole('button',{name:'Save selected logins to NAS'}).click();
+  await expect(d).toContainText('Confirm replacement');
+  await d.getByRole('checkbox',{name:'Existing public web login'}).check();
+  await d.getByRole('checkbox',{name:/Replace the entire/}).check();
+  await d.getByRole('button',{name:'Save selected logins to NAS'}).click();
+  await expect(d).toContainText('Saved privately as apps-login-password.md');
+  expect(calls.filter(call=>call.path.startsWith('/api/setup/vpn/')&&call.method==='POST')).toHaveLength(0);
+  expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain('password');
+});

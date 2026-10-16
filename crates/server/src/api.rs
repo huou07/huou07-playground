@@ -361,6 +361,19 @@ async fn guard_post(Path(op): Path<String>, Json(mut v): Json<Value>) -> Respons
 async fn vpn_apps_get() -> Response {
     rpc_response(rpc(&json!({"op":"vpn_apps_status"})).await)
 }
+async fn app_logins_get() -> Response {
+    rpc_response(rpc(&json!({"op":"app_logins_status"})).await)
+}
+async fn app_logins_post(Json(mut v): Json<Value>) -> Response {
+    if v.to_string().len() > 120000 {
+        return fail(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Login selection exceeds the request limit. Save fewer entries.",
+        );
+    }
+    v["op"] = "app_logins_save".into();
+    rpc_response(rpc(&v).await)
+}
 async fn vpn_apps_post(Path(op): Path<String>, Json(mut v): Json<Value>) -> Response {
     if !["add", "remove"].contains(&op.as_str()) {
         return fail(StatusCode::NOT_FOUND, "Unknown VPN operation");
@@ -595,6 +608,10 @@ pub fn app(static_root: PathBuf) -> Result<Router, String> {
         .route("/api/owner/logout", post(logout))
         .route("/api/control/status", get(status))
         .route("/api/setup/vpn/apps", get(vpn_apps_get))
+        .route(
+            "/api/setup/logins",
+            get(app_logins_get).post(app_logins_post),
+        )
         .route("/api/setup/vpn/apps/{op}", post(vpn_apps_post))
         .route("/api/control/{op}", post(control))
         .route(

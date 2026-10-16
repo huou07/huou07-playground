@@ -144,6 +144,118 @@ fn temporary_name(name: &str) -> bool {
     name.strip_prefix(".h07p-upload-")
         .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
 }
+fn login_file(request: &Value) -> Result<Value> {
+    let dir = root("nas")?;
+    let name = "apps-login-password.md";
+    let metadata = match stat_at(&dir, name) {
+        Ok(meta) => Some(meta),
+        Err(_) => {
+            // Only a real ENOENT is absence; denied, malformed and symlink paths fail closed.
+            let mut st: libc::stat = unsafe { std::mem::zeroed() };
+            if unsafe {
+                libc::fstatat(
+                    dir.as_raw_fd(),
+                    c(name)?.as_ptr(),
+                    &mut st,
+                    libc::AT_SYMLINK_NOFOLLOW,
+                )
+            } == 0
+                || std::io::Error::last_os_error().raw_os_error() != Some(libc::ENOENT)
+            {
+                return Err("Cannot inspect private login file".into());
+            }
+            None
+        }
+    };
+    let mut version = "absent".to_owned();
+    let mut expected_request = json!({});
+    if let Some(meta) = metadata {
+        if meta.st_mode & libc::S_IFMT != libc::S_IFREG
+            || meta.st_size > 262144
+            || meta.st_nlink != 1
+        {
+            return Err("Login file must be a private regular file under 256 KiB".into());
+        }
+        let mut file = open_at(&dir, name, libc::O_RDONLY | libc::O_NONBLOCK, 0)?;
+        let before = file.metadata().map_err(io)?;
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut file)
+            .take(262145)
+            .read_to_end(&mut bytes)
+            .map_err(io)?;
+        let after = file.metadata().map_err(io)?;
+        if bytes.len() > 262144
+            || before.dev() != after.dev()
+            || before.ino() != after.ino()
+            || before.ctime() != after.ctime()
+            || before.ctime_nsec() != after.ctime_nsec()
+        {
+            bytes.fill(0);
+            return Err("Login file changed. Refresh before saving.".into());
+        }
+        version = format!("{:x}", Sha256::digest(&bytes));
+        bytes.fill(0);
+        expected_request = json!({"expected_dev":after.dev(),"expected_ino":after.ino(),"expected_ctime":after.ctime(),"expected_ctime_nsec":after.ctime_nsec()});
+    }
+    if request["op"] == "fs_login_status" {
+        return Ok(
+            json!({"exists":metadata.is_some(),"version":version,"path":"/apps-login-password.md"}),
+        );
+    }
+    if request["expected_version"] != version {
+        return Err("Login file changed. Refresh its status and review again.".into());
+    }
+    let mut document = crate::app_logins::document(&request["entries"])?;
+    let result = if metadata.is_some() {
+        if request["replace"] != true {
+            document.fill(0);
+            return Err("Existing login file requires explicit replacement confirmation".into());
+        }
+        replace_from_input(
+            &dir,
+            name,
+            &expected_request,
+            &mut document.as_slice(),
+            document.len() as u64,
+            true,
+        )
+    } else {
+        let temporary = format!(".h07p-upload-{}", crate::random_token()?);
+        let result = (|| {
+            let mut file = open_at(
+                &dir,
+                &temporary,
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
+                0o600,
+            )?;
+            if unsafe { libc::fremovexattr(file.as_raw_fd(), c"system.posix_acl_access".as_ptr()) }
+                != 0
+                && !matches!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::ENODATA | libc::EOPNOTSUPP)
+                )
+            {
+                return Err("Cannot clear inherited login-file ACL".into());
+            }
+            if unsafe { libc::fchmod(file.as_raw_fd(), 0o600) } != 0 {
+                return Err("Cannot make login file private".into());
+            }
+            file.write_all(&document).map_err(io)?;
+            file.sync_all().map_err(io)?;
+            rename(&dir, &temporary, &dir, name)?;
+            dir.sync_all().map_err(io)
+        })();
+        if result.is_err() {
+            let _ = unlink(&dir, &temporary, false);
+        }
+        result
+    };
+    document.fill(0);
+    result?;
+    Ok(
+        json!({"saved":true,"path":"/apps-login-password.md","mode":"0600","credentials_returned":false}),
+    )
+}
 fn capacity(dir: &File) -> Result<Value> {
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::fstatvfs(dir.as_raw_fd(), &mut s) } != 0 {
@@ -700,6 +812,13 @@ pub fn actor() -> Result<()> {
     let path = request["path"].as_str().unwrap_or("/");
     let op = request["op"].as_str().unwrap_or("");
     match op {
+        "fs_login_status" | "fs_login_save" => {
+            if area != "nas" {
+                return Err("Login file is private NAS only".into());
+            }
+            let result = login_file(&request)?;
+            println!("{}", json!({"ok":true,"data":result}));
+        }
         "fs_search" => {
             let result = search(
                 area,

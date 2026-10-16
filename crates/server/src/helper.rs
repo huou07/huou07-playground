@@ -837,6 +837,11 @@ fn client(stream: UnixStream, broker: bool, lock: &Mutex<()>) {
         reply(input.get_mut(), crate::vpn_apps::control(op, &v));
         return;
     }
+    if op.starts_with("app_logins_") {
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        reply(input.get_mut(), crate::app_logins::control(op, &v));
+        return;
+    }
     if op.starts_with("fs_") {
         if let Err(e) = file_request(&v, &mut input) {
             reply(input.get_mut(), Err(e));

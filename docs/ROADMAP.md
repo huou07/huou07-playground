@@ -55,6 +55,20 @@ ingress. This is not fresh WireGuard bootstrap, encrypted dynamic-relay acceptan
 GUI worker lifecycle, password management or deployment acceptance. Those remain
 open; production remains 0.2.2.
 
+Third implementation checkpoint: selected supported existing public web-login
+export and manual existing-login entry GUI save `apps-login-password.md` through
+the NAS service actor. No provider/native auth stores are inspected. Empty-password
+apps need no entry; export never changes their authentication. New files are 0600,
+replacement is version-bound and explicitly confirmed, symlinks/hardlink aliases
+are rejected, and ordinary NAS deletion leaves no hidden credential copy. The
+initial supported automatic source is the already configured public OpenCode/DSH
+LAN bridge login; other logins remain manual/native-app administration. Password
+change adapters are still pending. Debian passed 39 Rust tests, Clippy/release,
+78 native owner/API checks, 35 private-mount filesystem checks and 29 browser
+contracts. Synthetic secrets were checked for response/log leakage. Stream adapter
+RSS samples for 16/64 MiB uploads were 4408/4200 KiB; these are memory observations,
+not electricity measurements. This increment is not deployed yet.
+
 
 ## Current authorized product integration, 2026-10-15
 

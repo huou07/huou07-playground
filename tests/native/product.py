@@ -76,7 +76,7 @@ def main():
                    APPS_FILE=str(root / "state/apps.json"),
                    H07P_HELPER_SOCKET=str(root / "run/admin.sock"))
         log = open(root / "runtime.log", "wb")
-        processes.append(subprocess.Popen([binary, "helper"], env=env, stdout=log, stderr=log))
+        processes.append(subprocess.Popen([binary, "helper"], env=dict(env, OPENCODE_PUBLIC_USERNAME="fixture-web-owner", OPENCODE_PUBLIC_PASSWORD="synthetic-existing-web-password"), stdout=log, stderr=log))
         for _ in range(100):
             if (root / "run/admin.sock").exists():
                 break
@@ -132,6 +132,22 @@ def main():
         code,vpn_apps=value('/api/setup/vpn/apps')
         check(code==200 and vpn_apps['relays']==[],'owner can inspect isolated VPN app configuration')
         check(request('/api/setup/vpn/apps/unknown',{})[0]==404,'VPN setup rejects arbitrary helper operations')
+        code,logins=value('/api/setup/logins')
+        check(code==200 and logins['file']['version']=='absent' and logins['sources'][0]['available'],'selected login status exposes capabilities without credentials')
+        export=dict(selected=['opencode-public'],entries=[],expected_version='absent',replace=False)
+        code,saved_logins=value('/api/setup/logins',export)
+        check(code==200 and saved_logins['saved'] and 'synthetic-existing-web-password' not in json.dumps(saved_logins),'selected login export does not return credential values')
+        login_file=root/'nas/apps-login-password.md'
+        check(login_file.stat().st_mode&0o777==0o600 and 'synthetic-existing-web-password' in login_file.read_text(),'export creates private 0600 NAS Markdown with selected fixture login')
+        original=hashlib.sha256(login_file.read_bytes()).digest()
+        check(request('/api/setup/logins',export)[0]==400 and hashlib.sha256(login_file.read_bytes()).digest()==original,'stale export cannot overwrite an existing private login file')
+        check('synthetic-existing-web-password' not in (root/'runtime.log').read_text(),'selected login export never logs its values')
+        code,logins=value('/api/setup/logins')
+        check(request('/api/setup/logins',dict(export,expected_version=logins['file']['version']))[0]==400,'replacing a login file requires explicit confirmation')
+        updated=dict(export,selected=[],entries=[dict(name='Fixture manual app',username='fixture',password='synthetic-manual-web-password')],expected_version=logins['file']['version'],replace=True)
+        check(request('/api/setup/logins',updated)[0]==200 and 'synthetic-manual-web-password' in login_file.read_text() and 'synthetic-existing-web-password' not in login_file.read_text(),'confirmed replacement retains only chosen existing logins')
+        check(request('/api/fs/mutate',dict(area='nas',action='delete',path='/apps-login-password.md',confirmed=True))[0]==200,'owner can delete the saved login file through ordinary NAS GUI API')
+        check(value('/api/setup/logins')[1]['file']['version']=='absent' and list((root/'nas').iterdir())==[],'deleting the file leaves no hidden NAS credential copy')
         saved = csrf
         csrf = ""
         check(value("/api/owner/session")[1]["authenticated"] is False,

@@ -1,6 +1,8 @@
 #[cfg(target_os = "linux")]
 mod api;
 #[cfg(target_os = "linux")]
+mod app_logins;
+#[cfg(target_os = "linux")]
 mod broker;
 #[cfg(target_os = "linux")]
 mod files;

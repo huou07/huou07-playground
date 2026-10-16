@@ -632,6 +632,43 @@
     };
     try{await load();}catch(error){if(d.node.isConnected)message(d.status,error.message,true);}
   });
+  $('apps-logins').addEventListener('click',async()=>{
+    const d=dialog('Selected app login passwords'),content=el('div'),controller=new AbortController(),manual=[];
+    d.add(el('p','Save selected existing app logins to apps-login-password.md in private NAS. Apps without passwords need no entry. This does not add or change app authentication.','panel-note'),content);
+    d.node.addEventListener('close',()=>{controller.abort();for(const row of manual)row.password.value='';});
+    message(d.status,'Checking supported login sources and file status…');
+    try {
+      const data=await api('/api/setup/logins',{signal:controller.signal});if(!d.node.isConnected)return;
+      const selected=[];
+      for(const source of data.sources||[]) {
+        const check=input('login-source','','checkbox');check.disabled=!source.available;
+        content.append(label(source.name+(source.available?'':' · No supported existing login'),check),el('p',source.description,'panel-note'));
+        selected.push({source,check});
+      }
+      content.append(el('p',data.note,'panel-note'));
+      const rows=el('div');content.append(rows,button('Add an existing login manually',()=>{
+        if(manual.length>=20)return;
+        const row=el('fieldset'),name=input('login-app'),username=input('login-username'),password=input('login-password','','password');
+        name.maxLength=60;username.maxLength=256;password.maxLength=4096;password.autocomplete='off';
+        const record={name,username,password};manual.push(record);
+        row.append(label('App with an existing password',name),label('Existing username (if any)',username),label('Existing password',password),button('Remove entry',()=>{password.value='';manual.splice(manual.indexOf(record),1);row.remove();}));rows.append(row);name.focus();
+      }));
+      const replace=input('replace-login-file','','checkbox');
+      if(data.file.exists)content.append(label('Replace the entire existing file. Entries not selected here will be removed from that file.',replace));
+      content.append(button('Open private NAS',()=>{d.close();location.hash='/files';}));
+      const save=button('Save selected logins to NAS',async()=>{
+        if(data.file.exists&&!replace.checked){message(d.status,'Confirm replacement of the existing file, or keep it unchanged.',true);return;}
+        if(!manual.length&&!selected.some(item=>item.check.checked)){message(d.status,'Choose an existing supported login or add an existing login manually.',true);return;}
+        save.disabled=true;d.actions.firstChild.textContent='Close (save may continue)';
+        try {
+          await api('/api/setup/logins',{method:'POST',body:{selected:selected.filter(item=>item.check.checked).map(item=>item.source.id),entries:manual.map(row=>({name:row.name.value,username:row.username.value,password:row.password.value})),expected_version:data.file.version,replace:replace.checked},signal:controller.signal});
+          for(const row of manual)row.password.value='';
+          if(d.node.isConnected){message(d.status,'Saved privately as apps-login-password.md. You can view, download or delete it in NAS. App authentication is unchanged.');save.remove();d.actions.firstChild.textContent='Close';}
+        }catch(error){if(d.node.isConnected){message(d.status,error.message,true);save.disabled=false;}}
+      },'primary');d.actions.append(save);
+      message(d.status,data.file.exists?'The file already exists. Replacement needs explicit confirmation.':'Nothing has been read into or saved to the login file yet. Select only the sources you want.');
+    }catch(error){if(error.name!=='AbortError'&&d.node.isConnected)message(d.status,error.message,true);}
+  });
   async function route() {
     await window.h07pSessionReady;
     const current=location.hash.slice(2);
