@@ -3,22 +3,23 @@
 ## Allowed environment
 
 For the current product delivery, the owner explicitly authorized build, test,
-deployment and application on their Debian host in this conversation. That newer
-authorization supersedes the historical hosted-only restrictions below for this
-delivery. Use synthetic temporary data, isolated namespaces where appropriate,
-separate test ports/control state, bounded fixture units, protected backups and
-verified rollback. Never use owner credentials or NAS contents as test fixtures.
-See [current native evidence](evidence/product-native-20261015.md).
+deployment and application on the real Debian host. On 2026-10-16 they further
+authorized using the Playground GUI to restore baseline ACLs and configure workers,
+scanning the actual GitHub credential through the redacted detector, and allowing
+that exact file to one selected worker for a push check. No other credential is
+authorized. Preserve all project data; do not create a VM or synthetic credential.
+This user scope supersedes the historical hosted-only restrictions below. See the
+current live task section in [ROADMAP](ROADMAP.md) for exact evidence and limits.
 
-The following hosted-only description records the earlier baseline policy:
+The following hosted-only description records the earlier baseline policy. Its
+no-live-host and guest-only clauses are superseded for this task:
 
-Product tests/builds/benchmarks/package lifecycle checks run on disposable
-GitHub-hosted Linux infrastructure. The owner's live Debian environment is not a
-fixture. The sole local security exception is the isolated guest design below;
-its current prerequisites are blocked.
-Never use a self-hosted runner, SSH into the owner host or invoke deploy scripts
-there. Sudo is allowed inside the disposable CI guest. Read-only source/Git review
-does not establish runtime behavior.
+Historically, product tests/builds/benchmarks/package lifecycle checks ran on
+disposable GitHub-hosted Linux infrastructure. That environment remains useful
+for reproducible CI evidence, but the current owner-authorized lane additionally
+uses the actual Debian host over SSH and its installed Playground. Do not create a
+VM for this live task. Source/CI evidence and live Debian evidence are reported
+separately.
 
 Current CI: framework structure/routing guard, legacy make check, locked Rust
 format/Clippy/test/release/HTTP smoke, and separate Python/Rust browser lanes.
@@ -59,18 +60,19 @@ is tested as navigation, not advertised as an implemented permission dialog.
 | Rust baseline | Pinned toolchain: cargo fmt --all -- --check; cargo clippy --workspace --all-targets --locked -- -D warnings; cargo test --workspace --locked; cargo build --workspace --release --locked |
 | API parity | Fixture comparisons with Python reference; errors/timeouts and limits included |
 | Owner control | Auth/CSRF, replay, worker-to-owner API denial, policy revision conflicts |
-| Isolation | Actual managed agents-worker subprocesses and descendants in disposable Debian VM, not mocked syscall results |
+| Isolation | Actual managed DSH/Codex/OpenCode worker subprocesses and descendants on the owner-authorized Debian host; no mocked syscall results |
 | NAS/Storage | File integrity, quota/full disk, path races, cut/copy/paste, partial failures and unauthorized filesystem/API retrieval |
 | UX | Existing plus new Playwright journeys, keyboard, 360px/desktop and dark/light screenshot review |
 | Dependencies | Locked versions, reviewed origin/license, redacted secret scan, cargo audit/deny with documented exceptions |
 | .deb | Reproducible versioned build, lintian, install/upgrade/remove/purge and retained-data checks in disposable Debian VM |
 | Release | Passed required gates for exact commit, artifacts/checksums/SBOM, honest notes and known limitations |
 
-Use a disposable Debian VM on a GitHub-hosted runner for full systemd, DAC,
-namespace, Landlock and package acceptance; containers alone may miss those.
-Detect virtualization/capabilities. Unsupported test environment is an explicit
-incomplete gate, never a skip presented as a pass. Supported minimum Debian/kernel
-and required ABI are chosen from demonstrated capability tests before first release.
+The current owner accepts a successful real Debian architecture/feature journey
+for this task. Record kernel/runtime limitations alongside the evidence; do not
+claim unmeasured energy or broader cross-platform acceptance. For other release
+claims, CI and disposable systemd/DAC/namespace/Landlock package acceptance remain
+separate evidence classes. Unsupported capabilities are an explicit incomplete
+gate, never a skip presented as a pass.
 Start with Linux amd64 .deb; other Linux architectures need their own evidence.
 Non-Linux platforms remain Coming soon.
 
@@ -86,7 +88,8 @@ current session loader before claiming discovery or promoting a skill.
 
 Existing hosted entrypoints are `make check`, `make acceptance`, the pinned Rust
 commands in [CI](../.github/workflows/ci.yml), and
-`bash tests/rust-smoke.sh target/release/h07p-server`. Do not run them locally.
+`bash tests/rust-smoke.sh target/release/h07p-server`. The live owner task also
+authorizes real Debian build/deploy and browser journeys.
 Missing Cargo.lock is a gate failure. Browser acceptance must be extended to a
 real Rust backend as each API slice lands; a Python-only pass cannot close P1.
 

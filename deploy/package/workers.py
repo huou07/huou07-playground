@@ -87,6 +87,134 @@ def batches(database,kind=None):
         yield paths
 
 
+def home_inventory():
+    """Yield metadata-only home paths without following symlinks or crossing mounts."""
+    metadata=HOME.lstat();device=metadata.st_dev;count=0;started=time.monotonic()
+    yield HOME,metadata
+    stack=[iter(os.scandir(HOME))]
+    while stack:
+        entry=next(stack[-1],None)
+        if entry is None:
+            stack.pop();continue
+        count+=1
+        if count>5_000_000 or time.monotonic()-started>300:
+            raise RuntimeError('Shared-home ACL reset exceeded its 5 million object / 5 minute bound')
+        if entry.is_symlink():continue
+        metadata=entry.stat(follow_symlinks=False)
+        if metadata.st_dev!=device or not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):continue
+        path=Path(entry.path)
+        yield path,metadata
+        if stat.S_ISDIR(metadata.st_mode):stack.append(iter(os.scandir(path)))
+
+
+def decode_acl_path(raw):
+    """Decode getfacl's octal pathname escapes without treating them as shell syntax."""
+    if raw.startswith(b'"') and raw.endswith(b'"'):
+        raw=raw[1:-1]
+    decoded=bytearray();index=0
+    while index<len(raw):
+        if raw[index]!=ord('\\'):
+            decoded.append(raw[index]);index+=1;continue
+        tail=raw[index+1:index+4]
+        if len(tail)==3 and all(ord('0')<=digit<=ord('7') for digit in tail):
+            decoded.append(int(tail,8));index+=4;continue
+        if index+1<len(raw) and raw[index+1] in (ord('\\'),ord('"')):
+            decoded.append(raw[index+1]);index+=2;continue
+        raise RuntimeError('The saved ACL baseline contains an unsupported pathname escape')
+    return os.fsdecode(bytes(decoded))
+
+
+def filter_baseline(source,destination,control,job,home_device):
+    """Drop stale/moved paths from the dated baseline before asking setfacl to restore it."""
+    count=restored=missing=0;block=[];path=None;started=time.monotonic()
+    with source.open('rb') as input_file,destination.open('xb') as output:
+        os.chmod(destination,0o600)
+        def flush():
+            nonlocal restored,missing,block,path
+            if path is None:
+                output.writelines(block)
+            else:
+                try:metadata=os.lstat(path)
+                except FileNotFoundError:
+                    missing+=1
+                else:
+                    if stat.S_ISLNK(metadata.st_mode) or metadata.st_dev!=home_device:
+                        missing+=1
+                    else:
+                        output.writelines(block);restored+=1
+            block=[];path=None
+        for line in input_file:
+            if line.startswith(b'# file: '):
+                flush();raw=line[len(b'# file: '):].rstrip(b'\r\n')
+                path=decode_acl_path(raw)
+                if not os.path.isabs(path) or os.path.commonpath((str(HOME),path))!=str(HOME):
+                    raise RuntimeError('The saved ACL baseline contains a path outside the shared home')
+                block=[line];count+=1
+                if count>5_000_000 or time.monotonic()-started>300:
+                    raise RuntimeError('Saved ACL baseline filtering exceeded its 5 million record / 5 minute bound')
+                if count%10000==0:progress(control,job,'Filtering stale ACL baseline records',count)
+            else:
+                block.append(line)
+        flush();output.flush();os.fsync(output.fileno())
+    if not restored:
+        raise RuntimeError('No existing home objects matched the saved ACL baseline')
+    return restored,missing
+
+
+def reset_acl(job,control):
+    baseline=Path('/var/backups/h07p-harness-workers/20261015-220803/acl.restore')
+    trusted(baseline)
+    info=baseline.stat()
+    if not 1_000_000<=info.st_size<=500*1024*1024:
+        raise RuntimeError('The saved pre-worker ACL baseline has an unexpected size')
+    backup_dir=Path('/var/backups/h07p-harness-workers')/(time.strftime('%Y%m%d-%H%M%S')+'-acl-reset-'+str(time.time_ns()))
+    backup_dir.mkdir(mode=0o700);backup_dir.parent.chmod(0o700)
+    backup=backup_dir/'acl.restore';count=0;paths=[]
+    with backup.open('xb') as output:
+        os.chmod(backup,0o600)
+        for path,metadata in home_inventory():
+            current=path.lstat()
+            if current.st_dev!=metadata.st_dev or current.st_ino!=metadata.st_ino:
+                raise RuntimeError('A shared-home object changed during ACL reset review')
+            paths.append(path);count+=1
+            if len(paths)>=150:
+                subprocess.run(['getfacl','-p','--',*[str(item) for item in paths]],check=True,stdout=output,stderr=subprocess.DEVNULL,timeout=90)
+                paths.clear()
+            if count%10000==0:progress(control,job,'Saving current ACL rollback snapshot',count)
+        if paths:subprocess.run(['getfacl','-p','--',*[str(item) for item in paths]],check=True,stdout=output,stderr=subprocess.DEVNULL,timeout=90)
+        output.flush();os.fsync(output.fileno())
+    filtered=backup_dir/'baseline.filtered.restore'
+    root_device=HOME.stat().st_dev
+    restored,missing=filter_baseline(baseline,filtered,control,job,root_device)
+    try:
+        subprocess.run(['setfacl','--test',f'--restore={filtered}'],check=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=900)
+    except Exception:
+        raise RuntimeError(f'Saved ACL baseline could not be safely reviewed; current ACL snapshot is {backup}')
+    progress(control,job,'Removing worker ACLs while preserving file contents',count)
+    directories=[];files=[];cleared=0
+    try:
+        for path,metadata in home_inventory():
+            batch=directories if stat.S_ISDIR(metadata.st_mode) else files
+            batch.append(path)
+            if len(batch)>=150:
+                args=['setfacl','-b']+(['-k'] if batch is directories else [])+['--',*[str(item) for item in batch]]
+                subprocess.run(args,check=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=90)
+                cleared+=len(batch);batch.clear()
+                if cleared%10000==0:progress(control,job,'Removing worker ACLs while preserving file contents',cleared)
+        for batch,is_directory in ((directories,True),(files,False)):
+            if batch:
+                args=['setfacl','-b']+(['-k'] if is_directory else [])+['--',*[str(item) for item in batch]]
+                subprocess.run(args,check=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=90)
+        progress(control,job,'Restoring saved pre-worker ACL baseline',cleared)
+        subprocess.run(['setfacl',f'--restore={filtered}'],check=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=900)
+    except Exception:
+        try:subprocess.run(['setfacl',f'--restore={backup}'],check=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=900)
+        except Exception:raise RuntimeError(f'ACL reset failed and rollback needs recovery from {backup}')
+        raise RuntimeError(f'ACL reset failed; the prior ACL snapshot was restored from {backup}')
+    progress(control,job,f'Pre-worker ACL baseline restored ({missing} retired paths skipped); worker launches remain stopped',cleared)
+    return str(backup)
+
+
 def stage(acl,extra,control,job):
     plan=control/f'worker-plan-{job}.sqlite'
     descriptor=os.open(plan,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(descriptor)
@@ -124,7 +252,7 @@ def stage(acl,extra,control,job):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=('create','repair','remove'))
+    parser.add_argument('action',choices=('create','repair','remove','reset-acl'))
     parser.add_argument('--control-dir',required=True,type=Path)
     parser.add_argument('--job-id',required=True)
     parser.add_argument('workers',nargs='+',choices=CATALOG)
@@ -146,6 +274,11 @@ def main():
         if len(token)==64 and all(c in '0123456789abcdef' for c in token) and stat.S_ISREG(info.st_mode) and info.st_uid==0:
             stale.unlink()
     selected=tuple(dict.fromkeys(args.workers))
+    if args.action=='reset-acl':
+        if set(selected)!=set(CATALOG):raise RuntimeError('ACL reset requires all supported worker identities to be selected')
+        rollback=reset_acl(job,control)
+        print(json.dumps(dict(ok=True,workers=list(selected),action=args.action,data_retained=True,rollback_snapshot=rollback)))
+        return
     for name in selected: account(name)
     registry=control/'worker-accounts.json'
     records=json.loads(registry.read_text()) if registry.exists() else {}

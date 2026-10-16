@@ -2,14 +2,30 @@
 
 ## Current owner-selected Debian account model
 
-The 2026-10-15 owner instruction selects three separate harness UIDs with a
-shared owner home and permissive ACLs for ordinary files. The current host
-implementation and limitations are in [harness workers](../deploy/harness-workers/README.md).
-It protects known owner secret stores and cross-harness native stores directly;
-it does not claim a complete policy broker or protection from every indirect
-attack through shared writable project code. Native credentials remain managed
-by their own harness. The stronger product contracts below remain roadmap
-requirements rather than a description of this host deployment.
+The 2026-10-16 owner task authorizes the H07P GUI to reset worker ACLs to the
+saved pre-worker snapshot, detect/create/repair the supported DSH, Codex and
+OpenCode workers, then configure broad ordinary-home access with private stores
+and explicit Blocks preserved. A root-owned rollback snapshot is saved before
+reset; project bytes and directories are not removed. The workers remain stopped
+until Repair reapplies private-store protection.
+
+The requested source behavior now supports an absolute workspace and rule target
+anywhere on the system, including `/root`. A recursive Allow skips control-plane,
+private-store, detected sensitive-name and hard-linked paths. Shared tool/runtime
+trees remain read/execute only under a broad home Allow. Explicit Block rules are
+enforced after all Allows and private exceptions. A private exception must name
+one existing regular, unaliased file, applies only to its selected worker, and
+requires an impact warning acknowledgement followed by a second Apply click.
+Removing an explicit Block remains available in the rules list; removing a default
+private denial requires an exact-file exception. Structural ACL limits still fail
+closed; impact warnings do not reject a valid Apply.
+
+The scanner accepts any canonical absolute file or directory, including hidden
+directories such as `.config`, returns paths/reasons only, and keeps the existing
+content/time/object limits. Its H07P GUI journey must be verified on the live
+Debian host before these source changes are considered accepted. See
+[harness workers](../deploy/harness-workers/README.md) and
+[ROADMAP](ROADMAP.md).
 
 ## Threat model and immutable boundary
 
@@ -114,8 +130,14 @@ a new route into a protected object. Close inherited handles before exec.
 
 NAS has dedicated service ownership and non-worker-searchable parents. Its bytes,
 thumbnails, temporary uploads, backups and scan output share the private boundary.
-No broad ACL mutation on arbitrary user files: scope changes to managed resources.
-Changes to existing host ownership/units are owner operations at installation.
+An authenticated owner may grant a selected worker access to any canonical
+absolute host target. Apply records the exact target and worker, snapshots ACLs,
+keeps immutable control-plane/NAS boundaries, preserves default private denials,
+and applies explicit Blocks last. Recursive Allow skips known shared runtime
+trees' write access and sensitive paths; those paths need a separate reviewed
+exception where supported. GUI worker reset restores the saved pre-worker ACL
+baseline without deleting files, retains a root-private rollback snapshot, and
+keeps services stopped until Repair reapplies peer-store protection.
 
 Policy updates use expected revision to prevent lost edits. Validate compiled
 enforcement before activation; report Desired / Applying / Enforced / Failed.

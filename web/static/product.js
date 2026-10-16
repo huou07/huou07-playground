@@ -362,7 +362,7 @@
   const permissions=$('permissions-panel');
   function policyBody() { return {expected_revision:draft.revision,preset:draft.preset,workspace:draft.workspace,rules:draft.rules,worker_settings:draft.worker_settings||{}}; }
   function ruleDescription(rule) {
-    return (rule.action === 'block' ? 'Private · Block' : 'Allow') + ' · ' + (rule.operations || []).join(', ') + ' · ' + (rule.worker || 'all managed workers') + (rule.recursive ? ' · recursive' : '') + (rule.expires_at ? ' · expires ' + displayDate(rule.expires_at) : '') + ' · ' + (rule.source || 'manual') + (rule.inherited ? ' · inherited' : '');
+    return (rule.action === 'block' ? 'Private · Block' : rule.credential_override ? 'Allow · exact private-path exception' : 'Allow') + ' · ' + (rule.operations || []).join(', ') + ' · ' + (rule.worker || 'all managed workers') + (rule.recursive ? ' · recursive' : '') + (rule.expires_at ? ' · expires ' + displayDate(rule.expires_at) : '') + ' · ' + (rule.source || 'manual') + (rule.inherited ? ' · inherited' : '');
   }
   function markDirty() { dirty=true; renderPolicy(); }
   function renderPolicy() {
@@ -390,7 +390,8 @@
     });
     const workspace=input('workspace',scoped.workspace || '/'); workspace.setAttribute('aria-label','Worker workspace');
     workspace.addEventListener('change',()=>{setScoped('workspace',workspace.value);markDirty();});
-    const configuration=el('div',undefined,'product-toolbar');configuration.append(label('Configure',scope),label('Security Level',preset),label('Workspace (absolute path)',workspace));
+    const workspaceRow=el('div',undefined,'product-toolbar');workspaceRow.append(label('Workspace (absolute path)',workspace),button('Browse workspace',()=>browsePath(value=>{workspace.value=value;setScoped('workspace',value);markDirty();},workspace.value || '/')));
+    const configuration=el('div',undefined,'product-toolbar');configuration.append(label('Configure',scope),label('Security Level',preset),workspaceRow);
     const enabled=input('worker-enabled','','checkbox');enabled.checked=policyScope==='*'?workers.every(worker=>draft.worker_settings?.[worker.name]?.enabled!==false):scoped.enabled!==false;enabled.addEventListener('change',()=>{setScoped('enabled',enabled.checked);markDirty();});configuration.append(label('Enable worker launches',enabled));
     const toolbar=el('div',undefined,'product-toolbar');
     toolbar.append(button('Block',()=>editRule({action:'block',worker:policyScope})),button('Allow',()=>editRule({action:'allow',worker:policyScope})),button('Auto Detect',scan),button('Review impact',reviewPolicy,'primary'));
@@ -451,7 +452,7 @@
     const go=el('button','Go');go.type='submit';form.append(label('Absolute host path',path),go);d.add(form,list);
     const choose=button('Use this path',()=>{onSelect(path.value);d.close();},'primary');d.actions.append(choose);
     async function listPath(target) {
-      message(d.status,'Loading…');choose.disabled=true;
+      path.value=target;message(d.status,'Loading…');choose.disabled=false;
       try {
         const data=await api(fsUrl('list','storage',target));path.value=data.path;list.replaceChildren();
         if(data.parent) list.append(button('Up',()=>listPath(data.parent)));
@@ -461,7 +462,7 @@
           if(entry.kind==='directory') row.append(button('Open',()=>listPath(entry.path)));list.append(row);
         }
         message(d.status,(data.total>data.entries.length?'Only the first page is displayed; enter a full path to select another target. ':'')+'Selecting a path does not modify files.');choose.disabled=false;
-      } catch(error) { message(d.status,error.message,true); }
+      } catch(error) { message(d.status,error.message + ' You can still select the typed absolute path.',true);choose.disabled=false; }
     }
     form.addEventListener('submit',event=>{event.preventDefault();listPath(path.value);});await listPath(initial);
   }
@@ -470,6 +471,10 @@
     const target=input('target',existing.target || '');target.required=true;target.pattern='/.*';target.placeholder='/absolute/path';
     const worker=select([['*','All managed workers'],...(policy.workers || []).map(item=>[item.name,item.name])],existing.worker || '*');
     const action=select([['block','Block · Private'],['allow','Allow']],existing.action || 'block');
+    const allowPrivate=input('credential-override','','checkbox');allowPrivate.checked=existing.credential_override===true;
+    const privateOverrideLabel=label('Allow this exact private / credential target after the warning and second Apply click',allowPrivate);privateOverrideLabel.className='check';
+    const updateOverride=()=>{privateOverrideLabel.hidden=action.value!=='allow';if(action.value!=='allow')allowPrivate.checked=false;};
+    action.addEventListener('change',updateOverride);updateOverride();
     const kind=select([['directory','Directory'],['file','File']],existing.kind || 'directory');
     const recursive=input('recursive','','checkbox');recursive.checked=existing.recursive ?? true;
     const expires=input('expires_at','','datetime-local');
@@ -483,13 +488,13 @@
     const browse=button('Browse',()=>browsePath(value=>{target.value=value;},target.value || '/'));
     const pathRow=el('div',undefined,'product-toolbar');pathRow.append(browse);
     const add=el('button','Save draft rule','primary');add.type='submit';
-    form.append(label('Absolute target path',target),pathRow,label('Target kind',kind),label('Worker scope',worker),label('Action',action),operations,label('Include descendants',recursive),label('Expiry (optional, local time)',expires),el('p','Linux directory ACLs couple write, create, and delete rights. Unsupported combinations are rejected by dry-run/apply; selecting an operation never claims independent OS enforcement. Execute does not stop an interpreter reading a script.','product-warning'),add);
+    form.append(label('Absolute target path',target),pathRow,label('Target kind',kind),label('Worker scope',worker),label('Action',action),privateOverrideLabel,operations,label('Include descendants',recursive),label('Expiry (optional, local time)',expires),el('p','Linux directory ACLs couple write, create, and delete rights. Unsupported combinations are rejected by dry-run/apply; selecting an operation never claims independent OS enforcement. Execute does not stop an interpreter reading a script. A private-path exception applies only to this exact target; any Block rule still wins.','product-warning'),add);
     d.add(form);
     form.addEventListener('submit',event=>{
       event.preventDefault();const selected=operationInputs.filter(box=>box.checked).map(box=>box.name);
       if(!selected.length) {message(d.status,'Select at least one operation.',true);return;}
       if(expires.value && Date.parse(expires.value)<=Date.now()) {message(d.status,'Expiry must be in the future.',true);return;}
-      const rule={...existing,id:existing.id || uniqueId(),worker:worker.value,target:target.value,kind:kind.value,action:action.value,operations:selected,recursive:recursive.checked,source:existing.source || 'manual',expires_at:expires.value?Math.floor(Date.parse(expires.value)/1000):null};
+      const rule={...existing,id:existing.id || uniqueId(),worker:worker.value,target:target.value,kind:kind.value,action:action.value,credential_override:allowPrivate.checked && action.value==='allow',operations:selected,recursive:recursive.checked,source:existing.source || 'manual',expires_at:expires.value?Math.floor(Date.parse(expires.value)/1000):null};
       const index=draft.rules.findIndex(item=>item.id===rule.id);
       if(index<0) draft.rules.push(rule);else draft.rules[index]=rule;
       d.close();markDirty();
@@ -503,14 +508,25 @@
       d.add(el('p','Preset: ' + draft.preset + ' · Workspace: ' + draft.workspace),el('p',draft.rules.length + ' draft rules · expected revision ' + body.expected_revision),el('p','Individual worker settings: '+JSON.stringify(body.worker_settings||{})));
       for(const rule of draft.rules) d.add(el('p',rule.target + ' · ' + ruleDescription(rule)));
       const impact=result.impact || {};d.add(el('pre',JSON.stringify(impact,null,2)));
+      const impactWarnings=Array.isArray(result.warnings)?result.warnings:[];
+      for(const warning of impactWarnings) d.add(el('p',warning,'product-warning'));
       if(impact.restart_workers?.length) d.add(el('p','Applying will stop tasks and restart these workers: ' + impact.restart_workers.join(', ') + '. Cancel to keep them running.','product-warning'));
       d.add(el('p','Blocks take precedence over overlapping allows. Broad parent-directory changes affect descendants. Revoked access does not erase existing copies.','product-warning'));
       if(result.ok===false || result.valid===false || result.status==='rejected' || result.status==='failed') {message(d.status,result.error || 'The backend rejected this draft. Edit the rules and retry.',true);return;}
       message(d.status,'Draft validated. Nothing has changed yet.');
+      let confirmed=false;
       const apply=button('Apply changes',async()=>{
+        if(impactWarnings.length && !confirmed) {
+          confirmed=true;
+          apply.textContent='Confirm and apply anyway';
+          d.add(el('p','You chose to continue after reviewing these impact warnings:','product-warning'));
+          for(const warning of impactWarnings) d.add(el('p',warning,'product-warning'));
+          message(d.status,'Warning acknowledged. Press Confirm and apply anyway to enforce this draft. Nothing has changed yet.');
+          return;
+        }
         apply.disabled=true;d.actions.firstChild.textContent='Close (apply continues)';message(d.status,'Applying… waiting for backend confirmation.');
         try {
-          const response=await api('/api/control/apply',{method:'POST',body});
+          const response=await api('/api/control/apply',{method:'POST',body:{...body,review_id:result.review_id}});
           if(response.ok===false || response.status==='failed') throw new Error(response.error || 'Apply failed. The draft is preserved.');
           dirty=false; const loaded=await loadPolicy();message(d.status,loaded && policy?.enforced_revision===policy?.revision?'Backend confirmed enforced revision ' + policy.revision + '.':'Apply submitted. Enforcement could not be confirmed; refresh status to verify.'); apply.remove();d.actions.firstChild.textContent='Close';
         }catch(error){message(d.status,error.message + ' Draft preserved; refresh status before retrying a stale revision.',true);apply.disabled=false;}
@@ -574,7 +590,7 @@
   $('policy-refresh').addEventListener('click',()=>loadPolicy());
   $('workers-setup').addEventListener('click',async()=>{
     const d=dialog('Harness workers'),list=el('div'),controller=new AbortController();let timer=null;
-    d.add(el('p','Reuse installed DSH, Codex and OpenCode with separate worker accounts and the owner’s shared home, apps, tools, project AGENTS.md and skills. Workers get no root or administrator groups. Peer credentials and owner private stores stay protected.','panel-note'),list);
+    d.add(el('p','Reuse installed DSH, Codex and OpenCode with separate worker accounts and the owner’s shared home, apps, tools, project AGENTS.md and skills. Workers get no root or administrator groups. Peer credentials and owner private stores stay protected. Reset ACL restores the saved pre-worker ownership/ACL metadata without deleting project files, then leaves workers stopped until Repair reapplies protection.','panel-note'),list);
     d.node.addEventListener('close',()=>{controller.abort();clearTimeout(timer);});
     const load=async()=>{
       const data=await api('/api/setup/workers',{signal:controller.signal});if(!d.node.isConnected)return;
@@ -590,8 +606,10 @@
       const actions=el('div',undefined,'product-toolbar');
       const run=action=>{
         if(!selected.size){message(d.status,'Select the workers to configure.',true);return;}
+        if(action==='reset-acl'&&(selected.size!==3||!data.acl_reset_available)){message(d.status,'Reset requires all three worker accounts and the saved pre-worker ACL baseline.',true);return;}
         const names=[...selected].filter(name=>action!=='start-web'||name!=='codex-worker');if(!names.length){message(d.status,'Codex uses its installed CLI; it has no managed web service.',true);return;}const review=dialog('Review worker '+action);
-        review.add(el('p',names.join(', ')),el('p',action==='remove'?'Disable and remove the active worker names. Shared data stays. A locked retired system identity preserves each old UID so future accounts cannot inherit its file permissions.':action==='start-web'?'Start the existing managed web services for these enabled workers, using their existing native configuration.':'Account/ACL changes stop managed worker tasks. New accounts are enabled for managed launch; existing disabled settings are preserved. Shared home/apps are reused; known private stores remain protected. Custom permission rules are reapplied before workers can restart.','product-warning'));
+        const explanation=action==='reset-acl'?'Restore the saved pre-worker ACL and ownership metadata for existing home objects. This changes permissions only; it does not delete or overwrite project files. All managed services stop first and the policy stays pending until Repair reapplies peer-credential and private-store protection. Keep the rollback snapshot if recovery is needed.':action==='remove'?'Disable and remove the active worker names. Shared data stays. A locked retired system identity preserves each old UID so future accounts cannot inherit its file permissions.':action==='start-web'?'Start the existing managed web services for these enabled workers, using their existing native configuration.':'Account/ACL changes stop managed worker tasks. New accounts are enabled for managed launch; existing disabled settings are preserved. Shared home/apps are reused; known private stores remain protected. Custom permission rules are reapplied before workers can restart.';
+        review.add(el('p',names.join(', ')),el('p',explanation,'product-warning'));
         const apply=button('Confirm '+action,async()=>{
           apply.disabled=true;review.actions.firstChild.textContent='Close (maintenance continues)';
           try{
@@ -610,6 +628,7 @@
           }catch(error){if(review.node.isConnected){message(review.status,error.message,true);apply.disabled=false;}}
         },action==='remove'?'danger':'primary');review.actions.append(apply);
       };
+      if(data.acl_reset_available)actions.append(button('Reset ACL to pre-worker baseline',()=>run('reset-acl'),'danger'));
       for(const [action,title] of [['create','Create selected accounts'],['repair','Repair selected ACLs'],['remove','Remove selected workers'],['start-web','Start selected web services']])actions.append(button(title,()=>run(action)));
       actions.append(button('Select all workers',()=>{for(const check of list.querySelectorAll('input[name="selected-worker"]')){check.checked=true;check.dispatchEvent(new Event('change'));}}));
       list.append(actions);

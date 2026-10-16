@@ -236,8 +236,13 @@ mod linux {
                 "/proc/self",
                 "/home/huou07/.local/bin",
                 "/home/huou07/.local/lib",
+                "/home/huou07/.local/share/flutter",
+                "/home/huou07/.local/share/playwright-cli",
                 "/home/huou07/.cargo/bin",
                 "/home/huou07/.rustup",
+                "/home/huou07/.pub-cache",
+                "/home/huou07/.pub-cache/hosted",
+                "/home/huou07/.cache/ms-playwright",
                 "/opt/huou07-playground/current/bin/h07p-server",
             ]
             .iter()
@@ -253,6 +258,10 @@ mod linux {
             }
             paths.push((workspace.to_path_buf(), true));
             paths.push((temporary.to_path_buf(), true));
+            paths.push((
+                PathBuf::from("/home/huou07/.local/share/flutter/bin/cache"),
+                true,
+            ));
             paths.extend(native.iter().cloned().map(|p| (p, true)));
             for (path, writable) in paths {
                 let metadata = match fs::metadata(&path) {
@@ -369,13 +378,21 @@ mod linux {
             .env("CODEX_HOME", format!("{HOME}/.codex"))
             .env(
                 "PATH",
-                format!("{HOME}/.local/bin:{HOME}/.cargo/bin:/usr/local/bin:/usr/bin:/bin"),
+                format!("{HOME}/.local/bin:{HOME}/.cargo/bin:{HOME}/.local/share/flutter/bin:{HOME}/.local/share/playwright-cli/node_modules/.bin:/usr/local/bin:/usr/bin:/bin"),
             )
+            .env("PUB_CACHE", format!("{HOME}/.pub-cache"))
+            .env("PLAYWRIGHT_BROWSERS_PATH", format!("{HOME}/.cache/ms-playwright"))
+            .env("CARGO_HOME", format!("{HOME}/.cargo"))
+            .env("RUSTUP_HOME", format!("{HOME}/.rustup"))
             .env("TMPDIR", &temporary)
             .env("NPM_CONFIG_USERCONFIG", native[0].join("npmrc"))
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", "safe.directory")
-            .env("GIT_CONFIG_VALUE_0", format!("{HOME}/*"))
+            // DSH's subprocess scrubber removes KEY/VALUE variables, which leaves
+            // Git's counted config incomplete. Keep the scoped trust in one value.
+            .env("GIT_CONFIG_COUNT", "0")
+            .env(
+                "GIT_CONFIG_PARAMETERS",
+                format!("'safe.directory={HOME}/*'"),
+            )
             .env(
                 "TERM",
                 env::var("TERM")

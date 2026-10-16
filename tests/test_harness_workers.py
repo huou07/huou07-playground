@@ -10,6 +10,10 @@ spec = importlib.util.spec_from_file_location('harness_setup', ROOT / 'deploy/ha
 setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
 
+worker_spec = importlib.util.spec_from_file_location('harness_workers', ROOT / 'deploy/package/workers.py')
+workers = importlib.util.module_from_spec(worker_spec)
+worker_spec.loader.exec_module(workers)
+
 
 class HarnessPolicyTests(unittest.TestCase):
     def test_native_credential_files_are_left_to_native_store(self):
@@ -20,7 +24,7 @@ class HarnessPolicyTests(unittest.TestCase):
         for path in ('.ssh', '.secrets', '.config/gh/hosts.yml', '.local/share/containers',
                      'Projects/demo/.env', 'Projects/demo/.env.production',
                      'Projects/demo/keys/tls.key', '.npmrc', 'clean-reinstall-20261015',
-                     '.cargo/credentials.toml',
+                     '.cargo/config', '.cargo/config.toml', '.cargo/credentials.toml',
                      '.local/share/huou07-playground-migration', 'AEH/private'):
             self.assertEqual(setup.policy(path, ['AEH/private']), 'private', path)
 
@@ -29,6 +33,12 @@ class HarnessPolicyTests(unittest.TestCase):
                      'Projects/demo/.env.example', 'Projects/demo/service.py', 'AEH/docs'):
             self.assertEqual(setup.policy(path), 'shared', path)
         self.assertEqual(setup.policy('.local/lib/node_modules/tool/cli.js'), 'readonly')
+        self.assertEqual(
+            setup.policy('.local/share/playwright-cli/node_modules/@playwright/cli/index.js'),
+            'readonly',
+        )
+        self.assertEqual(setup.policy('.cargo/registry/index/config.json'), 'readonly')
+        self.assertEqual(setup.policy('.cargo/git/checkouts/library/src/lib.rs'), 'readonly')
         self.assertEqual(setup.policy('.config/systemd/user/a.service'), 'readonly')
 
     def test_inventory_never_enters_secret_native_store_or_follows_symlinks(self):
@@ -52,8 +62,11 @@ class HarnessPolicyTests(unittest.TestCase):
         unit = setup.service('opencode', '/home/huou07/.local/bin/opencode web')
         for required in ('User=opencode-worker', 'HOME=/home/huou07',
                          'NoNewPrivileges=yes', 'CapabilityBoundingSet=\n',
-                         'GIT_CONFIG_KEY_0=safe.directory', 'GIT_CONFIG_VALUE_0=/home/huou07/*'):
+                         'GIT_CONFIG_COUNT=0',
+                         "GIT_CONFIG_PARAMETERS='safe.directory=/home/huou07/*'"):
             self.assertIn(required, unit)
+        self.assertNotIn('GIT_CONFIG_KEY_0', unit)
+        self.assertNotIn('GIT_CONFIG_VALUE_0', unit)
         self.assertNotIn('User=huou07\n', unit)
 
     def test_refuses_symlinked_native_boundary_before_privileged_mutation(self):
@@ -64,6 +77,53 @@ class HarnessPolicyTests(unittest.TestCase):
             with patch.object(setup, 'HOME', home):
                 with self.assertRaisesRegex(RuntimeError, 'symlink in managed boundary'):
                     setup.validate_boundaries([])
+
+
+class BaselineFilterTests(unittest.TestCase):
+    def test_stale_paths_are_skipped_and_existing_acl_records_are_preserved(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp) / 'home'
+            home.mkdir()
+            existing = home / 'space name'
+            existing.write_text('ordinary data')
+            missing = home / 'retired path'
+            source = Path(temp) / 'baseline.restore'
+            destination = Path(temp) / 'filtered.restore'
+            control = Path(temp) / 'control'
+            control.mkdir()
+            source.write_bytes(
+                b'# file: ' + str(existing).encode() + b'\n'
+                b'# owner: owner\nuser::rw-\ngroup::---\nother::---\n\n'
+                b'# file: ' + str(missing).encode() + b'\n'
+                b'# owner: owner\nuser::rw-\ngroup::---\nother::---\n'
+            )
+            with patch.object(workers, 'HOME', home):
+                restored, skipped = workers.filter_baseline(
+                    source, destination, control, 'a' * 64, home.stat().st_dev
+                )
+            self.assertEqual((restored, skipped), (1, 1))
+            filtered = destination.read_bytes()
+            self.assertIn(str(existing).encode(), filtered)
+            self.assertNotIn(str(missing).encode(), filtered)
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+
+    def test_getfacl_octal_path_escapes_decode_without_shell_interpretation(self):
+        self.assertEqual(workers.decode_acl_path(b'/home/owner/space\\040name'),
+                         '/home/owner/space name')
+
+    def test_baseline_filter_rejects_paths_outside_home_before_restore(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp) / 'home'
+            home.mkdir()
+            source = Path(temp) / 'baseline.restore'
+            destination = Path(temp) / 'filtered.restore'
+            control = Path(temp) / 'control'
+            control.mkdir()
+            source.write_bytes(b'# file: /root/.bashrc\nuser::rw-\n')
+            with patch.object(workers, 'HOME', home), self.assertRaisesRegex(
+                RuntimeError, 'outside the shared home'
+            ):
+                workers.filter_baseline(source, destination, control, 'b' * 64, home.stat().st_dev)
 
 
 if __name__ == '__main__':

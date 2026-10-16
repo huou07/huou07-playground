@@ -1,21 +1,25 @@
 # Current implementation map
 
-Current runtime source: `0378a1d`, packaged/deployed as 0.3.0 on 2026-10-16.
-This maps code; [ROADMAP](ROADMAP.md) owns task state and
-[deployment evidence](evidence/gui-deployed-20261016.md) owns executed claims.
+The inspected baseline is `d0d48c3` on `codex/h07p-product`; the current
+system-wide permissions/runtime-recovery source change is uncommitted in the
+editing checkout. Package 0.3.6, including stale-path filtering for the saved
+pre-worker ACL baseline, is installed and healthy on Debian. GUI acceptance is
+in progress; the target checkout has not yet been synchronized or pushed.
+Earlier package evidence is dated separately below.
+[ROADMAP](ROADMAP.md) owns task state and deployment evidence owns executed claims.
 
 | Boundary | Current source | Implemented behavior |
 | --- | --- | --- |
 | Linux entry points | [main](../crates/server/src/main.rs) | HTTP, root helper, permanent-drop worker launcher, owner/service file actor and bounded broker CLI |
 | Owner API | [API](../crates/server/src/api.rs) | PAM login, private SQLite sessions, memory-only proof for reads/mutations, CSRF and identity-bound download/media tickets |
 | Native dashboard | [telemetry](../crates/server/src/telemetry.rs) | Metrics, processes, services, Cockpit, VPN, apps/icons, launch and registry mutation; bounded work and caches |
-| Policy control | [helper](../crates/server/src/helper.rs) | Typed peer-checked sockets, SQLite history/audit, reviewed ACL activation/rollback, pending/enforced revisions and expiry |
+| Policy control | [helper](../crates/server/src/helper.rs) | Typed peer-checked sockets, SQLite history/audit, unrestricted absolute targets/workspaces, block-last ACL activation, exact-file private exceptions, two-click impact challenge, pending/enforced revisions and expiry |
 | Managed workers | [sandbox](../crates/server/src/sandbox.rs), [broker](../crates/server/src/broker.rs) | Permanent IDs, empty groups, NNP/FD closure, optional Landlock and single-use list/read/write/create/delete approvals |
-| Detection | [scan](../crates/server/src/scan.rs) | Explicit bounded metadata/content suggestions using an unprivileged maintained scanner |
+| Detection | [scan](../crates/server/src/scan.rs) | Bounded metadata/content suggestions for any canonical absolute file/directory, including hidden paths; redacted results |
 | Integrated files | [files](../crates/server/src/files.rs) | Private NAS and owner Storage, descriptor-relative operations, previews/ranges, streamed uploads, explicit recovery and atomic replacement; bounded filename-only search |
-| GUI worker setup | [worker setup](../crates/server/src/worker_setup.rs), [root adapter](../deploy/package/workers.py) | Supported harness detection, reviewed selected/all account creation, repair, retirement and web start; bounded streamed ACL planning and job progress |
+| GUI worker setup | [worker setup](../crates/server/src/worker_setup.rs), [root adapter](../deploy/package/workers.py) | Supported harness detection, GUI pre-worker ACL/ownership restore with rollback snapshot, stale-path filtering and restore dry-run, repair, retirement and web start; bounded streamed ACL planning and job progress |
 | App setup | [VPN apps](../crates/server/src/vpn_apps.rs), [logins](../crates/server/src/app_logins.rs) | Host-listener discovery, reviewed wg0-only relays, selected existing-login export/merge and supported public web password changes |
-| Credential Guard | [Guard](../crates/server/src/guard.rs), [redaction](../crates/server/src/redact.rs) | Opt-in bounded inotify, metadata incidents, reviewed closed-export cleanup, root-private originals and private NAS recovery; partial protection reported honestly |
+| Credential Guard | [Guard](../crates/server/src/guard.rs), [redaction](../crates/server/src/redact.rs) | Opt-in bounded inotify over owner-selected canonical host paths, metadata incidents, reviewed owner-owned closed-export cleanup, root-private originals and private NAS recovery; partial protection reported honestly |
 | Private web access | [relays](../crates/server/src/relays.rs), [native bridge](../crates/server/src/native_proxy.rs) | VPN-only relays, existing native web auth substitution and LAN handoff, HTTP/chunked/SSE/WebSocket transport |
 | Owner UI | [product UI](../web/static/product.js), [Guard UI](../web/static/guard.js) | Permissions, approvals, detection, private NAS, Storage and Guard; works on VPN HTTP without secure-context randomUUID |
 | Maintenance | [lifecycle](../deploy/package/lifecycle.py), [setup](../deploy/package/setup.py) | Versioned .deb, snapshots, rollback, dependency planning, install/update/repair/data-retaining uninstall and public listener migration |

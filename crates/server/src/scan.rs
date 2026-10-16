@@ -154,15 +154,16 @@ pub fn run(v: &Value) -> Result<Value, String> {
     let _lease = Lease;
     let scope = v["scope"].as_str().ok_or("Select a scan scope")?;
     let path = fs::canonicalize(scope).map_err(|e| e.to_string())?;
-    if path.to_str().is_none() {
-        return Err("Scan scope must be a UTF-8 path".into());
+    if path.to_str().is_none() || path != std::path::Path::new(scope) {
+        return Err("Scan scope must be a canonical UTF-8 path".into());
     }
-    if !path.starts_with("/home/huou07") && !path.starts_with("/tmp") {
-        return Err("Select an owner home or synthetic temporary scope".into());
+    let root_metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+    if root_metadata.file_type().is_symlink()
+        || !(root_metadata.is_file() || root_metadata.is_dir())
+    {
+        return Err("Select a regular file or directory without a symlink alias".into());
     }
-    if crate::helper::protected(&path, false) {
-        return Err("Select ordinary owner data outside protected runtime and credentials".into());
-    }
+    let root_device = root_metadata.dev();
     let content_enabled = v["content"].as_bool().unwrap_or(false);
     let mode = v["mode"].as_str().unwrap_or("block");
     if !["block", "allow"].contains(&mode) {
@@ -171,33 +172,52 @@ pub fn run(v: &Value) -> Result<Value, String> {
     let mut found = Vec::new();
     let mut skipped = Vec::new();
     let start = Instant::now();
-    let mut queue = vec![(path, 0usize)];
+    let mut queue = vec![(path.clone(), 0usize)];
     let mut seen = 0;
     let mut scanned_bytes = 0u64;
     let mut content_files = 0;
-    while let Some((p, depth)) = queue.pop() {
-        if excluded_filesystem(&p) {
-            skipped.push(json!({"path":p,"reason":"filesystem_excluded"}));
+    while let Some((directory, depth)) = queue.pop() {
+        if excluded_filesystem(&directory) {
+            skipped.push(json!({"path":directory,"reason":"filesystem_excluded"}));
             continue;
         }
-        if depth > 8 || seen >= 10000 || start.elapsed() > Duration::from_secs(10) {
-            skipped.push(json!({"path":p,"reason":"scan_budget"}));
+        if depth > 8 || seen >= 100000 || start.elapsed() > Duration::from_secs(60) {
+            skipped.push(json!({"path":directory,"reason":"scan_budget"}));
             continue;
         }
-        let entries = match fs::read_dir(&p) {
-            Ok(e) => e,
-            Err(_) => {
-                skipped.push(json!({"path":p,"reason":"unreadable"}));
-                continue;
+        let candidates: Box<
+            dyn Iterator<Item = std::io::Result<(std::path::PathBuf, Option<String>)>>,
+        > = if directory == path && root_metadata.is_file() {
+            Box::new(std::iter::once(Ok((directory.clone(), None))))
+        } else {
+            match fs::read_dir(&directory) {
+                Ok(entries) => Box::new(entries.map(|entry| {
+                    entry.map(|entry| {
+                        (
+                            entry.path(),
+                            Some(entry.file_name().to_string_lossy().to_lowercase()),
+                        )
+                    })
+                })),
+                Err(_) => {
+                    skipped.push(json!({"path":directory,"reason":"unreadable"}));
+                    continue;
+                }
             }
         };
-        for entry in entries.flatten() {
+        for candidate in candidates {
+            let (p, known_name) = match candidate {
+                Ok(candidate) => candidate,
+                Err(_) => {
+                    skipped.push(json!({"path":directory,"reason":"directory_read_error"}));
+                    continue;
+                }
+            };
             seen += 1;
-            if seen > 10000 || start.elapsed() > Duration::from_secs(10) {
-                skipped.push(json!({"path":p,"reason":"scan_budget"}));
+            if seen > 100000 || start.elapsed() > Duration::from_secs(60) {
+                skipped.push(json!({"path":directory,"reason":"scan_budget"}));
                 break;
             }
-            let p = entry.path();
             if p.to_str().is_none() {
                 skipped.push(json!({"path":p.to_string_lossy(),"reason":"non_utf8_path"}));
                 continue;
@@ -206,12 +226,17 @@ pub fn run(v: &Value) -> Result<Value, String> {
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            if m.file_type().is_symlink() || crate::helper::protected(&p, false) {
-                skipped.push(json!({"path":p,"reason":"symlink_or_protected"}));
+            if m.file_type().is_symlink() || m.dev() != root_device {
+                skipped.push(json!({"path":p,"reason":"symlink_or_other_filesystem"}));
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            let sensitive = name.starts_with(".env") && !name.contains("example")
+            let name = known_name.unwrap_or_else(|| {
+                p.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase()
+            });
+            let sensitive_name = name.starts_with(".env") && !name.contains("example")
                 || [
                     "credential",
                     "secret",
@@ -225,11 +250,19 @@ pub fn run(v: &Value) -> Result<Value, String> {
                 .iter()
                 .any(|n| name.contains(n))
                 || name.ends_with(".pem")
-                || name.ends_with(".key");
-            let mut detected = sensitive;
-            let mut reason = "sensitive_filename";
+                || name.ends_with(".key")
+                || (name == "hosts.yml"
+                    && p.parent()
+                        .is_some_and(|parent| parent.ends_with(".config/gh")));
+            let private_store = crate::helper::is_private_path(&p);
+            let mut detected = sensitive_name || (private_store && m.is_file());
+            let mut reason = if sensitive_name {
+                "sensitive_filename"
+            } else {
+                "protected_private_store"
+            };
             let mut unknown = false;
-            if content_enabled && m.is_file() && !sensitive {
+            if content_enabled && m.is_file() {
                 if content_files >= 128 || scanned_bytes.saturating_add(m.len()) > 16 * 1024 * 1024
                 {
                     skipped.push(json!({"path":p,"reason":"content_budget"}));
@@ -255,7 +288,7 @@ pub fn run(v: &Value) -> Result<Value, String> {
             {
                 found.push(json!({"path":p,"reason":if detected{reason}else{"no_known_sensitive_marker"},"confidence":if detected{"high"}else{"unknown"}}));
             }
-            if m.is_dir() && !sensitive && !name.starts_with('.') && name != "node_modules" {
+            if m.is_dir() && name != ".git" && name != "node_modules" {
                 queue.push((p, depth + 1));
             }
         }

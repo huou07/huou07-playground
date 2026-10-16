@@ -16,19 +16,23 @@ preserve each application's existing login behavior. Do not introduce passwords
 or an authentication proxy for apps that have no existing password. Supported
 password export/change is a separate explicit owner action for existing app logins.
 
-This preparation stage maintains contracts and verification paths; the existing
-Rust health/static baseline is mapped in [IMPLEMENTATION.md](IMPLEMENTATION.md).
-Remaining migration and new screens are tracked only in [ROADMAP.md](ROADMAP.md).
-No installation, deployment or testing on the owner's Debian machine is authorized.
+The earlier preparation-only restriction is historical. The owner's 2026-10-16
+task explicitly authorizes implementation, deployment and acceptance on the real
+Debian host through the Playground GUI; see [VALIDATION.md](VALIDATION.md) and
+[ROADMAP.md](ROADMAP.md). No VM or synthetic credential is authorized for that
+live acceptance.
 
 ## Permissions
 
-An owner can browse a server-side path picker or type an absolute file/folder path,
+An owner can browse or type any canonical absolute workspace and file/folder path,
 choose Block or Allow, and customize list/read/write/create/delete/execute
 permissions, recursive scope and any expiry. "Use" must expand into the concrete
 operations, not an unexplained checkbox. Blocked targets are labelled Private.
-Show effective rights, inherited rules, conflict reason and enforced status.
-Offer a dry-run impact view, apply, audit history and owner-controlled rollback.
+Blocks always override overlapping Allows and can be removed in the rule list.
+Default private stores and detected sensitive targets remain denied under broad
+Allows. An exact private-file exception requires a warning acknowledgement and a
+second Apply click. Show effective rights, inherited rules, conflict reason and
+enforced status. Offer a dry-run impact view, apply, audit history and rollback.
 
 Auto Detect Block finds candidate passwords, credentials, API keys, permission
 configuration and other sensitive files within an owner-selected scope.

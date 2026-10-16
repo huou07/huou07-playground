@@ -199,7 +199,7 @@ pub async fn rpc(value: &Value) -> Result<Value, String> {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     tokio::time::timeout(
-        std::time::Duration::from_secs(120),
+        crate::helper::CONTROL_OPERATION_TIMEOUT,
         reader.read_line(&mut line),
     )
     .await

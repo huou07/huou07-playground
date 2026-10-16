@@ -5,6 +5,53 @@ ARCHITECTURE, source coverage in IMPLEMENTATION and dated evidence below.
 Vocabulary: planned, in progress, implemented, CI-verified, owner-accepted, blocked.
 A check or source artifact never implies owner acceptance.
 
+## System-wide permissions, worker tool recovery and live Debian acceptance — in progress, 2026-10-17
+
+The owner authorizes this task to restore/update the missing project tools/docs,
+build and deploy H07P on the real Debian host, use H07P's own GUI to reset ACLs
+from the saved pre-worker snapshot, detect/create/repair workers and set policy,
+then verify the real journeys without a VM. Preserve all project data. Worker
+workspaces and permission targets must accept canonical absolute paths anywhere on
+the host. Recursive Allow must keep default private stores, detected credentials
+and explicit Blocks denied; explicit Blocks win. An exact credential exception
+requires a warning acknowledgement and a second Apply. The actual GitHub credential
+is authorized for one selected worker solely to test push access. Do not inspect,
+log or display its contents; other credentials remain unauthorized.
+
+Source changes currently add system-wide target/workspace validation, broad-home
+privacy filtering, exact-file private exceptions, block-last ACL ordering, a
+two-step impact challenge, arbitrary-file/directory scans, arbitrary Guard watch
+roots, and a GUI ACL reset that uses the existing root-owned snapshot while
+preserving bytes. They also address shared runtime read-only ACLs, the DSH Git
+config scrubber issue and traversal for exact private-file exceptions.
+
+H07P 0.3.6 is built and installed on the real Debian host; the dashboard and
+`/api/health` are active. The final Linux workspace run previously passed 42
+tests; nine focused Python worker-policy/baseline tests pass; local Rust
+formatting, JavaScript syntax and whitespace checks pass. The release audit
+passed for 144 components with zero vulnerabilities/warnings; `lintian --fail-on
+error` reported no issue. The 0.3.6 package SHA-256 is
+`86df72718f0edbaeaa96260728e481fc3d00fc695a0c3a71f06a63e2c8a89b46`.
+
+The first GUI ACL-reset attempt failed on stale paths in the dated baseline;
+follow-up inspection found 14 paths that no longer exist. A 535 MB rollback
+snapshot remains protected, sampled ACLs match the pre-reset state, and all three
+workers remain stopped. The 0.3.6 reset now filters stale records and preflights
+the result with `setfacl --test`; on the actual Debian baseline it retained
+1,295,293 records, skipped 14 stale paths and passed the dry run. The second GUI
+reset is pending owner reauthentication after package deployment. Live policy, credential
+scan, worker checks, OR/VCE runs and authorized GitHub push remain pending. Do
+not call this task owner-accepted until those live results are recorded below.
+
+Tool recovery finding: current AEH capability sources remain under
+`/home/huou07/AEH/ops/product-verification/` and their listed source checksums
+match. The deployed capability bundle/services and `agents-worker` identity were
+intentionally retired; do not reinstall them as an H07P substitute. Legacy paths
+and install instructions are now marked retired in AEH. Flutter 3.47.7/Dart
+3.13.5, Rust 1.98.0, Playwright CLI 0.1.22, public Dart packages and Chromium
+cache were restored from the retained owner backup into shared owner-home paths.
+AEH, OR and VCE docs now point to those locations.
+
 ## GUI setup and discovery amendment, 2026-10-16 — implemented and Dell package-verified
 
 The owner requests scoped filename search in NAS/Storage; beginner onboarding;

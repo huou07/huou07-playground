@@ -78,7 +78,7 @@ fn canonical(text: &str) -> Result<PathBuf> {
     }
     Ok(p.into())
 }
-fn roots(v: &Value) -> Result<Vec<PathBuf>> {
+fn roots(v: &Value, require_owner: bool) -> Result<Vec<PathBuf>> {
     let list = v
         .as_array()
         .ok_or("Select a list of existing log folders")?;
@@ -89,9 +89,17 @@ fn roots(v: &Value) -> Result<Vec<PathBuf>> {
     list.iter().map(|p| {
         let path = canonical(p.as_str().ok_or("Invalid folder")?)?;
         let meta = fs::metadata(&path).map_err(err)?;
-        if !path.starts_with("/home/huou07/Projects") || crate::helper::protected(&path,true)
+        if (require_owner && (crate::helper::protected(&path, true) || meta.uid() != uid))
+            || (!require_owner && crate::helper::protected(&path, false))
             || crate::scan::excluded_filesystem(&path)
-                || !meta.is_dir() || meta.uid()!=uid { return Err("Select an owner-owned log export folder inside Projects, outside protected stores".into()); }
+            || !meta.is_dir()
+        {
+            return Err(if require_owner {
+                "Select an owner-owned log export folder anywhere on the host, outside protected stores".into()
+            } else {
+                "Select a host folder anywhere on the system, outside protected stores and pseudo-filesystems".into()
+            });
+        }
         Ok(path)
     }).collect()
 }
@@ -344,8 +352,8 @@ pub(crate) fn control(op: &str, v: &Value) -> Result<Value> {
             if v["revision"] != old["revision"] {
                 return Err("REVISION_CONFLICT: reload Guard settings".into());
             }
-            let scopes = roots(&v["scopes"])?;
-            let exports = roots(&v["safe_exports"])?;
+            let scopes = roots(&v["scopes"], false)?;
+            let exports = roots(&v["safe_exports"], true)?;
             let cfg = json!({"revision":old["revision"].as_u64().unwrap_or(0)+1,"enabled":v["enabled"]==true,"content":v["content"]==true,"scopes":scopes,"safe_exports":exports});
             c.execute("INSERT INTO guard_config VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET body=excluded.body",[cfg.to_string()]).map_err(err)?;
             GENERATION.fetch_add(1, Ordering::Relaxed);

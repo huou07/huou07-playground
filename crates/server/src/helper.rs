@@ -15,6 +15,19 @@ use std::{
     time::Duration,
 };
 type Result<T> = std::result::Result<T, String>;
+pub(crate) const CONTROL_OPERATION_TIMEOUT: Duration = Duration::from_secs(900);
+
+const ACL_PATH_BATCH_MAX_COUNT: usize = 4096;
+const ACL_PATH_BATCH_MAX_BYTES: usize = 512 * 1024;
+
+fn should_flush_acl_batch(count: usize, argument_bytes: usize) -> bool {
+    count >= ACL_PATH_BATCH_MAX_COUNT || argument_bytes >= ACL_PATH_BATCH_MAX_BYTES
+}
+
+fn path_argument_bytes(path: &Path) -> usize {
+    path.as_os_str().as_encoded_bytes().len().saturating_add(1)
+}
+
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
@@ -26,7 +39,7 @@ pub(crate) fn dir() -> PathBuf {
 pub(crate) fn db() -> Result<Connection> {
     let c = Connection::open(dir().join("policy.db")).map_err(err)?;
     c.busy_timeout(Duration::from_secs(10)).map_err(err)?;
-    c.execute_batch("CREATE TABLE IF NOT EXISTS history(revision INTEGER PRIMARY KEY,body TEXT NOT NULL);CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,at INTEGER,event TEXT);CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY,worker TEXT,path TEXT,operation TEXT,revision INTEGER,expires INTEGER,state TEXT,dev INTEGER,ino INTEGER);").map_err(err)?;
+    c.execute_batch("CREATE TABLE IF NOT EXISTS history(revision INTEGER PRIMARY KEY,body TEXT NOT NULL);CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,at INTEGER,event TEXT);CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY,worker TEXT,path TEXT,operation TEXT,revision INTEGER,expires INTEGER,state TEXT,dev INTEGER,ino INTEGER);CREATE TABLE IF NOT EXISTS policy_reviews(id TEXT PRIMARY KEY,digest TEXT NOT NULL,expires INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0);").map_err(err)?;
     crate::broker::migrate(&c)?;
     crate::guard::migrate(&c)?;
     Ok(c)
@@ -83,46 +96,242 @@ fn affected(rule: &Value) -> Vec<&'static str> {
 fn within(path: &Path, base: &Path) -> bool {
     path == base || path.starts_with(base)
 }
-pub(crate) fn protected(path: &Path, ancestor: bool) -> bool {
-    let mut roots = vec![
-        PathBuf::from("/etc"),
-        PathBuf::from("/usr"),
-        PathBuf::from("/root"),
-        PathBuf::from("/var/lib/h07p-private"),
-        dir(),
-        std::env::var_os("H07P_NAS_DIR")
+fn immutable_roots() -> &'static [PathBuf] {
+    static ROOTS: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+    ROOTS
+        .get_or_init(|| {
+            vec![
+                PathBuf::from("/var/lib/h07p-private"),
+                dir(),
+                std::env::var_os("H07P_NAS_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| "/var/lib/h07p-private/nas".into()),
+                PathBuf::from("/var/lib/huou07-playground"),
+                PathBuf::from("/opt/huou07-playground"),
+                PathBuf::from("/run/h07p"),
+                PathBuf::from("/etc/h07p-workers"),
+                PathBuf::from("/usr/lib/huou07-playground"),
+                PathBuf::from("/usr/local/libexec/h07p"),
+                PathBuf::from("/home/huou07/.config/huou07-playground"),
+            ]
+        })
+        .as_slice()
+}
+fn private_roots() -> &'static [PathBuf] {
+    static ROOTS: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+    ROOTS
+        .get_or_init(|| {
+            let mut roots = Vec::new();
+            for base in [Path::new("/home/huou07"), Path::new("/root")] {
+                for relative in [
+                    ".ssh",
+                    ".gnupg",
+                    ".aws",
+                    ".azure",
+                    ".kube",
+                    ".docker",
+                    ".pki",
+                    ".secrets",
+                    ".mozilla",
+                    ".var",
+                    ".claude",
+                    ".config/gh",
+                    ".config/gcloud",
+                    ".config/agent-workbench",
+                    ".config/litellm",
+                    ".config/omniroute",
+                    ".config/keyrings",
+                    ".config/chromium",
+                    ".config/google-chrome",
+                    ".config/BraveSoftware",
+                    ".config/containers",
+                    ".local/share/keyrings",
+                    ".local/share/containers",
+                    ".local/share/docker",
+                    ".local/share/huou07-playground-migration",
+                    ".cache/mozilla",
+                    ".cache/chromium",
+                    ".cache/google-chrome",
+                    ".cache/BraveSoftware",
+                    ".cargo/config",
+                    ".cargo/config.toml",
+                    ".cargo/credentials",
+                    ".cargo/credentials.toml",
+                ] {
+                    roots.push(base.join(relative));
+                }
+            }
+            for relative in [
+                ".dsh",
+                ".codex",
+                ".config/opencode",
+                ".local/share/opencode",
+                ".local/state/opencode",
+                ".cache/opencode",
+            ] {
+                roots.push(PathBuf::from("/home/huou07").join(relative));
+            }
+            roots.extend([
+                PathBuf::from("/etc/ssh"),
+                PathBuf::from("/etc/ssl/private"),
+                PathBuf::from("/etc/letsencrypt"),
+                PathBuf::from("/etc/sudoers.d"),
+            ]);
+            roots
+        })
+        .as_slice()
+}
+fn readonly_roots() -> &'static [PathBuf] {
+    static ROOTS: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+    ROOTS
+        .get_or_init(|| {
+            [
+                "/home/huou07/.local/bin",
+                "/home/huou07/.local/lib",
+                "/home/huou07/.cargo",
+                "/home/huou07/.local/share/flutter",
+                "/home/huou07/.local/share/playwright-cli",
+                "/home/huou07/.local/share/huou07-playground",
+                "/home/huou07/.cargo/bin",
+                "/home/huou07/.rustup",
+                "/home/huou07/.pub-cache/hosted",
+                "/home/huou07/.cache/ms-playwright",
+                "/home/huou07/.config/systemd",
+                "/home/huou07/.config/autostart",
+                "/home/huou07/.config/fish",
+                "/home/huou07/.config/environment.d",
+                "/home/huou07/.config/libvirt",
+                "/home/huou07/.bashrc",
+                "/home/huou07/.bash_profile",
+                "/home/huou07/.bash_logout",
+                "/home/huou07/.profile",
+                "/home/huou07/.zshrc",
+                "/home/huou07/.zprofile",
+                "/home/huou07/.gitconfig",
+            ]
+            .into_iter()
             .map(PathBuf::from)
-            .unwrap_or_else(|| "/var/lib/h07p-private/nas".into()),
-        PathBuf::from("/var/lib/huou07-playground"),
-        PathBuf::from("/opt/huou07-playground"),
-        PathBuf::from("/run/h07p"),
-    ];
-    for p in [
-        ".ssh",
-        ".gnupg",
-        ".secrets",
-        ".dsh",
-        ".codex",
-        ".config/opencode",
-        ".local/share/opencode",
-        ".local/state/opencode",
-        ".cache/opencode",
-        ".local/bin",
-        ".local/lib",
-        ".config/systemd",
-        ".config/huou07-playground",
-        ".config/litellm",
-        ".config/omniroute",
-        ".config/agent-workbench",
-        ".config/gh",
-        ".local/share/containers",
-        ".local/share/docker",
-    ] {
-        roots.push(PathBuf::from("/home/huou07").join(p));
-    }
-    roots
+            .collect()
+        })
+        .as_slice()
+}
+fn sensitive_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
+        ".git-credentials",
+        ".bash_history",
+        ".zsh_history",
+        ".lesshst",
+        "auth.json",
+        ".credentials.yaml",
+        "credentials.json",
+        "credentials.yaml",
+        "credentials.yml",
+        "credentials",
+        "credentials.toml",
+        "known_hosts",
+        "passwd",
+        "shadow",
+        "gshadow",
+        "sudoers",
+        ".s3cfg",
+        ".envrc",
+        ".gitcookies",
+        "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "authorized_keys",
+    ]
+    .contains(&name.as_str())
+        || [".pem", ".key", ".p12", ".pfx"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
+        || ((name == ".env" || name.starts_with(".env.") || name.ends_with(".env"))
+            && !["example", "sample", "template"]
+                .iter()
+                .any(|part| name.contains(part)))
+}
+pub(crate) fn is_private_path(path: &Path) -> bool {
+    let github_hosts = path.file_name().is_some_and(|name| name == "hosts.yml")
+        && path
+            .parent()
+            .is_some_and(|parent| parent.ends_with(".config/gh"));
+    github_hosts
+        || private_roots().iter().any(|root| within(path, root))
+        || path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(sensitive_name)
+}
+pub(crate) fn immutable(path: &Path, ancestor: bool) -> bool {
+    immutable_roots()
         .iter()
-        .any(|r| within(path, r) || (ancestor && within(r, path)))
+        .any(|root| within(path, root) || (ancestor && within(root, path)))
+}
+pub(crate) fn protected(path: &Path, ancestor: bool) -> bool {
+    immutable(path, ancestor)
+        || private_roots()
+            .iter()
+            .any(|root| within(path, root) || (ancestor && within(root, path)))
+        || readonly_roots()
+            .iter()
+            .any(|root| within(path, root) || (ancestor && within(root, path)))
+        || path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(sensitive_name)
+}
+fn walk_scope(
+    root: &Path,
+    recursive: bool,
+    mut visit: impl FnMut(&Path, &fs::Metadata) -> Result<bool>,
+) -> Result<usize> {
+    use std::{
+        os::unix::fs::MetadataExt,
+        time::{Duration, Instant},
+    };
+    const MAX_OBJECTS: usize = 5_000_000;
+    const MAX_TIME: Duration = Duration::from_secs(300);
+
+    let metadata = fs::symlink_metadata(root).map_err(err)?;
+    if metadata.file_type().is_symlink() || !(metadata.is_dir() || metadata.is_file()) {
+        return Err("Select a regular file or directory without a symlink alias".into());
+    }
+    let device = metadata.dev();
+    let started = Instant::now();
+    let mut count = 1usize;
+    let descend = visit(root, &metadata)?;
+    if !recursive || !metadata.is_dir() || !descend {
+        return Ok(count);
+    }
+    let mut stack = vec![(root.to_path_buf(), fs::read_dir(root).map_err(err)?)];
+    while let Some((_, entries)) = stack.last_mut() {
+        let Some(entry) = entries.next() else {
+            stack.pop();
+            continue;
+        };
+        let entry = entry.map_err(err)?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(err)?;
+        if metadata.file_type().is_symlink() || metadata.dev() != device {
+            continue;
+        }
+        if !(metadata.is_dir() || metadata.is_file()) {
+            continue;
+        }
+        count += 1;
+        if count > MAX_OBJECTS || started.elapsed() > MAX_TIME {
+            return Err("Scope exceeds the 5 million object / 5 minute enforcement limit".into());
+        }
+        let descend = visit(&path, &metadata)?;
+        if descend && metadata.is_dir() {
+            stack.push((path.clone(), fs::read_dir(path).map_err(err)?));
+        }
+    }
+    Ok(count)
 }
 fn validate(draft: &Value) -> Result<()> {
     if !["none", "minimal", "balance", "strict"].contains(&draft["preset"].as_str().unwrap_or("")) {
@@ -130,8 +339,8 @@ fn validate(draft: &Value) -> Result<()> {
     }
     let workspace = draft["workspace"].as_str().ok_or("Workspace is required")?;
     let wp = fs::canonicalize(workspace).map_err(err)?;
-    if !wp.is_dir() || !wp.starts_with("/home/huou07/Projects") {
-        return Err("Select an existing workspace below /home/huou07/Projects".into());
+    if !wp.is_dir() || wp != Path::new(workspace) {
+        return Err("Select an existing canonical workspace anywhere on the system".into());
     }
     if let Some(settings) = draft.get("worker_settings") {
         let settings = settings
@@ -154,11 +363,10 @@ fn validate(draft: &Value) -> Result<()> {
                 .as_str()
                 .ok_or("Worker workspace is required")?;
             let path = fs::canonicalize(text).map_err(err)?;
-            if !path.is_dir()
-                || path != Path::new(text)
-                || !path.starts_with("/home/huou07/Projects")
-            {
-                return Err("Select a canonical existing worker workspace below Projects".into());
+            if !path.is_dir() || path != Path::new(text) {
+                return Err(
+                    "Select a canonical existing worker workspace anywhere on the system".into(),
+                );
             }
         }
     }
@@ -183,14 +391,30 @@ fn validate(draft: &Value) -> Result<()> {
         if canonical != p {
             return Err("Select the canonical target, not a symlink or alias path".into());
         }
-        let immutable_nas_block = p.starts_with(
-            std::env::var("H07P_NAS_DIR").unwrap_or_else(|_| "/var/lib/h07p-private/nas".into()),
-        ) && rule["action"] == "block";
-        if protected(p, true) && !immutable_nas_block {
-            return Err("Administration, credentials, runtime and NAS boundaries cannot be changed by worker rules".into());
-        }
         if !["block", "allow"].contains(&rule["action"].as_str().unwrap_or("")) {
             return Err("Unknown rule action".into());
+        }
+        if immutable(p, false) {
+            return Err(
+                "The Playground control plane and private NAS cannot be changed by worker rules"
+                    .into(),
+            );
+        }
+        if rule["credential_override"] == true && (rule["action"] != "allow" || !is_private_path(p))
+        {
+            return Err("A private-path exception must be an Allow rule for one detected or protected target".into());
+        }
+        if rule["action"] == "allow" && is_private_path(p) && rule["credential_override"] != true {
+            return Err("This target is protected by default. Select the exact-file private-path exception and review its warning to allow it.".into());
+        }
+        if rule["credential_override"] == true {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = fs::symlink_metadata(p).map_err(err)?;
+            if !metadata.is_file() || metadata.nlink() > 1 {
+                return Err(
+                    "A private-path exception must name one regular, unaliased file".into(),
+                );
+            }
         }
         if rule["action"] == "block" {
             use std::os::unix::fs::MetadataExt;
@@ -203,50 +427,23 @@ fn validate(draft: &Value) -> Result<()> {
                     return Err("ACL cannot protect a Block through an ancestor owned by that worker. Select an owner-owned boundary; the draft has not been applied.".into());
                 }
             }
-            let mut pending = vec![p.to_path_buf()];
-            let mut count = 0;
-            while let Some(path) = pending.pop() {
-                count += 1;
-                if count > 10000 {
-                    return Err("Block inspection exceeds 10000 objects; select a smaller scope or block the parent directory without recursion".into());
-                }
-                let metadata = fs::symlink_metadata(&path).map_err(err)?;
+            walk_scope(p, rule["recursive"] == true, |_, metadata| {
                 if principals.contains(&metadata.uid()) {
                     return Err("ACL cannot enforce a Block on an object owned by that worker because its owner can change permissions. Select an owner-owned boundary; no protection has been claimed or applied.".into());
                 }
-                if metadata.is_dir() && rule["recursive"] == true {
-                    for entry in fs::read_dir(&path).map_err(err)? {
-                        pending.push(entry.map_err(err)?.path());
-                    }
-                }
-            }
+                Ok(true)
+            })?;
         }
-        // A root helper must never turn owner policy into a privilege grant on
-        // root-owned files or another account's objects, including hardlink aliases.
         if rule["action"] == "allow" {
             use std::os::unix::fs::MetadataExt;
-            let owner = crate::user_ids("huou07")?.0;
-            let mut pending = vec![p.to_path_buf()];
-            let mut count = 0;
-            while let Some(path) = pending.pop() {
-                count += 1;
-                if count > 10000 {
-                    return Err("Allow scope exceeds 10000 objects; select a smaller scope".into());
-                }
-                let m = fs::symlink_metadata(&path).map_err(err)?;
-                if m.uid() != owner
-                    || m.file_type().is_symlink()
-                    || (m.is_file() && m.nlink() != 1)
-                    || protected(&path, false)
-                {
-                    return Err("Allow requires ordinary owner-owned objects without hardlink or symlink aliases".into());
-                }
-                if m.is_dir() && rule["recursive"] == true {
-                    for child in fs::read_dir(&path).map_err(err)? {
-                        pending.push(child.map_err(err)?.path());
-                    }
-                }
+            let metadata = fs::symlink_metadata(p).map_err(err)?;
+            if metadata.is_file() && metadata.nlink() > 1 {
+                return Err(
+                    "Allow cannot target a hard-linked file; choose one unaliased file".into(),
+                );
             }
+            // Recursive enforcement skips descendant hard links without granting
+            // through aliases; dry-run avoids walking a potentially huge tree.
         }
         let ops = rule["operations"]
             .as_array()
@@ -367,23 +564,35 @@ fn start(units: &[String]) -> Result<()> {
     }
     Ok(())
 }
-fn snapshot(target: &str) -> Result<PathBuf> {
+fn snapshot(target: &str, recursive: bool) -> Result<PathBuf> {
     use sha2::{Digest, Sha256};
+    use std::os::unix::fs::MetadataExt;
     let id = format!("{:x}", Sha256::digest(target.as_bytes()));
     let path = dir().join("acl").join(id);
     if !path.exists() {
         fs::create_dir_all(path.parent().unwrap()).map_err(err)?;
         let temporary = path.with_extension("pending");
         let file = fs::File::create(&temporary).map_err(err)?;
-        let status = Command::new("getfacl")
-            .args(["-R", "-P", "-p", "--", target])
-            .stdout(file)
-            .stderr(Stdio::null())
-            .status()
-            .map_err(err)?;
-        if !status.success() {
+        let mut batch = Vec::with_capacity(ACL_PATH_BATCH_MAX_COUNT);
+        let mut batch_bytes = 0usize;
+        let result = walk_scope(Path::new(target), recursive, |path, metadata| {
+            batch_bytes = batch_bytes.saturating_add(path_argument_bytes(path));
+            batch.push((path.to_path_buf(), metadata.dev(), metadata.ino()));
+            if should_flush_acl_batch(batch.len(), batch_bytes) {
+                snapshot_acl_batch(&file, &mut batch)?;
+                batch_bytes = 0;
+            }
+            Ok(true)
+        });
+        if result.is_err() {
             let _ = fs::remove_file(&temporary);
             return Err("Could not snapshot original ACL".into());
+        }
+        if !batch.is_empty() {
+            if snapshot_acl_batch(&file, &mut batch).is_err() {
+                let _ = fs::remove_file(&temporary);
+                return Err("Could not snapshot original ACL".into());
+            }
         }
         fs::File::open(&temporary)
             .and_then(|f| f.sync_all())
@@ -395,6 +604,31 @@ fn snapshot(target: &str) -> Result<PathBuf> {
     }
     Ok(path)
 }
+
+fn snapshot_acl_batch(output: &fs::File, batch: &mut Vec<(PathBuf, u64, u64)>) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let mut command = Command::new("getfacl");
+    command.args(["-p", "--"]);
+    for (path, dev, ino) in batch.iter() {
+        let current = fs::symlink_metadata(path).map_err(err)?;
+        if current.dev() != *dev || current.ino() != *ino {
+            return Err("Object changed during ACL snapshot".into());
+        }
+        command.arg(path);
+    }
+    let status = command
+        .stdout(output.try_clone().map_err(err)?)
+        .stderr(Stdio::null())
+        .status()
+        .map_err(err)?;
+    if !status.success() {
+        return Err("Could not snapshot original ACL".into());
+    }
+    batch.clear();
+    Ok(())
+}
+
 fn restore() -> Result<()> {
     let root = dir().join("acl");
     if !root.exists() {
@@ -415,94 +649,378 @@ fn restore() -> Result<()> {
     }
     Ok(())
 }
+fn review_digest(v: &Value) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut request = v.clone();
+    if let Some(object) = request.as_object_mut() {
+        object.remove("op");
+        object.remove("review_id");
+    }
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&request).map_err(err)?)
+    ))
+}
+fn private_exception_ancestors(target: &Path) -> Vec<PathBuf> {
+    let mut ancestors: Vec<_> = target.ancestors().skip(1).map(Path::to_path_buf).collect();
+    ancestors.reverse();
+    ancestors
+}
+fn impact_warnings(v: &Value) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let workspace = v["workspace"].as_str().unwrap_or("");
+    if workspace == "/" || workspace == "/home" {
+        warnings.push("The workspace is a broad system directory; worker access still follows existing OS permissions and explicit rules.".into());
+    }
+    for rule in v["rules"].as_array().into_iter().flatten() {
+        let target = rule["target"].as_str().unwrap_or("");
+        let path = Path::new(target);
+        let broad = ["/", "/home", "/home/huou07"].contains(&target);
+        if rule["action"] == "allow" && broad {
+            warnings.push(format!("Recursive Allow for {target} can expose ordinary files to the selected workers. Known private stores and detected sensitive files remain blocked."));
+        }
+        if rule["credential_override"] == true {
+            warnings.push(format!("This explicitly allows a private or credential path: {target}. The selected worker can read this target until the rule is removed or expires."));
+        }
+        if rule["action"] == "block" && broad {
+            warnings.push(format!(
+                "Recursive Block for {target} can stop workers from using many existing files."
+            ));
+        }
+        if rule["action"] == "allow"
+            && rule["operations"].as_array().is_some_and(|ops| {
+                ["write", "create", "delete"]
+                    .iter()
+                    .any(|operation| ops.iter().any(|op| op == operation))
+            })
+            && readonly_roots().iter().any(|root| within(path, root))
+        {
+            warnings.push(format!("Allowing writes to shared runtime/tool path {target} can modify tools used by multiple workers."));
+        }
+        if rule["recursive"] == true
+            && rule["action"] == "allow"
+            && Path::new(target).components().count() <= 3
+        {
+            warnings.push(format!(
+                "Recursive Allow for {target} covers a large part of the filesystem."
+            ));
+        }
+    }
+    warnings.sort();
+    warnings.dedup();
+    warnings
+}
+fn acl_spec(workers: &[&str], rule: &Value, action: &str, directories: bool) -> Result<String> {
+    let operations = rule["operations"].as_array().ok_or("Missing operations")?;
+    let mut entries = Vec::new();
+    for worker in workers {
+        let (uid, _) = crate::user_ids(worker)?;
+        let access = if action == "block" {
+            "---".to_owned()
+        } else {
+            format!(
+                "{}{}{}",
+                if operations.iter().any(|op| op == "read" || op == "list") {
+                    'r'
+                } else {
+                    '-'
+                },
+                if operations.iter().any(|op| op == "write") {
+                    'w'
+                } else {
+                    '-'
+                },
+                if directories {
+                    'x'
+                } else if operations.iter().any(|op| op == "execute") {
+                    'X'
+                } else {
+                    '-'
+                }
+            )
+        };
+        entries.push(format!("u:{uid}:{access}"));
+        if directories {
+            entries.push(format!("d:u:{uid}:{access}"));
+        }
+    }
+    Ok(entries.join(","))
+}
+fn set_acl_paths(
+    paths: &[PathBuf],
+    workers: &[&str],
+    rule: &Value,
+    action: &str,
+    directories: bool,
+) -> Result<()> {
+    if paths.is_empty() || workers.is_empty() {
+        return Ok(());
+    }
+    let mut cmd = Command::new("setfacl");
+    cmd.args(["-m", &acl_spec(workers, rule, action, directories)?, "--"]);
+    cmd.args(paths);
+    command(cmd)
+}
+fn current_workers<'a>(names: &[&'a str]) -> Vec<&'a str> {
+    names
+        .iter()
+        .copied()
+        .filter(|name| crate::user_ids(name).is_ok())
+        .collect()
+}
+fn private_workers(path: &Path) -> Vec<&'static str> {
+    let native = [
+        ("/home/huou07/.dsh", "dsh-worker"),
+        ("/home/huou07/.codex", "codex-worker"),
+        ("/home/huou07/.config/opencode", "opencode-worker"),
+        ("/home/huou07/.local/share/opencode", "opencode-worker"),
+        ("/home/huou07/.local/state/opencode", "opencode-worker"),
+        ("/home/huou07/.cache/opencode", "opencode-worker"),
+    ];
+    let owner = native
+        .iter()
+        .find_map(|(root, worker)| within(path, Path::new(root)).then_some(*worker));
+    workers()
+        .into_iter()
+        .filter(|worker| Some(*worker) != owner)
+        .collect()
+}
+fn deny_rule() -> Value {
+    json!({"operations":["list","read","write","create","delete","execute"]})
+}
+fn apply_scope(
+    target: &Path,
+    recursive: bool,
+    workers: &[&str],
+    rule: &Value,
+    action: &str,
+    privacy: bool,
+) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let mut directories = Vec::with_capacity(ACL_PATH_BATCH_MAX_COUNT);
+    let mut files = Vec::with_capacity(ACL_PATH_BATCH_MAX_COUNT);
+    let mut directory_bytes = 0usize;
+    let mut file_bytes = 0usize;
+    let flush = |paths: &mut Vec<PathBuf>, is_directory: bool| -> Result<()> {
+        set_acl_paths(paths, workers, rule, action, is_directory)?;
+        paths.clear();
+        Ok(())
+    };
+    walk_scope(target, recursive, |path, metadata| {
+        if privacy && action == "allow" {
+            let is_immutable = immutable(path, false);
+            let is_private = is_private_path(path);
+            let hard_link = metadata.is_file() && metadata.nlink() > 1;
+            let is_shared_runtime =
+                path != target && readonly_roots().iter().any(|root| within(path, root));
+            if is_shared_runtime {
+                let readonly = json!({"operations":["list","read","execute"]});
+                apply_scope(path, metadata.is_dir(), workers, &readonly, "allow", true)?;
+                return Ok(false);
+            }
+            if is_immutable || is_private || hard_link {
+                let denied = if is_private {
+                    private_workers(path)
+                } else {
+                    current_workers(&crate::helper::workers())
+                };
+                if !denied.is_empty() {
+                    apply_scope(
+                        path,
+                        metadata.is_dir(),
+                        &denied,
+                        &deny_rule(),
+                        "block",
+                        false,
+                    )?;
+                }
+                return Ok(false);
+            }
+        }
+        let (batch, argument_bytes, is_directory) = if metadata.is_dir() {
+            (&mut directories, &mut directory_bytes, true)
+        } else {
+            (&mut files, &mut file_bytes, false)
+        };
+        *argument_bytes = argument_bytes.saturating_add(path_argument_bytes(path));
+        batch.push(path.to_path_buf());
+        if should_flush_acl_batch(batch.len(), *argument_bytes) {
+            flush(batch, is_directory)?;
+            *argument_bytes = 0;
+        }
+        Ok(true)
+    })?;
+    flush(&mut directories, true)?;
+    flush(&mut files, false)?;
+    Ok(())
+}
 fn enforce(policy: &Value) -> Result<()> {
     let rules = policy["rules"].as_array().ok_or("Invalid stored rules")?;
-    // All grants first, all blocks last. Parent grants cannot silently undo a block.
-    for action in ["allow", "block"] {
-        for rule in rules.iter().filter(|r| r["action"] == action) {
-            let present: Vec<_> = affected(rule)
-                .into_iter()
-                .filter(|name| crate::user_ids(name).is_ok())
-                .collect();
-            if present.is_empty() {
-                continue;
-            }
-            if rule["expires_at"]
-                .as_u64()
-                .is_some_and(|t| t <= crate::now())
-            {
-                continue;
-            }
-            let p = rule["target"].as_str().ok_or("Missing target")?;
-            let _ = snapshot(p)?;
-            let ops = rule["operations"].as_array().ok_or("Missing operations")?;
-            let permission = if action == "block" {
-                "---".to_owned()
-            } else {
-                format!(
-                    "{}{}{}",
-                    if ops.iter().any(|o| o == "read" || o == "list") {
-                        'r'
-                    } else {
-                        '-'
-                    },
-                    if ops.iter().any(|o| o == "write") {
-                        'w'
-                    } else {
-                        '-'
-                    },
-                    if Path::new(p).is_dir() || ops.iter().any(|o| o == "execute") {
-                        'x'
-                    } else {
-                        '-'
-                    }
-                )
-            };
-            let spec = present
-                .iter()
-                .map(|u| format!("u:{u}:{permission}"))
-                .collect::<Vec<_>>()
-                .join(",");
-            let mut cmd = Command::new("setfacl");
-            if rule["recursive"].as_bool().unwrap_or(false) {
-                cmd.args(["-R", "-P"]);
-            }
-            cmd.args(["-m", &spec, "--", p]);
-            command(cmd)?;
-            // No new child can bypass a directory Block. Default ACLs cover recreated children.
-            if Path::new(p).is_dir() {
-                let default = present
+    let active = |rule: &&Value| {
+        !rule["expires_at"]
+            .as_u64()
+            .is_some_and(|t| t <= crate::now())
+    };
+    // Grants skip known credential/private targets; default and explicit blocks
+    // are then applied after every grant, so a parent Allow cannot reopen them.
+    for rule in rules
+        .iter()
+        .filter(|r| r["action"] == "allow")
+        .filter(active)
+    {
+        let names: Vec<_> = affected(rule).into_iter().collect();
+        let present = current_workers(&names);
+        if present.is_empty() {
+            continue;
+        }
+        let p = Path::new(rule["target"].as_str().ok_or("Missing target")?);
+        snapshot(rule["target"].as_str().unwrap(), rule["recursive"] == true)?;
+        apply_scope(p, rule["recursive"] == true, &present, rule, "allow", true)?;
+    }
+    // Shared runtimes stay read/execute-only under broad Allows, but an owner
+    // can grant a reviewed, explicit writable subpath such as Flutter's cache.
+    for rule in rules
+        .iter()
+        .filter(|r| r["action"] == "allow")
+        .filter(active)
+        .filter(|r| {
+            r["operations"].as_array().is_some_and(|ops| {
+                ["write", "create", "delete"]
                     .iter()
-                    .map(|u| format!("d:u:{u}:{permission}"))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let mut cmd = Command::new("setfacl");
-                cmd.args(["-m", &default, "--", p]);
-                command(cmd)?;
+                    .any(|operation| ops.iter().any(|op| op == operation))
+            })
+        })
+        .filter(|r| {
+            let path = Path::new(r["target"].as_str().unwrap_or("/"));
+            readonly_roots().iter().any(|root| within(path, root))
+        })
+    {
+        let names: Vec<_> = affected(rule).into_iter().collect();
+        let present = current_workers(&names);
+        if present.is_empty() {
+            continue;
+        }
+        apply_scope(
+            Path::new(rule["target"].as_str().ok_or("Missing target")?),
+            rule["recursive"] == true,
+            &present,
+            rule,
+            "allow",
+            false,
+        )?;
+    }
+    // Restore the managed harness store boundary after broad parent grants.
+    for root in private_roots() {
+        if !root.exists() {
+            continue;
+        }
+        let denied = private_workers(&root);
+        if denied.is_empty() {
+            continue;
+        }
+        let rule = deny_rule();
+        apply_scope(&root, true, &denied, &rule, "block", false)?;
+    }
+    // An explicit sensitive-path exception is applied after defaults, but never
+    // after an owner Block rule. Ancestor search rights expose no directory listing.
+    for rule in rules
+        .iter()
+        .filter(|r| r["action"] == "allow" && r["credential_override"] == true)
+        .filter(active)
+    {
+        let names: Vec<_> = affected(rule).into_iter().collect();
+        let present = current_workers(&names);
+        if present.is_empty() {
+            continue;
+        }
+        let target = Path::new(rule["target"].as_str().ok_or("Missing target")?);
+        for ancestor in private_exception_ancestors(target) {
+            let search = json!({"operations":["execute"]});
+            set_acl_paths(&[ancestor], &present, &search, "allow", false)?;
+        }
+        apply_scope(
+            target,
+            rule["recursive"] == true,
+            &present,
+            rule,
+            "allow",
+            false,
+        )?;
+    }
+    for rule in rules
+        .iter()
+        .filter(|r| r["action"] == "block")
+        .filter(active)
+    {
+        let names: Vec<_> = affected(rule).into_iter().collect();
+        let present = current_workers(&names);
+        if present.is_empty() {
+            continue;
+        }
+        let target = rule["target"].as_str().ok_or("Missing target")?;
+        snapshot(target, rule["recursive"] == true)?;
+        apply_scope(
+            Path::new(target),
+            rule["recursive"] == true,
+            &present,
+            rule,
+            "block",
+            false,
+        )?;
+        // A worker must not rename a private target out from under its block.
+        let mut parent = Path::new(target).parent();
+        while let Some(path) = parent {
+            if path == Path::new("/") {
+                break;
             }
-            if action == "block" {
-                let mut parent = Path::new(p).parent();
-                while let Some(q) = parent {
-                    if q == Path::new("/") {
-                        break;
-                    }
-                    if let Ok(m) = fs::metadata(q) {
-                        use std::os::unix::fs::PermissionsExt;
+            if path.starts_with("/home/huou07") {
+                if let Ok(metadata) = fs::metadata(path) {
+                    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+                    if metadata.uid() == crate::user_ids("huou07")?.0 {
                         fs::set_permissions(
-                            q,
-                            fs::Permissions::from_mode(m.permissions().mode() | 0o1000),
+                            path,
+                            fs::Permissions::from_mode(metadata.permissions().mode() | 0o1000),
                         )
                         .map_err(err)?;
                     }
-                    if q == Path::new("/home/huou07") || q == Path::new("/tmp") {
-                        break;
-                    }
-                    parent = q.parent();
+                }
+                if path == Path::new("/home/huou07") {
+                    break;
                 }
             }
+            parent = path.parent();
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::{
+        private_exception_ancestors, should_flush_acl_batch, ACL_PATH_BATCH_MAX_BYTES,
+        ACL_PATH_BATCH_MAX_COUNT,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn exact_private_exception_gets_search_rights_on_every_parent() {
+        let ancestors = private_exception_ancestors(Path::new("/home/huou07/.config/gh/hosts.yml"));
+        assert_eq!(ancestors.first().unwrap(), Path::new("/"));
+        assert!(ancestors.contains(&Path::new("/home/huou07/.config").to_path_buf()));
+        assert!(ancestors.contains(&Path::new("/home/huou07/.config/gh").to_path_buf()));
+        assert_eq!(
+            ancestors.last().unwrap(),
+            Path::new("/home/huou07/.config/gh")
+        );
+    }
+
+    #[test]
+    fn acl_command_batches_are_bounded_by_count_and_argument_bytes() {
+        assert!(!should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT - 1, 1));
+        assert!(should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT, 1));
+        assert!(!should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES - 1));
+        assert!(should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES));
+    }
 }
 fn status() -> Result<Value> {
     let mut p = load()?;
@@ -555,8 +1073,21 @@ fn control(op: &str, v: &Value) -> Result<Value> {
             if v["expected_revision"].as_u64() != p["revision"].as_u64() {
                 return Err("REVISION_CONFLICT: reload the current policy before applying".into());
             }
+            let warnings = impact_warnings(v);
+            let review_id = crate::random_token()?;
+            let c = db()?;
+            c.execute(
+                "DELETE FROM policy_reviews WHERE expires<=?1 OR used=1",
+                [crate::now() as i64],
+            )
+            .map_err(err)?;
+            c.execute(
+                "INSERT INTO policy_reviews(id,digest,expires,used) VALUES(?1,?2,?3,0)",
+                params![review_id, review_digest(v)?, crate::now() as i64 + 600],
+            )
+            .map_err(err)?;
             Ok(
-                json!({"ok":true,"impact":{"restart_workers":workers(),"rules":v["rules"].as_array().map_or(0,Vec::len),"warning":"Applying terminates managed worker tasks and revokes open handles. Previously read bytes cannot be erased."}}),
+                json!({"ok":true,"review_id":review_id,"requires_confirmation":!warnings.is_empty(),"warnings":warnings,"impact":{"restart_workers":workers(),"rules":v["rules"].as_array().map_or(0,Vec::len),"warning":"Applying terminates managed worker tasks and revokes open handles. Previously read bytes cannot be erased."}}),
             )
         }
         "apply" | "rollback" => {
@@ -578,9 +1109,23 @@ fn control(op: &str, v: &Value) -> Result<Value> {
                 v.clone()
             };
             validate(&next)?;
+            if op == "apply" && !impact_warnings(&next).is_empty() {
+                let review_id = v["review_id"]
+                    .as_str()
+                    .ok_or("Review impact and confirm the warning before applying")?;
+                let changed = c.execute(
+                    "UPDATE policy_reviews SET used=1 WHERE id=?1 AND digest=?2 AND expires>?3 AND used=0",
+                    params![review_id, review_digest(v)?, crate::now() as i64],
+                ).map_err(err)?;
+                if changed != 1 {
+                    return Err("Impact review is missing, expired, already used, or no longer matches this draft. Review it again.".into());
+                }
+            }
             next["revision"] = json!(current["revision"].as_u64().unwrap_or(0) + 1);
             next["enforced_revision"] = Value::Null;
             next.as_object_mut().unwrap().remove("expected_revision");
+            next.as_object_mut().unwrap().remove("op");
+            next.as_object_mut().unwrap().remove("review_id");
             c.execute(
                 "INSERT OR IGNORE INTO history(revision,body) VALUES(?1,?2)",
                 params![
@@ -601,7 +1146,7 @@ fn control(op: &str, v: &Value) -> Result<Value> {
             };
             if let Err(error) = restore().and_then(|_| {
                 for rule in next["rules"].as_array().unwrap() {
-                    snapshot(rule["target"].as_str().unwrap())?;
+                    snapshot(rule["target"].as_str().unwrap(), rule["recursive"] == true)?;
                 }
                 enforce(&next)
             }) {
@@ -836,8 +1381,8 @@ fn reply(stream: &mut UnixStream, result: Result<Value>) {
     let _ = writeln!(stream, "{}", value);
 }
 fn client(stream: UnixStream, broker: bool, lock: &Arc<Mutex<()>>) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(120)));
+    let _ = stream.set_read_timeout(Some(CONTROL_OPERATION_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(CONTROL_OPERATION_TIMEOUT));
     let uid = match peer(&stream) {
         Ok(u) => u,
         Err(_) => return,
@@ -1008,6 +1553,49 @@ pub(crate) fn maintain_workers(v: &Value) -> Result<Value> {
         }
         start(&units)?;
         return Ok(json!({"started":units}));
+    }
+    if action == "reset-acl" {
+        let selected_names: std::collections::BTreeSet<_> =
+            selected.iter().filter_map(Value::as_str).collect();
+        let expected: std::collections::BTreeSet<_> = workers().into_iter().collect();
+        if selected_names != expected {
+            return Err("ACL reset requires all supported worker identities to be selected".into());
+        }
+        let active = stop()?;
+        let revision = policy["revision"]
+            .as_u64()
+            .ok_or("Invalid policy revision")?
+            .checked_add(1)
+            .ok_or("Policy revision exhausted")?;
+        policy["revision"] = json!(revision);
+        policy["enforced_revision"] = Value::Null;
+        save(&policy)?;
+        let database = db()?;
+        database
+            .execute(
+                "INSERT OR REPLACE INTO history(revision,body) VALUES(?1,?2)",
+                params![revision, policy.to_string()],
+            )
+            .map_err(err)?;
+        audit(
+            &database,
+            "Saved pre-worker ACL baseline reset requested; all managed worker services stopped",
+        )?;
+        if let Err(error) = crate::worker_setup::driver(
+            action,
+            selected,
+            v["job_id"].as_str().ok_or("Missing worker setup job")?,
+        ) {
+            audit(
+                &database,
+                "Pre-worker ACL reset failed; policy remains pending and workers remain stopped",
+            )?;
+            return Err(error);
+        }
+        audit(&database,"Pre-worker ACL baseline restored without deleting project data; worker policy awaits Repair")?;
+        return Ok(
+            json!({"revision":revision,"enforced_revision":null,"acl_reset":true,"workers_stopped":active,"data_retained":true,"next":"Repair selected ACLs to reapply private-store protections before launching workers"}),
+        );
     }
     if !["create", "repair", "remove"].contains(&action) {
         return Err("Unsupported worker maintenance".into());

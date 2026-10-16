@@ -29,13 +29,18 @@ PRIVATE = (
     '.config/agent-workbench', '.config/huou07-playground', '.config/litellm',
     '.config/omniroute', '.config/keyrings', '.config/chromium',
     '.config/google-chrome', '.config/BraveSoftware', '.config/containers',
+    '.cargo/config', '.cargo/config.toml', '.cargo/credentials',
+    '.cargo/credentials.toml',
     '.local/share/keyrings', '.local/share/containers', '.local/share/docker',
     '.local/share/huou07-playground-migration', '.local/share/Trash', '.cache/mozilla', '.cache/chromium',
     '.cache/google-chrome', '.cache/BraveSoftware',
 )
 READONLY = (
     '.local/bin', '.local/lib', '.local/share/huou07-playground',
-    '.cargo/bin', '.rustup', '.config/systemd', '.config/autostart',
+    '.local/share/flutter', '.local/share/playwright-cli',
+    '.pub-cache/hosted', '.cache/ms-playwright',
+    '.cargo/bin', '.cargo/registry', '.cargo/git', '.rustup',
+    '.config/systemd', '.config/autostart',
     '.bashrc', '.bash_profile', '.bash_logout', '.profile', '.zshrc', '.zprofile',
     '.config/fish', '.config/environment.d', '.config/libvirt', '.gitconfig',
 )
@@ -71,7 +76,8 @@ def secret_name(name):
 def policy(relative, extra=()):
     if under(relative, NATIVE):
         return 'native'
-    if under(relative, (*PRIVATE, *extra)) or secret_name(relative.rsplit('/',1)[-1]):
+    if (under(relative, (*PRIVATE, *extra)) or secret_name(relative.rsplit('/',1)[-1])
+            or relative == '.config/gh/hosts.yml'):
         return 'private'
     if '/' not in relative and (relative.startswith('clean-reinstall-')
                                or relative.startswith('an3-migration-')):
@@ -199,10 +205,11 @@ WorkingDirectory=/home/huou07/Projects
 Environment=HOME=/home/huou07
 Environment=DSH_HOME=/home/huou07/.dsh
 Environment=CODEX_HOME=/home/huou07/.codex
-Environment=PATH=/home/huou07/.local/bin:/home/huou07/.cargo/bin:/usr/local/bin:/usr/bin:/bin
-Environment=GIT_CONFIG_COUNT=1
-Environment=GIT_CONFIG_KEY_0=safe.directory
-Environment=GIT_CONFIG_VALUE_0=/home/huou07/*
+Environment=PATH=/home/huou07/.local/bin:/home/huou07/.cargo/bin:/home/huou07/.local/share/flutter/bin:/home/huou07/.local/share/playwright-cli/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
+Environment=PUB_CACHE=/home/huou07/.pub-cache
+Environment=PLAYWRIGHT_BROWSERS_PATH=/home/huou07/.cache/ms-playwright
+Environment=GIT_CONFIG_COUNT=0
+Environment="GIT_CONFIG_PARAMETERS='safe.directory=/home/huou07/*'"
 Environment=NPM_CONFIG_USERCONFIG=/home/huou07/{'.config/opencode' if harness == 'opencode' else '.' + harness}/npmrc
 {envfile}{runtime}ExecStart={command}
 NoNewPrivileges=yes

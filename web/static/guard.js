@@ -21,10 +21,10 @@
       const form=node('form'),enabled=node('input'),content=node('input'),scopes=node('textarea'),exports=node('textarea');
       enabled.type=content.type='checkbox';enabled.checked=data.config.enabled;content.checked=data.config.content;
       scopes.value=data.config.scopes.join('\n');exports.value=data.config.safe_exports.join('\n');
-      scopes.rows=exports.rows=2;scopes.placeholder=exports.placeholder='/home/huou07/Projects/…/log-exports';
+      scopes.rows=exports.rows=2;scopes.placeholder='/absolute/path/to/scan';exports.placeholder='/absolute/path/to/owner-log-exports';
       const save=node('button','Save Guard settings');save.type='submit';
       form.className='guard-form';
-      form.append(field('Monitor filesystem metadata',enabled),field('Scan closed registered exports for known secret signatures',content),field('Watch folders (one per line, within Projects)',scopes),field('Closed export folders allowed for cleanup (one per line)',exports),node('p','Only closed UTF-8 text exports up to 1 MiB are supported. Native authentication stores and live journals are excluded. Content scanning is opt-in; existing OS protections remain active when monitoring is off.','product-status'),save);
+      form.append(field('Monitor filesystem metadata',enabled),field('Scan closed registered exports for known secret signatures',content),field('Watch folders (absolute paths anywhere on this host)',scopes),field('Owner-owned closed export folders available for cleanup (absolute paths anywhere)',exports),node('p','Watching is metadata-only and bounded to 10,000 folders / 512 watches. Content scanning is opt-in and scans only closed UTF-8 text exports up to 1 MiB in registered export folders. Native authentication stores and live journals are excluded. Cleanup always requires a preview and confirmation.','product-status'),save);
       const run=async(action)=>{
         if(busy)return;busy=true;status.textContent='Working…';
         const buttons=[...panel.querySelectorAll('button')].map(b=>[b,b.disabled]);
@@ -37,7 +37,7 @@
         await api('configure',{revision:data.config.revision,enabled:enabled.checked,content:content.checked,scopes:split(scopes.value),safe_exports:split(exports.value)});
         busy=false;await load();
       });});
-      const path=node('input');path.type='text';path.placeholder='/home/huou07/Projects/…/log-exports/closed.log';path.id='guard-log-path';
+      const path=node('input');path.type='text';path.placeholder='/absolute/path/to/closed-log.log';path.id='guard-log-path';
       const review=node('div'), cleanArea=node('div');cleanArea.className='product-path';
       const preview=button('Preview log cleanup',()=>run(async()=>{
         review.replaceChildren();const result=await api('plan',{path:path.value});if(epoch!==generation)return;

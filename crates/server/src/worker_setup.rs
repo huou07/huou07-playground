@@ -2,6 +2,7 @@
 use serde_json::{json, Value};
 use std::{
     fs,
+    os::unix::fs::MetadataExt,
     sync::{Arc, Mutex, OnceLock},
 };
 fn job() -> &'static Mutex<Value> {
@@ -19,8 +20,18 @@ pub fn catalog() -> Result<Value, String> {
         let setting=crate::helper::worker_setting(&policy,name);
         json!({"name":name,"harness":harness,"detected":fs::metadata(executable).map(|m|{use std::os::unix::fs::PermissionsExt;m.is_file()&&m.permissions().mode()&0o111!=0}).unwrap_or(false),"account_exists":account.is_some(),"uid":account.map(|a|a.0),"home":fields.as_ref().map(|f|f[5]),"preset":setting["preset"],"workspace":setting["workspace"],"enabled":setting["enabled"]})
     }).collect();
+    let baseline =
+        std::path::Path::new("/var/backups/h07p-harness-workers/20261015-220803/acl.restore");
+    let acl_reset_available = fs::symlink_metadata(baseline)
+        .map(|m| {
+            m.is_file()
+                && m.uid() == 0
+                && m.mode() & 0o022 == 0
+                && (1_000_000..=500 * 1024 * 1024).contains(&m.len())
+        })
+        .unwrap_or(false);
     Ok(
-        json!({"workers":workers,"revision":policy["revision"],"job":job().lock().unwrap_or_else(|e|e.into_inner()).clone(),"note":"Detects supported installed harness executables without running them. Shared apps/home are reused. Removal retains shared data and a locked retired UID to prevent permission reuse."}),
+        json!({"workers":workers,"revision":policy["revision"],"job":job().lock().unwrap_or_else(|e|e.into_inner()).clone(),"acl_reset_available":acl_reset_available,"note":"Detects supported installed harness executables without running them. Shared apps/home are reused. Removal retains shared data and a locked retired UID to prevent permission reuse."}),
     )
 }
 pub fn control(op: &str, v: &Value, lock: Arc<Mutex<()>>) -> Result<Value, String> {
@@ -41,7 +52,7 @@ pub fn control(op: &str, v: &Value, lock: Arc<Mutex<()>>) -> Result<Value, Strin
         }
         "worker_setup_run" => {
             let action = v["action"].as_str().ok_or("Select a worker action")?;
-            if !["create", "repair", "remove", "start-web"].contains(&action) {
+            if !["create", "repair", "remove", "start-web", "reset-acl"].contains(&action) {
                 return Err("Unsupported worker action".into());
             }
             let workers = v["workers"]
@@ -54,6 +65,11 @@ pub fn control(op: &str, v: &Value, lock: Arc<Mutex<()>>) -> Result<Value, Strin
                 if !crate::helper::workers().contains(&name) || !unique.insert(name) {
                     return Err("Choose distinct supported worker accounts".into());
                 }
+            }
+            if action == "reset-acl" && unique.len() != crate::helper::workers().len() {
+                return Err(
+                    "ACL reset requires all supported worker identities to be selected".into(),
+                );
             }
             if v["confirmed"] != true {
                 return Err("Review and confirm the selected account changes".into());
