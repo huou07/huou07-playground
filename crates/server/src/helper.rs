@@ -644,10 +644,29 @@ fn restore() -> Result<()> {
             continue;
         }
         let mut c = Command::new("setfacl");
-        c.arg(format!("--restore={}", p.display()));
-        command(c)?;
+        let output = c
+            .env("LC_ALL", "C")
+            .arg(format!("--restore={}", p.display()))
+            .output()
+            .map_err(err)?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !restore_failed_only_on_missing_paths(&stderr) {
+                return Err("Could not restore original ACL".into());
+            }
+        }
     }
     Ok(())
+}
+fn restore_failed_only_on_missing_paths(stderr: &str) -> bool {
+    let lines: Vec<_> = stderr
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    !lines.is_empty()
+        && lines
+            .iter()
+            .all(|line| line.ends_with(": No such file or directory"))
 }
 fn review_digest(v: &Value) -> Result<String> {
     use sha2::{Digest, Sha256};
@@ -713,35 +732,42 @@ fn impact_warnings(v: &Value) -> Vec<String> {
 fn acl_spec(workers: &[&str], rule: &Value, action: &str, directories: bool) -> Result<String> {
     let operations = rule["operations"].as_array().ok_or("Missing operations")?;
     let mut entries = Vec::new();
+    let access = if action == "block" {
+        "---".to_owned()
+    } else {
+        format!(
+            "{}{}{}",
+            if operations.iter().any(|op| op == "read" || op == "list") {
+                'r'
+            } else {
+                '-'
+            },
+            if operations.iter().any(|op| op == "write") {
+                'w'
+            } else {
+                '-'
+            },
+            if directories {
+                'x'
+            } else if operations.iter().any(|op| op == "execute") {
+                'X'
+            } else {
+                '-'
+            }
+        )
+    };
     for worker in workers {
         let (uid, _) = crate::user_ids(worker)?;
-        let access = if action == "block" {
-            "---".to_owned()
-        } else {
-            format!(
-                "{}{}{}",
-                if operations.iter().any(|op| op == "read" || op == "list") {
-                    'r'
-                } else {
-                    '-'
-                },
-                if operations.iter().any(|op| op == "write") {
-                    'w'
-                } else {
-                    '-'
-                },
-                if directories {
-                    'x'
-                } else if operations.iter().any(|op| op == "execute") {
-                    'X'
-                } else {
-                    '-'
-                }
-            )
-        };
         entries.push(format!("u:{uid}:{access}"));
         if directories {
             entries.push(format!("d:u:{uid}:{access}"));
+        }
+    }
+    if action != "block" {
+        let (owner_uid, _) = crate::user_ids("huou07")?;
+        entries.push(format!("u:{owner_uid}:{access}"));
+        if directories {
+            entries.push(format!("d:u:{owner_uid}:{access}"));
         }
     }
     Ok(entries.join(","))
@@ -1020,6 +1046,30 @@ mod policy_tests {
         assert!(should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT, 1));
         assert!(!should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES - 1));
         assert!(should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES));
+    }
+
+    #[test]
+    fn allow_acls_share_with_primary_owner_and_blocks_do_not_change_owner_acl() {
+        let rule =
+            serde_json::json!({"operations":["list","read","write","create","delete","execute"]});
+        let owner_uid = crate::user_ids("huou07").unwrap().0;
+        let allow = super::acl_spec(&["codex-worker"], &rule, "allow", true).unwrap();
+        assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
+        assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
+
+        let block = super::acl_spec(&["codex-worker"], &rule, "block", true).unwrap();
+        assert!(!block.contains(&format!("u:{owner_uid}:")));
+    }
+
+    #[test]
+    fn acl_restore_only_ignores_missing_paths() {
+        assert!(super::restore_failed_only_on_missing_paths(
+            "setfacl: /home/huou07/removed-file: No such file or directory\n"
+        ));
+        assert!(!super::restore_failed_only_on_missing_paths(
+            "setfacl: /home/huou07/file: Operation not supported\n"
+        ));
+        assert!(!super::restore_failed_only_on_missing_paths(""));
     }
 }
 fn status() -> Result<Value> {
