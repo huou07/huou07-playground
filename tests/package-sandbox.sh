@@ -111,6 +111,15 @@ for preset in none minimal strict balance; do
     printf '{"preset":"%s","workspace":"/home/huou07/Projects","rules":[]}\n' "$preset" > "$fixture/var/lib/h07p-control/policy.json"
     H07P_FIXTURE_SECRET=must-not-survive chroot "$fixture" /h07p-server worker dsh "$preset" 9< "$fixture/inherited"
 done
+printf '{"preset":"none","workspace":"/home/huou07/Projects","rules":[],"worker_settings":{"dsh-worker":{"preset":"strict"}}}\n' > "$fixture/var/lib/h07p-control/policy.json"
+chroot "$fixture" /h07p-server worker dsh strict
+printf '{"preset":"strict","workspace":"/home/huou07/Projects","rules":[],"worker_settings":{"dsh-worker":{"preset":"none"}}}\n' > "$fixture/var/lib/h07p-control/policy.json"
+chroot "$fixture" /h07p-server worker dsh none
+printf '{"preset":"none","workspace":"/home/huou07/Projects","rules":[],"worker_settings":{"dsh-worker":{"enabled":false}}}\n' > "$fixture/var/lib/h07p-control/policy.json"
+if chroot "$fixture" /h07p-server worker dsh none >/dev/null 2>&1; then
+    echo 'Disabled worker unexpectedly launched.' >&2; exit 1
+fi
+echo 'PASS: per-worker strict/none overrides and disabled state are enforced by the actual launcher.'
 # Invalid root policy must fail before native execution; no silent permissive fallback.
 printf '{"preset":"typo","workspace":"/home/huou07/Projects"}\n' > "$fixture/var/lib/h07p-control/policy.json"
 if chroot "$fixture" /h07p-server worker dsh none >/dev/null 2>&1; then

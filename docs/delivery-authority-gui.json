@@ -1,0 +1,8 @@
+{
+  "units": [{"id":"gui-setup","requirements":["file-search","gui-onboarding","worker-lifecycle","worker-policy-scope","web-app-discovery","app-vpn-setup","private-login-vault","supported-password-changes","measured-efficiency"]}],
+  "current_next":"gui-setup",
+  "completed":[],
+  "base":"8d54270",
+  "authorization":"Owner explicitly requests file search and near-complete beginner GUI setup, detected harness worker management, per-worker/all-worker ACL settings, local/LAN web app discovery, VPN exposure, selected app login export to private NAS and supported password changes; authorizes solo Debian build/test/deployment and measured optimization.",
+  "exclusions":["reading provider/API credentials into agent context","overwriting native harness authentication stores","arbitrary privileged shell APIs","automatic unreviewed credential harvesting","deleting shared owner homes or private data","unmeasured claims of minimum possible energy use"]
+}

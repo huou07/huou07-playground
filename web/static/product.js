@@ -33,7 +33,7 @@
   let session = null, csrf = '', loginDialog = null;
   const account = $('owner-account');
   const browsers = [];
-  let policy = null, draft = null, dirty = false;
+  let policy = null, draft = null, dirty = false, policyScope='*';
   function dialog(title) {
     const previous = document.activeElement;
     const node = el('dialog', undefined, 'product-dialog');
@@ -204,7 +204,24 @@
     const previous = button('Previous page', () => load(path, Math.max(0, offset - pageSize)));
     const next = button('Next page', () => load(path, offset + entries.length));
     footer.append(count, previous, next);
-    let path = '/', parent = null, offset = 0, pageSize = 100, entries = [], selected = new Set(), clipboard = null, busy = false, total = 0;
+    let path = '/', parent = null, offset = 0, pageSize = 100, entries = [], selected = new Set(), clipboard = null, busy = false, total = 0, searching=false, searchController=null, requestEpoch=0;
+    const searchForm=el('form',undefined,'product-path'),searchInput=input('query'),recursiveSearch=input('recursive','','checkbox');
+    searchInput.type='search';searchInput.placeholder='Tên file hoặc một phần tên…';searchInput.maxLength=512;searchInput.required=true;
+    searchInput.setAttribute('aria-label',area==='nas'?'Search NAS filenames':'Search Storage filenames');recursiveSearch.checked=true;
+    const searchSubmit=el('button','Search');searchSubmit.type='submit';
+    const cancelSearch=button('Cancel search',()=>{searchController?.abort();requestEpoch++;busy=false;cancelSearch.hidden=true;searchSubmit.disabled=false;update();message(status,'Search canceled. No files changed.');});cancelSearch.hidden=true;
+    searchForm.append(searchInput,label('Include subfolders',recursiveSearch),searchSubmit,cancelSearch,button('Clear search',()=>{searchInput.value='';load(path);}));
+    searchForm.addEventListener('submit',async event=>{
+      event.preventDefault();searchController?.abort();const controller=new AbortController();searchController=controller;
+      const epoch=++requestEpoch;busy=true;update();cancelSearch.hidden=false;searchSubmit.disabled=true;message(status,'Searching filenames in this folder…');
+      try{
+        const data=await api('/api/fs/search',{method:'POST',body:{area,path,query:searchInput.value,recursive:recursiveSearch.checked},signal:controller.signal});
+        if(epoch!==requestEpoch || !session)return;
+        searching=true;entries=data.entries||[];total=data.total??entries.length;selected.clear();offset=0;render();
+        message(status,`${total} matches · ${data.visited} names checked. `+(data.partial?'Partial results: some folders were skipped or a search limit was reached. Narrow the folder or filename. ':'')+'Filenames only; file contents were not read.');
+      }catch(error){if(epoch===requestEpoch)message(status,error.name==='AbortError'?'Search canceled.':error.message,error.name!=='AbortError');}
+      finally{if(epoch===requestEpoch){busy=false;update();cancelSearch.hidden=true;searchSubmit.disabled=false;}}
+    });
     const selectedEntries = () => entries.filter(entry => selected.has(entry.path));
     const actions = {};
     const action = (name, callback, className) => { const b = button(name, callback, className); toolbar.append(b); actions[name] = b; return b; };
@@ -212,7 +229,7 @@
       count.textContent = selected.size + ' selected · ' + total + ' items' + (clipboard ? ' · ' + clipboard.entries.length + ' to ' + clipboard.action : '');
       for (const name of ['Download','Rename','Cut','Copy','Delete','Preview']) actions[name].disabled = busy || !selected.size || (['Rename','Preview'].includes(name) && selected.size !== 1);
       actions.Paste.disabled = busy || !clipboard;
-      up.disabled = busy || path === '/'; previous.disabled = busy || offset === 0; next.disabled = busy || offset + entries.length >= total;
+      up.disabled = busy || path === '/'; previous.disabled = busy || searching || offset === 0; next.disabled = busy || searching || offset + entries.length >= total;
       all.checked = entries.length > 0 && selected.size === entries.length;
       all.indeterminate = selected.size > 0 && selected.size < entries.length;
       for (const row of body.children) row.dataset.selected = String(selected.has(row.dataset.path));
@@ -226,20 +243,21 @@
         checkbox.addEventListener('change', () => { if (checkbox.checked) selected.add(entry.path); else selected.delete(entry.path); update(); });
         const cell = el('td'); cell.append(checkbox);
         const name = el('td'); const open = button((entry.kind === 'directory' ? '▤ ' : entry.kind === 'symlink' ? '↗ ' : '') + entry.name, () => entry.kind === 'directory' ? load(entry.path) : preview(area, entry), 'file-open');
-        name.append(open); if(entry.temporary) name.append(el('span','Incomplete upload · inspect or delete','product-warning')); row.append(cell, name, el('td', entry.kind === 'directory' ? 'Folder' : fileSize(entry.size)), el('td', entry.modified ? displayDate(entry.modified) : '—'));
+        name.append(open);if(searching){name.append(el('small',entry.path));name.append(button('Open folder',()=>load(entry.path.slice(0,entry.path.lastIndexOf('/'))||'/'),'file-open'));} if(entry.temporary) name.append(el('span','Incomplete upload · inspect or delete','product-warning')); row.append(cell, name, el('td', entry.kind === 'directory' ? 'Folder' : fileSize(entry.size)), el('td', entry.modified ? displayDate(entry.modified) : '—'));
         row.addEventListener('contextmenu', event => { event.preventDefault(); selected = new Set([entry.path]); render(); actions.Rename.focus(); });
         row.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); selected = new Set([entry.path]); render(); actions.Rename.focus(); } });
         body.append(row);
       }
-      if (!entries.length) { const row = el('tr'), cell = el('td','This folder is empty. Create a folder or upload a file.'); cell.colSpan = 4; row.append(cell); body.append(row); }
+      if (!entries.length) { const row = el('tr'), cell = el('td',searching?'No matching filenames in the searched scope.':'This folder is empty. Create a folder or upload a file.'); cell.colSpan = 4; row.append(cell); body.append(row); }
       update();
     }
     async function load(nextPath = path, nextOffset = 0) {
       if (!session) { message(status, 'Owner sign in required.'); signIn(); return; }
+      searchController?.abort();const epoch=++requestEpoch;searching=false;cancelSearch.hidden=true;searchSubmit.disabled=false;
       busy = true; update(); message(status, 'Loading files…');
       try {
         const data = await api(fsUrl('list', area, nextPath) + '&offset=' + nextOffset);
-        if (!session) return;
+        if (!session || epoch!==requestEpoch) return;
         path = data.path; parent = data.parent; pathInput.value = path; offset = nextOffset; entries = data.entries || []; if(nextOffset === 0 && entries.length) pageSize=entries.length; total = data.total ?? entries.length; selected.clear();
         crumbs.replaceChildren(button('/', () => load('/')));
         let current = ''; for (const part of path.split('/').filter(Boolean)) { current += '/' + part; const target = current; crumbs.append(el('span','/'), button(part, () => load(target))); }
@@ -251,8 +269,8 @@
         }
         if(area === 'nas') privacy.textContent=data.private === true ? 'Private · server confirmed' : 'Isolation unconfirmed';
         render(); message(status, area === 'nas' ? (data.private === true ? 'Private owner NAS confirmed by the service. See Permissions for managed-worker coverage.' : 'The server has not confirmed NAS privacy. Refresh status before uploading private data.') : 'Listed with owner OS rights. Some host paths may be inaccessible.'); if(entries.some(entry=>entry.temporary)) status.textContent+=' Incomplete uploads were retained after interruption. Inspect or explicitly delete them; no automatic deletion occurs.';
-      } catch (error) { message(status, error.message, true); }
-      finally { busy = false; update(); }
+      } catch (error) { if(epoch===requestEpoch)message(status, error.message, true); }
+      finally { if(epoch===requestEpoch){busy = false; update();} }
     }
     function nameDialog(title, initial, callback) {
       const d = dialog(title), form = el('form'), field = input('name', initial);
@@ -336,13 +354,13 @@
       if(event.key === 'Delete') actions.Delete.click();
       if(event.key === 'F2') actions.Rename.click();
     });
-    panel.append(heading,capacity,pathbar,crumbs,toolbar,uploadInput,status,table,footer); root.append(panel); update();
-    const browser={ load,clear:()=>{entries=[];selected.clear();clipboard=null;total=0;body.replaceChildren();capacity.replaceChildren();crumbs.replaceChildren();path='/';pathInput.value='/';message(status,'Owner sign in required.');update();} };
+    panel.append(heading,capacity,pathbar,crumbs,searchForm,toolbar,uploadInput,status,table,footer); root.append(panel); update();
+    const browser={ load,clear:()=>{requestEpoch++;searchController?.abort();busy=false;searching=false;searchInput.value='';searchSubmit.disabled=false;cancelSearch.hidden=true;entries=[];selected.clear();clipboard=null;total=0;body.replaceChildren();capacity.replaceChildren();crumbs.replaceChildren();path='/';pathInput.value='/';message(status,'Owner sign in required.');update();} };
     browsers.push(browser); return browser;
   }
   const nas=fileBrowser($('nas-browser'),'nas'), storage=fileBrowser($('host-browser'),'storage');
   const permissions=$('permissions-panel');
-  function policyBody() { return {expected_revision:draft.revision,preset:draft.preset,workspace:draft.workspace,rules:draft.rules}; }
+  function policyBody() { return {expected_revision:draft.revision,preset:draft.preset,workspace:draft.workspace,rules:draft.rules,worker_settings:draft.worker_settings||{}}; }
   function ruleDescription(rule) {
     return (rule.action === 'block' ? 'Private · Block' : 'Allow') + ' · ' + (rule.operations || []).join(', ') + ' · ' + (rule.worker || 'all managed workers') + (rule.recursive ? ' · recursive' : '') + (rule.expires_at ? ' · expires ' + displayDate(rule.expires_at) : '') + ' · ' + (rule.source || 'manual') + (rule.inherited ? ' · inherited' : '');
   }
@@ -355,27 +373,30 @@
     const enforced=policy.enforced_revision != null && policy.enforced_revision === policy.revision;
     summary.append(el('strong', 'Desired revision ' + policy.revision + ' · ' + (enforced ? 'Enforced revision ' + policy.enforced_revision : 'Enforcement pending / unavailable') + (dirty ? ' · Unapplied draft' : '')));
     summary.append(el('span','Effective template: ' + policy.preset + (dirty ? ' · Draft: Custom (' + draft.preset + ')' : '')));
-    const workers=policy.workers || [];
+    const workers=policy.workers || [];if(policyScope!=='*'&&!workers.some(w=>w.name===policyScope))policyScope='*';
     summary.append(el('span',workers.length ? 'Managed workers: ' + workers.map(w=>w.name + ' (' + w.state + ', ' + w.preset + ')').join(', ') : 'No managed-worker coverage reported.'));
     const warning=el('p','Coverage is limited to workers launched by H07P. Shared-home ACLs cannot independently isolate directory write/create/delete, or prevent an interpreter from reading a script. Unsupported rights must be rejected by the backend. Revocation cannot erase bytes already read.','product-warning');
     const capabilities=el('details'), capTitle=el('summary','Enforcement capabilities and limitations'); capabilities.append(capTitle,el('pre',JSON.stringify(policy.capabilities || {},null,2)));
-    const preset=select([['none','None · existing OS rights'],['minimal','Minimal · confirmed sensitive rules'],['balance','Balance · approval outside workspace'],['strict','Strict · no outside workspace data']],draft.preset);
+    const scoped=policyScope==='*'?draft:{...draft,...(draft.worker_settings?.[policyScope]||{})};
+    const scope=select([['*','All managed workers'],...workers.map(w=>[w.name,w.name])],policyScope);scope.setAttribute('aria-label','Configure worker');scope.addEventListener('change',()=>{policyScope=scope.value;renderPolicy();});
+    const setScoped=(key,value)=>{draft.worker_settings ||= {};if(policyScope==='*'){draft[key]=value;for(const setting of Object.values(draft.worker_settings))delete setting[key];}else{draft.worker_settings[policyScope] ||= {};draft.worker_settings[policyScope][key]=value;}};
+    const preset=select([['none','None · existing OS rights'],['minimal','Minimal · confirmed sensitive rules'],['balance','Balance · approval outside workspace'],['strict','Strict · no outside workspace data']],scoped.preset);
     preset.setAttribute('aria-label','Security Level');
     preset.addEventListener('change',()=>{
       const choice=preset.value, d=dialog('Review Security Level change');
       d.add(el('p','Change to ' + choice + '. This is a draft until Review impact and Apply.'),el('p',choice === 'none' ? 'None adds no privileges. Owner administration and NAS remain private.' : choice === 'minimal' ? 'Minimal protects only owner-confirmed sensitive rules. A scan has not been applied automatically.' : choice === 'strict' ? 'Strict denies outside-workspace data; declared runtime dependencies remain readable. Worker restart may stop tasks.' : 'Balance requires explicit broker approval outside the workspace. Direct OS access remains denied.','product-warning'));
-      d.actions.append(button('Keep custom rules',()=>{draft.preset=choice;d.close();markDirty();},'primary'),button('Reset draft rules',()=>{draft.preset=choice;draft.rules=[];d.close();markDirty();},'danger'));
-      d.node.addEventListener('close',()=>{preset.value=draft.preset;});
+      d.actions.append(button('Keep custom rules',()=>{setScoped('preset',choice);d.close();markDirty();},'primary'),button('Reset draft rules',()=>{setScoped('preset',choice);draft.rules=policyScope==='*'?[]:draft.rules.filter(rule=>rule.worker!==policyScope);d.close();markDirty();},'danger'));
+      d.node.addEventListener('close',()=>{preset.value=scoped.preset;});
     });
-    const workspace=input('workspace',draft.workspace || '/'); workspace.setAttribute('aria-label','Worker workspace');
-    workspace.addEventListener('change',()=>{draft.workspace=workspace.value;markDirty();});
-    const configuration=el('div',undefined,'product-toolbar');configuration.append(label('Security Level',preset),label('Workspace (absolute path)',workspace));
+    const workspace=input('workspace',scoped.workspace || '/'); workspace.setAttribute('aria-label','Worker workspace');
+    workspace.addEventListener('change',()=>{setScoped('workspace',workspace.value);markDirty();});
+    const configuration=el('div',undefined,'product-toolbar');configuration.append(label('Configure',scope),label('Security Level',preset),label('Workspace (absolute path)',workspace));
     const toolbar=el('div',undefined,'product-toolbar');
-    toolbar.append(button('Block',()=>editRule({action:'block'})),button('Allow',()=>editRule({action:'allow'})),button('Auto Detect',scan),button('Review impact',reviewPolicy,'primary'));
+    toolbar.append(button('Block',()=>editRule({action:'block',worker:policyScope})),button('Allow',()=>editRule({action:'allow',worker:policyScope})),button('Auto Detect',scan),button('Review impact',reviewPolicy,'primary'));
     const discard=button('Discard draft',()=>{draft=structuredClone(policy);dirty=false;renderPolicy();});discard.disabled=!dirty;toolbar.append(discard);
     const rules=el('div');rules.setAttribute('aria-label','Permission rules');
     if(!draft.rules.length) rules.append(el('p','No custom rules. The selected preset and immutable owner/NAS boundary still apply.','panel-note'));
-    for(const rule of draft.rules) {
+    for(const rule of draft.rules.filter(rule=>policyScope==='*'||!rule.worker||rule.worker==='*'||rule.worker===policyScope)) {
       const row=el('article',undefined,'product-rule'),head=el('div',undefined,'product-rule-head');
       head.append(el('strong',rule.target),el('span',dirty?'Draft':enforced?'Enforced':'Desired','badge'),button('Edit',()=>editRule(rule)),button('Remove',()=>{draft.rules=draft.rules.filter(item=>item.id!==rule.id);markDirty();},'danger'));
       row.append(head,el('p',ruleDescription(rule)));
@@ -478,7 +499,7 @@
     const controller=new AbortController();d.node.addEventListener('close',()=>controller.abort());
     try {
       const body=policyBody(), result=await api('/api/control/dry-run',{method:'POST',body,signal:controller.signal});
-      d.add(el('p','Preset: ' + draft.preset + ' · Workspace: ' + draft.workspace),el('p',draft.rules.length + ' draft rules · expected revision ' + body.expected_revision));
+      d.add(el('p','Preset: ' + draft.preset + ' · Workspace: ' + draft.workspace),el('p',draft.rules.length + ' draft rules · expected revision ' + body.expected_revision),el('p','Individual worker settings: '+JSON.stringify(body.worker_settings||{})));
       for(const rule of draft.rules) d.add(el('p',rule.target + ' · ' + ruleDescription(rule)));
       const impact=result.impact || {};d.add(el('pre',JSON.stringify(impact,null,2)));
       if(impact.restart_workers?.length) d.add(el('p','Applying will stop tasks and restart these workers: ' + impact.restart_workers.join(', ') + '. Cancel to keep them running.','product-warning'));
@@ -513,6 +534,7 @@
     },'primary');d.actions.append(restore);
   }
   function scan() {
+    const detectionScope=policyScope;
     const d=dialog('Auto Detect · review suggestions'),form=el('form'),scope=input('scope',draft.workspace || '/'),mode=select([['block','Block sensitive candidates'],['allow','Allow ordinary candidates']],'block');
     scope.required=true;scope.pattern='/.*';
     const content=input('content-scan','','checkbox'), contentLabel=label('Include bounded content scan (Gitleaks)',content);contentLabel.className='check';
@@ -540,7 +562,7 @@
           const chosen=[...selected].map(index=>findings[index]),confirm=dialog('Review ' + chosen.length + ' selected suggestions');
           confirm.add(el('p',chosen.map(finding=>finding.path).join('\n')),el('p','These ' + scanMode + ' rules will be added to the draft only. Review impact and Apply are required before enforcement.','product-warning'));
           confirm.actions.append(button('Add selected to draft',()=>{
-            for(const finding of chosen) draft.rules.push({id:uniqueId(),worker:'*',target:finding.path,action:scanMode,operations:['list','read','write','create','delete','execute'],recursive:true,source:'detection',expires_at:null});
+            for(const finding of chosen) draft.rules.push({id:uniqueId(),worker:detectionScope,target:finding.path,action:scanMode,operations:['list','read','write','create','delete','execute'],recursive:true,source:'detection',expires_at:null});
             confirm.close();d.close();markDirty();
           },'primary'));
         },'primary');review.dataset.review='true';review.disabled=true;d.actions.append(review);

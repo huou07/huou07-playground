@@ -118,6 +118,7 @@ def main():
                 pass
             time.sleep(.05)
         check(request("/api/metrics", authenticated=False)[0] == 401, "telemetry requires owner")
+        check(request('/api/fs/search',dict(area='nas',path='/',query='fixture'),authenticated=False)[0]==401,'private search requires owner authentication')
         check(value("/api/owner/session")[1]["authenticated"] is False, "anonymous session")
         check(request("/api/owner/login", {"username": account, "password": "incorrect"})[0] == 401,
               "PAM rejects invalid password")
@@ -142,6 +143,8 @@ def main():
         payload = secrets.token_bytes(2 * 1024 * 1024 + 17)
         query = urllib.parse.urlencode({"area": "nas", "path": "/fixture.bin"})
         check(request("/api/fs/upload?" + query, payload, method="PUT")[0] == 201, "stream upload")
+        code,search=value('/api/fs/search',dict(area='nas',path='/',query='FIXTURE',recursive=True))
+        check(code==200 and [e['path'] for e in search['entries']]==['/fixture.bin'] and search['content_searched'] is False,'authenticated owner search uses actual NAS actor')
         code, _, body = request("/api/fs/download?" + query)
         check(code == 200 and hashlib.sha256(body).digest() == hashlib.sha256(payload).digest(), "download hash")
         code, ticket = value("/api/fs/ticket", dict(area="nas", path="/fixture.bin", kind="download"))

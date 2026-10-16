@@ -68,6 +68,10 @@ pub(crate) fn audit(c: &Connection, event: &str) -> Result<()> {
 pub(crate) fn workers() -> [&'static str; 3] {
     ["dsh-worker", "codex-worker", "opencode-worker"]
 }
+pub(crate) fn worker_setting(policy: &Value, worker: &str) -> Value {
+    let specific = &policy["worker_settings"][worker];
+    json!({"preset":specific.get("preset").unwrap_or(&policy["preset"]),"workspace":specific.get("workspace").unwrap_or(&policy["workspace"]),"enabled":specific["enabled"].as_bool().unwrap_or(true)})
+}
 fn affected(rule: &Value) -> Vec<&'static str> {
     workers()
         .into_iter()
@@ -128,6 +132,35 @@ fn validate(draft: &Value) -> Result<()> {
     let wp = fs::canonicalize(workspace).map_err(err)?;
     if !wp.is_dir() || !wp.starts_with("/home/huou07/Projects") {
         return Err("Select an existing workspace below /home/huou07/Projects".into());
+    }
+    if let Some(settings) = draft.get("worker_settings") {
+        let settings = settings
+            .as_object()
+            .ok_or("Worker settings must be an object")?;
+        for (name, setting) in settings {
+            if !workers().contains(&name.as_str()) || !setting.is_object() {
+                return Err("Unknown worker configuration".into());
+            }
+            let merged = worker_setting(draft, name);
+            if !["none", "minimal", "balance", "strict"]
+                .contains(&merged["preset"].as_str().unwrap_or(""))
+            {
+                return Err("Unknown worker security level".into());
+            }
+            if setting.get("enabled").is_some_and(|v| !v.is_boolean()) {
+                return Err("Worker enabled must be true or false".into());
+            }
+            let text = merged["workspace"]
+                .as_str()
+                .ok_or("Worker workspace is required")?;
+            let path = fs::canonicalize(text).map_err(err)?;
+            if !path.is_dir()
+                || path != Path::new(text)
+                || !path.starts_with("/home/huou07/Projects")
+            {
+                return Err("Select a canonical existing worker workspace below Projects".into());
+            }
+        }
     }
     let rules = draft["rules"].as_array().ok_or("Rules must be an array")?;
     if rules.len() > 200 {
@@ -204,9 +237,12 @@ fn validate(draft: &Value) -> Result<()> {
         if rule["action"] == "block" && ops.len() != 6 {
             return Err("Direct ACL Block protects the complete object; select all six operations. Fine-grained negative ACLs are unsupported.".into());
         }
-        if ["strict", "balance"].contains(&draft["preset"].as_str().unwrap_or(""))
-            && rule["action"] == "allow"
-            && !p.starts_with(&wp)
+        if rule["action"] == "allow"
+            && affected(rule).iter().any(|worker| {
+                let setting = worker_setting(draft, worker);
+                ["strict", "balance"].contains(&setting["preset"].as_str().unwrap_or(""))
+                    && !p.starts_with(setting["workspace"].as_str().unwrap_or("/"))
+            })
         {
             return Err("Strict/balance outside-workspace direct Allow is unsupported; use a scoped broker approval".into());
         }
@@ -287,6 +323,14 @@ fn stop() -> Result<Vec<String>> {
 fn start(units: &[String]) -> Result<()> {
     for u in units {
         if u == "h07p-dsh.service" || u == "h07p-opencode.service" {
+            let worker = if u == "h07p-dsh.service" {
+                "dsh-worker"
+            } else {
+                "opencode-worker"
+            };
+            if worker_setting(&load()?, worker)["enabled"] == false {
+                continue;
+            }
             let mut c = Command::new("systemctl");
             c.args(["start", u]);
             command(c)?;
@@ -450,7 +494,19 @@ fn status() -> Result<Value> {
         .filter_map(|r| r.ok())
         .collect(),
     );
-    p["workers"] = json!([{"name":"dsh-worker","state":unit_state("h07p-dsh.service"),"preset":p["preset"]},{"name":"codex-worker","state":"owner CLI via managed launcher","preset":p["preset"]},{"name":"opencode-worker","state":unit_state("h07p-opencode.service"),"preset":p["preset"]}]);
+    p["workers"] = json!(workers()
+        .iter()
+        .map(|name| {
+            let mut setting = worker_setting(&p, name);
+            setting["name"] = json!(name);
+            setting["state"] = json!(match *name {
+                "dsh-worker" => unit_state("h07p-dsh.service"),
+                "opencode-worker" => unit_state("h07p-opencode.service"),
+                _ => "owner CLI via managed launcher".into(),
+            });
+            setting
+        })
+        .collect::<Vec<_>>());
     p["capabilities"] = json!({"acl":true,"independent_write_create_delete":false,"owner_auth":"Linux PAM","nas_private":true,"approval_operations":["list","read","write","create","delete"],"managed_only":true});
     Ok(p)
 }

@@ -155,6 +155,129 @@ fn capacity(dir: &File) -> Result<Value> {
         json!({"total":total,"free":free,"available":s.f_bavail*s.f_frsize,"used":total-free,"sampled_at":crate::now(),"units":"bytes"}),
     )
 }
+fn search(area: &str, path: &str, query: &str, recursive: bool) -> Result<Value> {
+    if query.trim().is_empty() || query.len() > 512 || query.chars().any(char::is_control) {
+        return Err("Enter a filename or part of a filename, up to 512 bytes".into());
+    }
+    let dir = directory(area, path)?;
+    let mut filesystem: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstatfs(dir.as_raw_fd(), &mut filesystem) } != 0
+        || matches!(
+            filesystem.f_type as u64,
+            0x9fa0 | 0x62656572 | 0x6969 | 0xff534d42 | 0x517b | 0x65735546 | 0x63677270
+        )
+    {
+        return Err(
+            "Search a local data folder; virtual and network filesystems are excluded".into(),
+        );
+    }
+    let scope_capacity = capacity(&dir)?;
+    let device = dir.metadata().map_err(io)?.dev();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let mut pending = vec![(dir, path.trim_end_matches('/').to_owned(), 0)];
+    let mut entries = Vec::new();
+    let mut visited = 0;
+    let mut skipped = 0;
+    let mut partial = false;
+    let query = query.to_lowercase();
+    struct Stream(*mut libc::DIR);
+    impl Drop for Stream {
+        fn drop(&mut self) {
+            unsafe {
+                libc::closedir(self.0);
+            }
+        }
+    }
+    while let Some((dir, base, depth)) = pending.pop() {
+        let fd = unsafe { libc::dup(dir.as_raw_fd()) };
+        if fd < 0 {
+            skipped += 1;
+            continue;
+        }
+        let raw = unsafe { libc::fdopendir(fd) };
+        if raw.is_null() {
+            unsafe {
+                libc::close(fd);
+            }
+            skipped += 1;
+            continue;
+        }
+        let stream = Stream(raw);
+        loop {
+            if visited >= 10000 || entries.len() >= 500 || std::time::Instant::now() >= deadline {
+                partial = true;
+                break;
+            }
+            let entry = unsafe { libc::readdir(stream.0) };
+            if entry.is_null() {
+                break;
+            }
+            let Ok(name) = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }.to_str()
+            else {
+                skipped += 1;
+                continue;
+            };
+            if name == "." || name == ".." {
+                continue;
+            }
+            visited += 1;
+            if name.starts_with(".h07p-replace-") || name.starts_with(".h07p-broker-") {
+                continue;
+            }
+            if temporary_name(name)
+                && open_at(&dir, name, libc::O_RDONLY | libc::O_NONBLOCK, 0).is_ok_and(
+                    |f| unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0,
+                )
+            {
+                continue;
+            }
+            let Ok(st) = stat_at(&dir, name) else {
+                skipped += 1;
+                continue;
+            };
+            let kind = st.st_mode & libc::S_IFMT;
+            let full = format!("{base}/{name}");
+            if name.to_lowercase().contains(&query) {
+                entries.push(json!({"name":name,"path":full,"kind":if kind==libc::S_IFDIR{"directory"}else if kind==libc::S_IFREG{"file"}else if kind==libc::S_IFLNK{"symlink"}else{"other"},"size":st.st_size,"modified":st.st_mtime,"temporary":temporary_name(name)}));
+            }
+            if recursive && kind == libc::S_IFDIR {
+                if depth >= 16 || pending.len() >= 256 || st.st_dev != device {
+                    skipped += 1;
+                    continue;
+                }
+                if let Ok(child) = open_at(&dir, name, libc::O_RDONLY | libc::O_DIRECTORY, 0) {
+                    let mut filesystem: libc::statfs = unsafe { std::mem::zeroed() };
+                    if child.metadata().map(|m| m.dev() == device).unwrap_or(false)
+                        && unsafe { libc::fstatfs(child.as_raw_fd(), &mut filesystem) } == 0
+                        && !matches!(
+                            filesystem.f_type as u64,
+                            0x9fa0
+                                | 0x62656572
+                                | 0x6969
+                                | 0xff534d42
+                                | 0x517b
+                                | 0x65735546
+                                | 0x63677270
+                        )
+                    {
+                        pending.push((child, full, depth + 1));
+                    } else {
+                        skipped += 1;
+                    }
+                } else {
+                    skipped += 1;
+                }
+            }
+        }
+        if partial {
+            break;
+        }
+    }
+    entries.sort_by_cached_key(|v| v["path"].as_str().unwrap_or("").to_lowercase());
+    Ok(
+        json!({"path":path,"parent":path,"entries":entries,"total":entries.len(),"capacity":scope_capacity,"private":area=="nas","query":query,"recursive":recursive,"visited":visited,"skipped":skipped,"partial":partial||skipped>0,"limits":{"entries":10000,"results":500,"seconds":3,"depth":16},"content_searched":false}),
+    )
+}
 fn mime(name: &str) -> &'static str {
     match name
         .rsplit('.')
@@ -577,6 +700,15 @@ pub fn actor() -> Result<()> {
     let path = request["path"].as_str().unwrap_or("/");
     let op = request["op"].as_str().unwrap_or("");
     match op {
+        "fs_search" => {
+            let result = search(
+                area,
+                path,
+                request["query"].as_str().unwrap_or(""),
+                request["recursive"].as_bool().unwrap_or(true),
+            )?;
+            println!("{}", json!({"ok":true,"data":result}));
+        }
         "fs_guard_replace" => {
             let length = request["length"]
                 .as_u64()

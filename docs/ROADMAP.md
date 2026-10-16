@@ -5,6 +5,41 @@ ARCHITECTURE, source coverage in IMPLEMENTATION and dated evidence below.
 Vocabulary: planned, in progress, implemented, CI-verified, owner-accepted, blocked.
 A check or source artifact never implies owner acceptance.
 
+## GUI setup and discovery amendment, 2026-10-16 — in progress
+
+The owner requests scoped filename search in NAS/Storage; beginner onboarding;
+GUI harness detection and managed worker create/edit/disable/delete without
+deleting shared home/native data; worker-specific or all-worker policy settings;
+on-demand discovery of host localhost/LAN web services and selected shortcuts;
+reviewed VPN exposure; selected supported app login export to private NAS
+`apps-login-password.md`; and supported password changes with clear adapter limits.
+Build/test/deploy on Dell and solo Playwright CLI operation remain authorized.
+No background network/subnet or credential harvesting is implied. Native provider
+stores stay unchanged. Hash-only passwords cannot be recovered; unsupported apps
+need manual entry or their existing administration UI. Root actions stay typed,
+owner-authenticated and reviewed. VPN bootstrap must preserve an existing
+WireGuard/WG-easy installation and expose external-router limitations honestly.
+
+Implementation proceeds through dependency-safe increments under the frozen
+`delivery-authority-gui.json` delegation. Optimization uses repeated baseline and
+after measurements, bounded scans/work, no hidden-view polling and a diminishing
+returns stop rule; it cannot prove that no conceivable optimization remains.
+Current source baseline is deployed 0.2.2; new features are not deployed yet.
+
+Owner clarification: preserve safety when optimizing. Apps without an existing
+password keep their existing authentication behavior; do not add a password,
+authentication proxy or other app security mechanism during discovery, shortcut
+creation or VPN setup. Existing VPN access controls still apply. Password export
+and change adapters only handle explicitly selected apps with existing supported
+login mechanisms.
+
+First implementation checkpoint: bounded filename-only NAS/Storage search and
+per-worker preset/workspace overrides are implemented. Debian checks passed:
+34 Rust unit tests, Clippy, release build, 30 native filesystem checks, 66 native
+owner/API checks, 26 browser contract tests, and real sandbox checks including
+individual-worker overrides and disabled launches. These checks do not establish
+the remaining setup, discovery, worker lifecycle or password GUI outcomes.
+
 
 ## Current authorized product integration, 2026-10-15
 

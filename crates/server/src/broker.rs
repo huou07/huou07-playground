@@ -101,12 +101,18 @@ fn authorize(policy: &Value, worker: &str, path: &Path, operation: &str) -> Resu
     if policy["enforced_revision"].as_u64() != Some(revision) {
         return Err("Policy enforcement is pending; broker access is denied".into());
     }
-    let preset = policy["preset"].as_str().ok_or("Missing security preset")?;
+    let setting = helper::worker_setting(policy, worker);
+    if setting["enabled"] == false {
+        return Err("This managed worker is disabled".into());
+    }
+    let preset = setting["preset"]
+        .as_str()
+        .ok_or("Missing security preset")?;
     if !["strict", "balance", "minimal", "none"].contains(&preset) {
         return Err("Unknown security preset".into());
     }
     if preset == "strict" {
-        let workspace = valid_path(policy["workspace"].as_str().ok_or("Missing workspace")?)?;
+        let workspace = valid_path(setting["workspace"].as_str().ok_or("Missing workspace")?)?;
         if !path.starts_with(workspace) {
             return Err("Strict denies outside-workspace broker requests".into());
         }
@@ -478,4 +484,23 @@ mod tests {
         assert!(!same_identity(&bound, &changed, false));
         assert!(!same_identity(&json!({}), &json!({}), false));
     }
+}
+#[test]
+fn individual_worker_settings_apply_to_broker_authorization() {
+    let policy = json!({"revision":2,"enforced_revision":2,"preset":"none","workspace":"/home/huou07/Projects","rules":[],"worker_settings":{"dsh-worker":{"preset":"strict"},"codex-worker":{"enabled":false}}});
+    assert!(authorize(&policy, "dsh-worker", Path::new("/tmp/ordinary"), "read").is_err());
+    assert!(authorize(
+        &policy,
+        "opencode-worker",
+        Path::new("/tmp/ordinary"),
+        "read"
+    )
+    .is_ok());
+    assert!(authorize(
+        &policy,
+        "codex-worker",
+        Path::new("/home/huou07/Projects/ordinary"),
+        "read"
+    )
+    .is_err());
 }

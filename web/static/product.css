@@ -4,3 +4,5 @@
 .guard-form{display:grid;gap:12px;margin:16px 0}.guard-form label{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px}.guard-form textarea{width:100%;box-sizing:border-box;resize:vertical;background:var(--raised);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px;font:inherit}.guard-form button{justify-self:start}#credential-guard h3{font-size:13px;margin:18px 0 8px}#credential-guard label{font-size:12px}#credential-guard .product-path label{display:grid;gap:6px;flex:1;min-width:0}#credential-guard input[type=text]{width:100%;box-sizing:border-box}
 
 @media(max-width:700px){#credential-guard .product-path{display:grid}#credential-guard .product-path label{width:100%}#credential-guard .product-path button{justify-self:start}}
+
+.product-list td small{display:block;overflow-wrap:anywhere}.product-path input[type=search]{flex:1;min-width:140px!important}.product-path label:has(input[type=checkbox]){display:flex;gap:5px;align-items:center;font-size:12px}

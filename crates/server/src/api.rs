@@ -362,6 +362,10 @@ async fn mutate(Json(mut v): Json<Value>) -> Response {
     v["op"] = "fs_mutate".into();
     rpc_response(rpc(&v).await)
 }
+async fn file_search(Json(mut v): Json<Value>) -> Response {
+    v["op"] = "fs_search".into();
+    rpc_response(rpc(&v).await)
+}
 async fn file_stream(v: &Value) -> Result<(Value, BufReader<UnixStream>), String> {
     let socket =
         std::env::var("H07P_HELPER_SOCKET").unwrap_or_else(|_| "/run/h07p/admin.sock".into());
@@ -586,6 +590,7 @@ pub fn app(static_root: PathBuf) -> Result<Router, String> {
             get(guard_get).post(guard_post),
         )
         .route("/api/fs/list", get(listing))
+        .route("/api/fs/search", post(file_search))
         .route("/api/fs/mutate", post(mutate))
         .route("/api/fs/ticket", post(ticket))
         .route(

@@ -333,6 +333,51 @@ test('VPN HTTP API availability supports sign-in and new rule dialogs', async ({
   expect(errors).toEqual([]);
 });
 
+test('NAS and Storage search scopes filenames and opens a result folder', async ({ page }) => {
+  await fixture(page);
+  const requests=[];
+  await page.route('**/api/fs/search',async route=>{
+    requests.push(route.request().postDataJSON());
+    expect(route.request().headers()['x-h07p-csrf']).toBe('fixture-csrf');
+    await route.fulfill({json:{path:'/',entries:[{name:'Report.txt',path:'/nested/Report.txt',kind:'file',size:12}],total:1,visited:20,partial:true,private:true}});
+  });
+  for(const [routeName,area,label] of [['files','nas','Search NAS filenames'],['storage','storage','Search Storage filenames']]){
+    await gotoOwner(page,'/#/'+routeName);
+    const browser=page.locator(area==='nas'?'#nas-browser':'#host-browser');
+    await browser.getByRole('searchbox',{name:label}).fill('Report');
+    await browser.getByRole('button',{name:'Search',exact:true}).click();
+    await expect(browser.getByRole('status').first()).toContainText('Partial results');
+    await expect(browser.getByText('/nested/Report.txt',{exact:true})).toBeVisible();
+    expect(requests.at(-1)).toMatchObject({area,path:'/',query:'Report',recursive:true});
+    await browser.getByRole('button',{name:'Open folder',exact:true}).click();
+    await expect(browser.getByRole('textbox',{name:area==='nas'?'NAS path':'Host path',exact:true})).toHaveValue('/nested');
+  }
+});
+
+test('worker scope changes only the selected settings and all-worker change clears overrides',async({page})=>{
+  const state=await fixture(page);
+  state.setPolicy({...state.getPolicy(),workers:[{name:'dsh-worker',preset:'none'},{name:'codex-worker',preset:'none'}]});
+  await gotoOwner(page,'/#/permissions');
+  await page.getByLabel('Configure worker',{exact:true}).selectOption('dsh-worker');
+  await page.getByLabel('Security Level',{exact:true}).selectOption('strict');
+  const review=page.getByRole('dialog',{name:'Review Security Level change'});
+  await review.getByRole('button',{name:'Keep custom rules'}).click();
+  await page.getByRole('button',{name:'Review impact',exact:true}).click();
+  const impact=page.getByRole('dialog',{name:'Review permission impact'});
+  await expect(impact).toContainText('Individual worker settings');
+  let call=state.calls.filter(c=>c.path==='/api/control/dry-run').at(-1);
+  expect(call.body.worker_settings).toEqual({'dsh-worker':{preset:'strict'}});
+  expect(call.body.preset).toBe('none');
+  await page.keyboard.press('Escape');
+  await page.getByLabel('Configure worker',{exact:true}).selectOption('*');
+  await page.getByLabel('Security Level',{exact:true}).selectOption('minimal');
+  await page.getByRole('dialog',{name:'Review Security Level change'}).getByRole('button',{name:'Keep custom rules'}).click();
+  await page.getByRole('button',{name:'Review impact',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Review permission impact'})).toContainText('Individual worker settings');
+  call=state.calls.filter(c=>c.path==='/api/control/dry-run').at(-1);
+  expect(call.body.preset).toBe('minimal');expect(call.body.worker_settings['dsh-worker'].preset).toBeUndefined();
+});
+
 test('expired session clears private files and telemetry before prompting for sign-in', async ({ page }) => {
   await fixture(page, { entries: [{ name: 'private-fixture.txt', path: '/private-fixture.txt', kind: 'file', size: 4 }] });
   const errors = []; page.on('pageerror', error => errors.push(error.message));

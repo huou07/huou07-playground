@@ -43,6 +43,27 @@ fn checked_policy(bytes: &[u8]) -> Result<LaunchPolicy, String> {
     }
     serde_json::from_value(value).map_err(|_| "Worker policy is malformed".into())
 }
+fn worker_policy(bytes: &[u8], worker: &str) -> Result<LaunchPolicy, String> {
+    checked_policy(bytes)?;
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|_| "Worker policy is malformed")?;
+    let specific = &value["worker_settings"][worker];
+    if specific["enabled"] == false {
+        return Err("This managed worker is disabled".into());
+    }
+    let preset = specific
+        .get("preset")
+        .or_else(|| value.get("preset"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!("none"));
+    let workspace = specific
+        .get("workspace")
+        .or_else(|| value.get("workspace"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!(default_workspace()));
+    serde_json::from_value(serde_json::json!({"preset":preset,"workspace":workspace}))
+        .map_err(|_| "Worker policy is malformed".into())
+}
 
 fn native_paths(harness: &str) -> Result<Vec<PathBuf>, String> {
     let relative: &[&str] = match harness {
@@ -289,7 +310,7 @@ mod linux {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/var/lib/h07p-control"));
         let policy = match fs::read(control.join("policy.json")) {
-            Ok(bytes) => checked_policy(&bytes)?,
+            Ok(bytes) => worker_policy(&bytes, &format!("{harness}-worker"))?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => LaunchPolicy {
                 preset: default_preset(),
                 workspace: default_workspace(),
@@ -465,5 +486,17 @@ mod tests {
         )
         .is_err());
         assert!(checked_policy(br#"{"revision":2,"enforced_revision":2,"rules":[]}"#).is_ok());
+    }
+    #[test]
+    fn individual_worker_settings_do_not_change_other_workers() {
+        let bytes=br#"{"revision":3,"enforced_revision":3,"preset":"none","workspace":"/home/huou07/Projects","worker_settings":{"dsh-worker":{"preset":"strict","workspace":"/home/huou07/Projects/selected"},"codex-worker":{"enabled":false}}}"#;
+        let selected = worker_policy(bytes, "dsh-worker").unwrap();
+        assert_eq!(selected.preset, "strict");
+        assert!(selected.workspace.ends_with("selected"));
+        assert_eq!(
+            worker_policy(bytes, "opencode-worker").unwrap().preset,
+            "none"
+        );
+        assert!(worker_policy(bytes, "codex-worker").is_err());
     }
 }
