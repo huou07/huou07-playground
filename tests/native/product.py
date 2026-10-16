@@ -65,7 +65,12 @@ def main():
             p.mkdir(mode=0o700)
             os.chown(p, service.pw_uid, service.pw_gid)
         (root / "control").mkdir(mode=0o700)
+        (root / "bin").mkdir(mode=0o755)
+        wrapper=root / "bin/setfacl"
+        wrapper.write_text('#!/bin/sh\nif [ -e "'+str(root / 'fail-enforce')+'" ]; then exit 1; fi\nexec /usr/bin/setfacl "$@"\n')
+        wrapper.chmod(0o755)
         env = dict(os.environ, H07P_OWNER=account, H07P_RELAYS="false",
+                   PATH=str(root / "bin")+":/usr/sbin:/usr/bin:/sbin:/bin",
                    H07P_MANAGED_UNITS=unit, H07P_CONTROL_DIR=str(root / "control"),
                    H07P_NAS_DIR=str(root / "nas"), H07P_STATE_DIR=str(root / "state"),
                    APPS_FILE=str(root / "state/apps.json"),
@@ -244,6 +249,43 @@ def main():
             check(code == 200 and any(f["reason"] == "maintained_scanner_match" for f in detected["findings"]),
                   "opt-in maintained scanner finds synthetic content secret")
             check("ghp_" not in json.dumps(detected), "scan response contains no matching bytes")
+        current_revision = value("/api/control/status")[1]["revision"]
+        expiring = dict(draft, expected_revision=current_revision,
+                        rules=[dict(draft["rules"][0], expires_at=int(time.time())+5)])
+        check(request("/api/control/apply", expiring)[0] == 200, "expiring Block applies")
+        for _ in range(90):
+            expired = value("/api/control/status")[1]
+            if expired["revision"] == current_revision+2:
+                break
+            time.sleep(.1)
+        check(expired["revision"] == current_revision+2 and not expired["rules"],
+              "expiry creates and enforces a new policy revision")
+        check(run("runuser", "-u", "dsh-worker", "--", "cat", str(target)).stdout == b"replacement must never be disclosed",
+              "expiry restores positive ordinary access")
+        root_owned = workspace / "root-owned.txt"
+        root_owned.write_text("synthetic root fixture")
+        privileged = dict(draft, expected_revision=expired["revision"], rules=[dict(
+            worker="*",target=str(root_owned),action="allow",recursive=False,operations=["read"])])
+        check(request("/api/control/dry-run", privileged)[0] == 400,
+              "policy cannot grant worker rights to root-owned files")
+        group = next(g for g in os.getgrouplist("huou07", owner.pw_gid) if g != owner.pw_gid)
+        group_file = workspace / "owner-group-only.txt"
+        group_file.write_text("synthetic supplementary group access")
+        os.chown(group_file, 0, group)
+        run("setfacl", "-b", str(group_file))
+        os.chmod(group_file, 0o640)
+        code, _, body = request("/api/fs/download?" + urllib.parse.urlencode(dict(area="storage",path=str(group_file))))
+        check(code == 200 and body == b"synthetic supplementary group access",
+              "Storage preserves actual owner supplementary-group rights")
+        (root / "fail-enforce").touch()
+        failed_draft=dict(draft,expected_revision=expired["revision"])
+        check(request("/api/control/apply",failed_draft)[0]==400,"failed OS policy activation reports failure")
+        pending=value("/api/control/status")[1]
+        check(pending["enforced_revision"] is None,"failed activation and rollback never claim Enforced")
+        (root / "fail-enforce").unlink()
+        repair=dict(draft,expected_revision=pending["revision"],rules=[])
+        code,repaired=value("/api/control/apply",repair)
+        check(code==200 and repaired["revision"]==repaired["enforced_revision"],"owner can repair a pending revision after the OS fault is removed")
         check(request("/api/owner/logout", {})[0] == 200, "logout")
         check(request("/api/fs/list")[0] == 401, "logged-out session revoked")
         check(request(ticket["url"], authenticated=False)[0] == 401, "logout revokes outstanding file links")

@@ -226,3 +226,17 @@ back as 1280. Reboot persistence is configured, not reboot-tested. For rollback,
 restore the numeric interface/default values from the utility's root-only JSON
 record, replace only the MTU line in `wg0.conf`, then set the live interface MTU
 to the restored value. Never dump the WireGuard configuration or database keys.
+
+
+## Owner amendment — installer and Credential Guard, 2026-10-16
+
+The owner requests a beginner-friendly install/update/dependency diagnosis/repair/
+uninstall flow and safe cleanup of secret-bearing logs, prefers solo execution
+and Playwright CLI, and renews authorization for bounded synthetic testing and
+deployment on Dell Debian. The supplied Guard proposal is advisory; adopted scope
+and compatibility decisions are in
+[Guard integration](security/credential-guard/INTEGRATION.md). P0 metadata/access
+audit is recorded; Guard/installer implementation and native acceptance remain
+in progress. Existing native authentication stays unchanged and its same-UID
+limitation is explicit. This amendment extends the current delivery rather than
+canceling the original P1–P7/VPN/deployment objective.

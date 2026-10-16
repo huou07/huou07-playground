@@ -1,0 +1,1086 @@
+{
+  "evidence": "effective os.access under actual service/account UID and group set; no file opened for credential bytes",
+  "debug": "UNKNOWN: real credential-holder memory was intentionally not probed",
+  "rows": [
+    {
+      "path": "$OWNER_HOME/.dsh",
+      "classification": "dsh",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.dsh/credentials.json",
+      "classification": "dsh",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.codex",
+      "classification": "codex",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.codex/auth.json",
+      "classification": "codex",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/share/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/share/opencode/auth.json",
+      "classification": "opencode",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/state/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.cache/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.ssh",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.gnupg",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.secrets",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/litellm",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/omniroute",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/etc/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/etc/huou07-playground/opencode-proxy.env",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/huou07-playground/opencode-web.env",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/var/lib/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/var/lib/h07p-control",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/var/lib/h07p-private/nas",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P/AGENTS.md",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P/.agents/skills",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/bin",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.cargo/bin",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/var/run/docker.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/run/user/1000/podman/podman.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/run/h07p/admin.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "/run/h07p/broker.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "dsh-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.dsh",
+      "classification": "dsh",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.dsh/credentials.json",
+      "classification": "dsh",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.codex",
+      "classification": "codex",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.codex/auth.json",
+      "classification": "codex",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/share/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/share/opencode/auth.json",
+      "classification": "opencode",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/state/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.cache/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.ssh",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.gnupg",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.secrets",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/litellm",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/omniroute",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/etc/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/etc/huou07-playground/opencode-proxy.env",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/huou07-playground/opencode-web.env",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/var/lib/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/var/lib/h07p-control",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/var/lib/h07p-private/nas",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P/AGENTS.md",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P/.agents/skills",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/bin",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.cargo/bin",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/var/run/docker.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/run/user/1000/podman/podman.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/run/h07p/admin.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "/run/h07p/broker.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "codex-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.dsh",
+      "classification": "dsh",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.dsh/credentials.json",
+      "classification": "dsh",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.codex",
+      "classification": "codex",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.codex/auth.json",
+      "classification": "codex",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/share/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/share/opencode/auth.json",
+      "classification": "opencode",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/state/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.cache/opencode",
+      "classification": "opencode",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.ssh",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.gnupg",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.secrets",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/litellm",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/omniroute",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/etc/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/etc/huou07-playground/opencode-proxy.env",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.config/huou07-playground/opencode-web.env",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/var/lib/huou07-playground",
+      "classification": "owner",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/var/lib/h07p-control",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/var/lib/h07p-private/nas",
+      "classification": "owner",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P/AGENTS.md",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/Projects/H07P/.agents/skills",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "ALLOW",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.local/bin",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "$OWNER_HOME/.cargo/bin",
+      "classification": "shared",
+      "operations": {
+        "read": "ALLOW",
+        "write": "DENY",
+        "traverse": "ALLOW",
+        "execute": "ALLOW"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/var/run/docker.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "DENY",
+        "write": "DENY",
+        "traverse": "DENY",
+        "execute": "DENY"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/run/user/1000/podman/podman.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/run/h07p/admin.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    },
+    {
+      "path": "/run/h07p/broker.sock",
+      "classification": "socket",
+      "operations": {
+        "read": "UNKNOWN",
+        "write": "UNKNOWN",
+        "traverse": "UNKNOWN",
+        "execute": "UNKNOWN"
+      },
+      "debug": "UNKNOWN",
+      "principal": "opencode-worker"
+    }
+  ]
+}

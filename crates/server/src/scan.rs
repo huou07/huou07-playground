@@ -8,6 +8,36 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn excluded_filesystem(path: &std::path::Path) -> bool {
+    let Ok(path) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
+        return true;
+    };
+    let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(path.as_ptr(), &mut stat) } != 0 {
+        return true;
+    }
+    matches!(
+        stat.f_type as u64,
+        0x6969
+            | 0xff534d42
+            | 0x517b
+            | 0x65735546
+            | 0x9fa0
+            | 0x62656572
+            | 0x1cd1
+            | 0x1373
+            | 0x27e0eb
+            | 0x63677270
+            | 0x534f434b
+            | 0x50495045
+            | 0x73636673
+            | 0x64626720
+            | 0x74726163
+            | 0x19800202
+            | 0x187
+    )
+}
+
 fn content(path: &std::path::Path, meta: &fs::Metadata) -> Result<bool, String> {
     if !meta.is_file() || meta.nlink() != 1 || meta.len() > 1024 * 1024 {
         return Err("content_type_alias_or_size_budget".into());
@@ -98,8 +128,28 @@ fn content(path: &std::path::Path, meta: &fs::Metadata) -> Result<bool, String> 
 }
 
 pub fn run(v: &Value) -> Result<Value, String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+    if ACTIVE
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+            (n < 2).then_some(n + 1)
+        })
+        .is_err()
+    {
+        return Err("Detection is busy; retry after the current scan finishes".into());
+    }
+    struct Lease;
+    impl Drop for Lease {
+        fn drop(&mut self) {
+            ACTIVE.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let _lease = Lease;
     let scope = v["scope"].as_str().ok_or("Select a scan scope")?;
     let path = fs::canonicalize(scope).map_err(|e| e.to_string())?;
+    if path.to_str().is_none() {
+        return Err("Scan scope must be a UTF-8 path".into());
+    }
     if !path.starts_with("/home/huou07") && !path.starts_with("/tmp") {
         return Err("Select an owner home or synthetic temporary scope".into());
     }
@@ -119,6 +169,10 @@ pub fn run(v: &Value) -> Result<Value, String> {
     let mut scanned_bytes = 0u64;
     let mut content_files = 0;
     while let Some((p, depth)) = queue.pop() {
+        if excluded_filesystem(&p) {
+            skipped.push(json!({"path":p,"reason":"filesystem_excluded"}));
+            continue;
+        }
         if depth > 8 || seen >= 10000 || start.elapsed() > Duration::from_secs(10) {
             skipped.push(json!({"path":p,"reason":"scan_budget"}));
             continue;
@@ -137,6 +191,10 @@ pub fn run(v: &Value) -> Result<Value, String> {
                 break;
             }
             let p = entry.path();
+            if p.to_str().is_none() {
+                skipped.push(json!({"path":p.to_string_lossy(),"reason":"non_utf8_path"}));
+                continue;
+            }
             let m = match fs::symlink_metadata(&p) {
                 Ok(m) => m,
                 Err(_) => continue,
@@ -200,4 +258,13 @@ pub fn run(v: &Value) -> Result<Value, String> {
         "content_scanned":content_enabled,"content_files":content_files,"content_bytes":scanned_bytes,
         "warning":"Detection is a proposal, not proof of safety. Unknown and skipped files remain unclassified. Nothing has been applied."}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn pseudo_filesystems_are_excluded() {
+        assert!(super::excluded_filesystem(std::path::Path::new("/proc")));
+        assert!(super::excluded_filesystem(std::path::Path::new("/sys")));
+    }
 }

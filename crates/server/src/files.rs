@@ -120,8 +120,16 @@ fn names(dir: &File) -> Result<Vec<String>> {
         let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }
             .to_string_lossy()
             .into_owned();
-        if name != "." && name != ".." && !name.starts_with(".h07p-upload-") {
-            result.push(name);
+        if name != "." && name != ".." {
+            // Hide an active transfer, but expose an abandoned upload for owner
+            // recovery after a crash. Never silently delete retained data.
+            let active = temporary_name(&name)
+                && open_at(dir, &name, libc::O_RDONLY | libc::O_NONBLOCK, 0).is_ok_and(
+                    |f| unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0,
+                );
+            if !active {
+                result.push(name);
+            }
         }
         if result.len() > 100_000 {
             unsafe { libc::closedir(stream) };
@@ -131,6 +139,10 @@ fn names(dir: &File) -> Result<Vec<String>> {
     unsafe { libc::closedir(stream) };
     result.sort_by_key(|a| a.to_lowercase());
     Ok(result)
+}
+fn temporary_name(name: &str) -> bool {
+    name.strip_prefix(".h07p-upload-")
+        .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 fn capacity(dir: &File) -> Result<Value> {
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -152,12 +164,15 @@ fn mime(name: &str) -> &'static str {
         .as_str()
     {
         "txt" | "md" | "rs" | "py" | "js" | "css" | "json" | "toml" | "yaml" | "yml" | "log"
-        | "csv" => "text/plain; charset=utf-8",
+        | "csv" | "conf" | "ini" | "sh" => "text/plain; charset=utf-8",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
         "webp" => "image/webp",
-        "mp4" => "video/mp4",
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
         "webm" => "video/webm",
         "ogg" => "video/ogg",
         _ => "application/octet-stream",
@@ -230,8 +245,11 @@ fn copy_entry(
     if st.st_mode & libc::S_IFMT != libc::S_IFREG {
         return Err("Copy of symlinks/devices is not supported".into());
     }
-    let mut input = open_at(src, name, libc::O_RDONLY, 0)?;
+    let mut input = open_at(src, name, libc::O_RDONLY | libc::O_NONBLOCK, 0)?;
     let before = input.metadata().map_err(io)?;
+    if !before.is_file() || before.dev() != st.st_dev || before.ino() != st.st_ino {
+        return Err("Copy source changed before it could be opened".into());
+    }
     let mut output = open_at(
         dst,
         dest,
@@ -269,6 +287,8 @@ fn copy_entry(
             || before.len() != after.len()
             || before.mtime() != after.mtime()
             || before.mtime_nsec() != after.mtime_nsec()
+            || before.ctime() != after.ctime()
+            || before.ctime_nsec() != after.ctime_nsec()
         {
             return Err("Source changed during copy; source retained".into());
         }
@@ -443,7 +463,7 @@ pub fn actor() -> Result<()> {
             for name in all.iter().skip(offset).take(500) {
                 if let Ok(st) = stat_at(&dir, name) {
                     let mode = st.st_mode & libc::S_IFMT;
-                    entries.push(json!({"name":name,"path":format!("{}/{}",path.trim_end_matches('/'),name),"kind":if mode==libc::S_IFDIR{"directory"}else if mode==libc::S_IFREG{"file"}else{"symlink"},"size":st.st_size,"modified":st.st_mtime}));
+                    entries.push(json!({"name":name,"path":format!("{}/{}",path.trim_end_matches('/'),name),"kind":if mode==libc::S_IFDIR{"directory"}else if mode==libc::S_IFREG{"file"}else if mode==libc::S_IFLNK{"symlink"}else{"other"},"size":st.st_size,"modified":st.st_mtime,"temporary":temporary_name(name)}));
                 }
             }
             let mut p = parts(path)?;
@@ -519,6 +539,9 @@ pub fn actor() -> Result<()> {
                 libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
                 0o640,
             )?;
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+                return Err("Could not lock upload staging file".into());
+            }
             let result: Result<()> = (|| {
                 let actual = std::io::copy(&mut input.take(length), &mut file).map_err(io)?;
                 if actual != length {

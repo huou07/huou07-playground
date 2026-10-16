@@ -79,19 +79,68 @@ fn run() -> Result<(), String> {
         }
         Some("request") | Some("redeem") => {
             use std::io::{BufRead, Write};
-            let mut s = std::os::unix::net::UnixStream::connect("/run/h07p/broker.sock")
-                .map_err(|_| "Worker broker unavailable")?;
             let v = if args[0] == "request" {
-                serde_json::json!({"op":"request","operation":"read","path":args.get(1).ok_or("Select a path")?})
+                let first = args.get(1).ok_or(
+                    "Usage: request read|list|write|create|delete /absolute/path [--stdin]",
+                )?;
+                let (operation, path) = if first.starts_with('/') && args.len() == 2 {
+                    ("read", first)
+                } else {
+                    if !["read", "list", "write", "create", "delete"].contains(&first.as_str()) {
+                        return Err("Unsupported broker operation".into());
+                    }
+                    (
+                        first.as_str(),
+                        args.get(2).ok_or("Select an absolute target")?,
+                    )
+                };
+                let mut value =
+                    serde_json::json!({"op":"request","operation":operation,"path":path});
+                if ["write", "create"].contains(&operation) {
+                    if args.get(3).map(String::as_str) != Some("--stdin") || args.len() != 4 {
+                        return Err("Provide the exact UTF-8 write content through --stdin (at most 64 KiB)".into());
+                    }
+                    let mut content = String::new();
+                    std::io::stdin()
+                        .take(65537)
+                        .read_to_string(&mut content)
+                        .map_err(|_| "Write content must be UTF-8")?;
+                    if content.len() > 65536 {
+                        return Err("Write content exceeds 64 KiB".into());
+                    }
+                    value["content"] = content.into();
+                } else if args.len() > 3 {
+                    return Err("Unexpected broker arguments".into());
+                }
+                value
             } else {
+                if args.len() != 2 {
+                    return Err("Usage: redeem APPROVAL_ID".into());
+                }
                 serde_json::json!({"op":"redeem","id":args.get(1).ok_or("Select an approval id")?})
             };
+            let socket = std::env::var("H07P_BROKER_SOCKET")
+                .unwrap_or_else(|_| "/run/h07p/broker.sock".into());
+            let mut s = std::os::unix::net::UnixStream::connect(socket)
+                .map_err(|_| "Worker broker unavailable")?;
+            s.set_read_timeout(Some(std::time::Duration::from_secs(40)))
+                .map_err(|_| "Broker timeout unavailable")?;
             writeln!(s, "{v}").map_err(|_| "Broker request failed")?;
             let mut line = String::new();
             std::io::BufReader::new(s)
                 .read_line(&mut line)
                 .map_err(|_| "Broker response failed")?;
             print!("{line}");
+            if serde_json::from_str::<serde_json::Value>(&line)
+                .map(|v| v["ok"] != true)
+                .unwrap_or(true)
+            {
+                return Err("Broker operation was not authorized or did not complete".into());
+            }
+            return Ok(());
+        }
+        Some("--help") => {
+            println!("H07P Linux owner dashboard\nWorker broker: request read|list|write|create|delete /absolute/path [--stdin]\nOwner decision appears in Permissions; then redeem APPROVAL_ID.\nWrites are UTF-8, at most 64 KiB, fixed at request time. Execute is unsupported.");
             return Ok(());
         }
         None => {}

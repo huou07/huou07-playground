@@ -4,6 +4,7 @@
 sudo unshare --mount --fork --propagation private python3 tests/native/files.py BINARY
 """
 import hashlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -56,6 +57,17 @@ def main():
         check(not list(nas.glob('.h07p-upload-*')), 'short upload cleans temporary files')
         response, _ = actor(dict(op='fs_list', area='nas', path='/'))
         check(response['data']['capacity']['total'] == 2*1024*1024, 'capacity reflects actual selected mount')
+        orphan = nas / ('.h07p-upload-' + 'a'*64)
+        orphan.write_bytes(b'synthetic interrupted upload')
+        os.chown(orphan, user.pw_uid, user.pw_gid)
+        with orphan.open('rb') as active:
+            fcntl.flock(active, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            response, _ = actor(dict(op='fs_list', area='nas', path='/'))
+            check(not any(e['name']==orphan.name for e in response['data']['entries']), 'in-flight upload remains hidden')
+        response, _ = actor(dict(op='fs_list', area='nas', path='/'))
+        check(any(e['name']==orphan.name and e['temporary'] for e in response['data']['entries']), 'abandoned upload is visible for owner recovery')
+        response, _ = actor(dict(op='fs_mutate', area='nas', path='/'+orphan.name, action='delete', confirmed=True))
+        check(response['ok'] and not orphan.exists(), 'owner explicitly removes abandoned upload')
         os.mkfifo(nas/'fifo', 0o600)
         os.chown(nas/'fifo', user.pw_uid, user.pw_gid)
         response, _ = actor(dict(op='fs_read', area='nas', path='/fifo'))

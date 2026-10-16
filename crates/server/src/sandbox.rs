@@ -18,6 +18,31 @@ fn default_preset() -> String {
 fn default_workspace() -> PathBuf {
     PathBuf::from("/home/huou07/Projects")
 }
+fn checked_policy(bytes: &[u8]) -> Result<LaunchPolicy, String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|_| "Worker policy is malformed")?;
+    if !value["revision"].is_null()
+        && (value["revision"].as_u64().is_none()
+            || value["revision"].as_u64() != value["enforced_revision"].as_u64())
+    {
+        return Err("Policy enforcement is pending; worker launch is blocked".into());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if value["rules"].as_array().is_some_and(|rules| {
+        rules
+            .iter()
+            .any(|r| r["expires_at"].as_u64().is_some_and(|t| t <= now))
+    }) {
+        return Err(
+            "Expired policy needs reconciliation; retry after the control service applies it"
+                .into(),
+        );
+    }
+    serde_json::from_value(value).map_err(|_| "Worker policy is malformed".into())
+}
 
 fn native_paths(harness: &str) -> Result<Vec<PathBuf>, String> {
     let relative: &[&str] = match harness {
@@ -264,8 +289,7 @@ mod linux {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/var/lib/h07p-control"));
         let policy = match fs::read(control.join("policy.json")) {
-            Ok(bytes) => serde_json::from_slice::<LaunchPolicy>(&bytes)
-                .map_err(|_| "Worker policy is malformed")?,
+            Ok(bytes) => checked_policy(&bytes)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => LaunchPolicy {
                 preset: default_preset(),
                 workspace: default_workspace(),
@@ -400,5 +424,15 @@ mod tests {
         assert!(restricted(&policy("custom-typo")).is_err());
         let absent: LaunchPolicy = serde_json::from_str("{}").unwrap();
         assert_eq!(absent.preset, "none");
+    }
+    #[test]
+    fn pending_or_expired_policy_cannot_launch() {
+        assert!(checked_policy(br#"{"revision":2,"enforced_revision":null}"#).is_err());
+        assert!(checked_policy(br#"{"revision":2,"enforced_revision":1}"#).is_err());
+        assert!(checked_policy(
+            br#"{"revision":2,"enforced_revision":2,"rules":[{"expires_at":1}]}"#
+        )
+        .is_err());
+        assert!(checked_policy(br#"{"revision":2,"enforced_revision":2,"rules":[]}"#).is_ok());
     }
 }

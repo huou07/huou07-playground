@@ -223,7 +223,7 @@
         checkbox.addEventListener('change', () => { if (checkbox.checked) selected.add(entry.path); else selected.delete(entry.path); update(); });
         const cell = el('td'); cell.append(checkbox);
         const name = el('td'); const open = button((entry.kind === 'directory' ? '▤ ' : entry.kind === 'symlink' ? '↗ ' : '') + entry.name, () => entry.kind === 'directory' ? load(entry.path) : preview(area, entry), 'file-open');
-        name.append(open); row.append(cell, name, el('td', entry.kind === 'directory' ? 'Folder' : fileSize(entry.size)), el('td', entry.modified ? displayDate(entry.modified) : '—'));
+        name.append(open); if(entry.temporary) name.append(el('span','Incomplete upload · inspect or delete','product-warning')); row.append(cell, name, el('td', entry.kind === 'directory' ? 'Folder' : fileSize(entry.size)), el('td', entry.modified ? displayDate(entry.modified) : '—'));
         row.addEventListener('contextmenu', event => { event.preventDefault(); selected = new Set([entry.path]); render(); actions.Rename.focus(); });
         row.addEventListener('keydown', event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); selected = new Set([entry.path]); render(); actions.Rename.focus(); } });
         body.append(row);
@@ -247,7 +247,7 @@
           capacity.append(grid,el('p','Free includes reserved blocks; available is usable by the browsing identity. Sampled ' + new Date().toLocaleTimeString() + '. 1 GiB = 1,073,741,824 bytes.','panel-note'));
         }
         if(area === 'nas') privacy.textContent=data.private === true ? 'Private · server confirmed' : 'Isolation unconfirmed';
-        render(); message(status, area === 'nas' ? (data.private === true ? 'Private owner NAS confirmed by the service. See Permissions for managed-worker coverage.' : 'The server has not confirmed NAS privacy. Refresh status before uploading private data.') : 'Listed with owner OS rights. Some host paths may be inaccessible.');
+        render(); message(status, area === 'nas' ? (data.private === true ? 'Private owner NAS confirmed by the service. See Permissions for managed-worker coverage.' : 'The server has not confirmed NAS privacy. Refresh status before uploading private data.') : 'Listed with owner OS rights. Some host paths may be inaccessible.'); if(entries.some(entry=>entry.temporary)) status.textContent+=' Incomplete uploads were retained after interruption. Inspect or explicitly delete them; no automatic deletion occurs.';
       } catch (error) { message(status, error.message, true); }
       finally { busy = false; update(); }
     }

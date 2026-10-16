@@ -1,0 +1,216 @@
+{
+  "timestamp": "2026-10-16T02:48:10.953443+00:00",
+  "repository": "$OWNER_HOME/Projects/H07P",
+  "source_head": "5cd55c9736481803ac30fe9773bdd388f437b092",
+  "services": {
+    "huou07-playground.service": {
+      "MainPID": "332678",
+      "LimitCORE": "infinity",
+      "CapabilityBoundingSet": "cap_chown cap_dac_override cap_dac_read_search cap_fowner cap_fsetid cap_kill cap_setgid cap_setuid cap_setpcap cap_linux_immutable cap_net_bind_service cap_net_broadcast cap_net_admin cap_net_raw cap_ipc_lock cap_ipc_owner cap_sys_chroot cap_sys_ptrace cap_sys_pacct cap_sys_admin cap_sys_boot cap_sys_nice cap_sys_resource cap_sys_time cap_sys_tty_config cap_lease cap_audit_write cap_audit_control cap_setfcap cap_mac_override cap_mac_admin cap_syslog cap_wake_alarm cap_block_suspend cap_audit_read cap_perfmon cap_bpf cap_checkpoint_restore",
+      "User": "huou07-playground",
+      "Group": "huou07-playground",
+      "SupplementaryGroups": "huou07-dsh-link",
+      "ProtectHome": "yes",
+      "ProtectSystem": "strict",
+      "NoNewPrivileges": "yes",
+      "ActiveState": "active",
+      "SubState": "running",
+      "process_metadata": {
+        "Uid": [
+          "996",
+          "996",
+          "996",
+          "996"
+        ],
+        "Gid": [
+          "985",
+          "985",
+          "985",
+          "985"
+        ],
+        "Groups": [
+          "979",
+          "985"
+        ],
+        "CoreDumping": [
+          "0"
+        ],
+        "CapEff": [
+          "0000000000000000"
+        ],
+        "NoNewPrivs": [
+          "1"
+        ]
+      },
+      "executable": "python3.13"
+    },
+    "h07p-helper.service": {
+      "MainPID": "0",
+      "LimitCORE": "infinity",
+      "CapabilityBoundingSet": "cap_chown cap_dac_override cap_dac_read_search cap_fowner cap_fsetid cap_kill cap_setgid cap_setuid cap_setpcap cap_linux_immutable cap_net_bind_service cap_net_broadcast cap_net_admin cap_net_raw cap_ipc_lock cap_ipc_owner cap_sys_module cap_sys_rawio cap_sys_chroot cap_sys_ptrace cap_sys_pacct cap_sys_admin cap_sys_boot cap_sys_nice cap_sys_resource cap_sys_time cap_sys_tty_config cap_mknod cap_lease cap_audit_write cap_audit_control cap_setfcap cap_mac_override cap_mac_admin cap_syslog cap_wake_alarm cap_block_suspend cap_audit_read cap_perfmon cap_bpf cap_checkpoint_restore",
+      "User": "",
+      "Group": "",
+      "SupplementaryGroups": "",
+      "ProtectHome": "no",
+      "ProtectSystem": "no",
+      "NoNewPrivileges": "no",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "h07p-dsh.service": {
+      "MainPID": "426738",
+      "LimitCORE": "infinity",
+      "CapabilityBoundingSet": "",
+      "User": "dsh-worker",
+      "Group": "huou07-dsh-link",
+      "SupplementaryGroups": "huou07-dsh-link",
+      "ProtectHome": "no",
+      "ProtectSystem": "no",
+      "NoNewPrivileges": "yes",
+      "ActiveState": "active",
+      "SubState": "running",
+      "process_metadata": {
+        "Uid": [
+          "995",
+          "995",
+          "995",
+          "995"
+        ],
+        "Gid": [
+          "979",
+          "979",
+          "979",
+          "979"
+        ],
+        "Groups": [
+          "979"
+        ],
+        "CoreDumping": [
+          "0"
+        ],
+        "CapEff": [
+          "0000000000000000"
+        ],
+        "NoNewPrivs": [
+          "1"
+        ]
+      },
+      "executable": "python3.13"
+    },
+    "h07p-opencode.service": {
+      "MainPID": "426735",
+      "LimitCORE": "infinity",
+      "CapabilityBoundingSet": "",
+      "User": "opencode-worker",
+      "Group": "opencode-worker",
+      "SupplementaryGroups": "",
+      "ProtectHome": "no",
+      "ProtectSystem": "no",
+      "NoNewPrivileges": "yes",
+      "ActiveState": "active",
+      "SubState": "running",
+      "process_metadata": {
+        "Uid": [
+          "993",
+          "993",
+          "993",
+          "993"
+        ],
+        "Gid": [
+          "982",
+          "982",
+          "982",
+          "982"
+        ],
+        "Groups": [
+          "982"
+        ],
+        "CoreDumping": [
+          "0"
+        ],
+        "CapEff": [
+          "0000000000000000"
+        ],
+        "NoNewPrivs": [
+          "1"
+        ]
+      },
+      "executable": "opencode.exe"
+    }
+  },
+  "identities": {
+    "dsh-worker": {
+      "uid": 995,
+      "gid": 979,
+      "groups": [
+        979
+      ],
+      "root_command": "DENY"
+    },
+    "codex-worker": {
+      "uid": 994,
+      "gid": 983,
+      "groups": [
+        983
+      ],
+      "root_command": "DENY"
+    },
+    "opencode-worker": {
+      "uid": 993,
+      "gid": 982,
+      "groups": [
+        982
+      ],
+      "root_command": "DENY"
+    }
+  },
+  "capabilities": {
+    "kernel": "7.2.6+deb13-amd64",
+    "architecture": "x86_64",
+    "landlock_abi": 10,
+    "apparmor_enabled": true,
+    "apparmor_enforce_profiles": 14,
+    "apparmor_complain_profiles": 23,
+    "yama_ptrace_scope": "1",
+    "protected_hardlinks": "1",
+    "core_collector_configured": false,
+    "hibernation_resume_configured": true,
+    "swaps": [
+      {
+        "path": "/dev/zram0",
+        "kind": "partition",
+        "metadata": {
+          "exists": true,
+          "uid": 0,
+          "gid": 6,
+          "mode": "0o660",
+          "symlink": false,
+          "directory": false,
+          "device": 7,
+          "inode": 292
+        }
+      },
+      {
+        "path": "/dev/nvme0n1p3",
+        "kind": "partition",
+        "metadata": {
+          "exists": true,
+          "uid": 0,
+          "gid": 6,
+          "mode": "0o660",
+          "symlink": false,
+          "directory": false,
+          "device": 7,
+          "inode": 221
+        }
+      }
+    ],
+    "zram_backing": {
+      "zram0": "none"
+    }
+  },
+  "credential_values_read": false,
+  "provider_model_calls": false,
+  "system_changes": false,
+  "running_backend": "Python"
+}

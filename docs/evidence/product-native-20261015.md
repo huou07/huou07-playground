@@ -64,3 +64,23 @@ baseline evidence, not performance acceptance for the final integrated release.
 No claim of electricity savings, arbitrary hardware collector success, full
 Unicode casefold identity, Android browser acceptance or a fresh-VM lifecycle is
 made by this checkpoint.
+
+## Follow-up boundary checks, 2026-10-16
+
+The release candidate now passes 24 Rust tests and 65 native PAM/API checks,
+including policy expiry, owner supplementary-group Storage rights, failed OS
+activation/failed rollback exposing a pending (not Enforced) revision, and a
+successful owner repair after the fixture fault is removed. Policy/snapshot
+writes are fsynced and snapshots are atomically published; incomplete snapshots
+are never treated as valid restore inputs. Worker launch refuses pending/expired
+policy. Abandoned uploads remain private and are visible for explicit owner
+recovery; 18 file adapter checks passed with 16/64 MiB release transfers and
+3908/3968 KiB sampled RSS.
+
+A temporary runtime-only WireGuard peer in a separate network namespace confirmed
+an actual encrypted handshake and TCP/HTTP transport to all nine declared ports.
+Original peer routes were preserved and temporary resources removed. The baseline
+HTML is 21.8 KiB, so the release's >32 KiB transfer check targets `product.js`
+rather than padding HTML or pretending the baseline has a larger body. That
+release asset gate awaits deployment. Native application authentication was not
+exercised by the transport test.

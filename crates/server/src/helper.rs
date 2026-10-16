@@ -43,7 +43,13 @@ pub(crate) fn load() -> Result<Value> {
 fn save(value: &Value) -> Result<()> {
     let tmp = dir().join(".policy-new");
     fs::write(&tmp, serde_json::to_vec(value).map_err(err)?).map_err(err)?;
-    fs::rename(tmp, dir().join("policy.json")).map_err(err)
+    fs::File::open(&tmp)
+        .and_then(|f| f.sync_all())
+        .map_err(err)?;
+    fs::rename(tmp, dir().join("policy.json")).map_err(err)?;
+    fs::File::open(dir())
+        .and_then(|f| f.sync_all())
+        .map_err(err)
 }
 pub(crate) fn audit(c: &Connection, event: &str) -> Result<()> {
     c.execute(
@@ -293,7 +299,8 @@ fn snapshot(target: &str) -> Result<PathBuf> {
     let path = dir().join("acl").join(id);
     if !path.exists() {
         fs::create_dir_all(path.parent().unwrap()).map_err(err)?;
-        let file = fs::File::create(&path).map_err(err)?;
+        let temporary = path.with_extension("pending");
+        let file = fs::File::create(&temporary).map_err(err)?;
         let status = Command::new("getfacl")
             .args(["-R", "-P", "-p", "--", target])
             .stdout(file)
@@ -301,9 +308,16 @@ fn snapshot(target: &str) -> Result<PathBuf> {
             .status()
             .map_err(err)?;
         if !status.success() {
-            let _ = fs::remove_file(&path);
+            let _ = fs::remove_file(&temporary);
             return Err("Could not snapshot original ACL".into());
         }
+        fs::File::open(&temporary)
+            .and_then(|f| f.sync_all())
+            .map_err(err)?;
+        fs::rename(&temporary, &path).map_err(err)?;
+        fs::File::open(path.parent().unwrap())
+            .and_then(|f| f.sync_all())
+            .map_err(err)?;
     }
     Ok(path)
 }
@@ -314,6 +328,13 @@ fn restore() -> Result<()> {
     }
     for e in fs::read_dir(root).map_err(err)? {
         let p = e.map_err(err)?.path();
+        if !p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.len() == 64 && n.bytes().all(|b| b.is_ascii_hexdigit()))
+        {
+            continue;
+        }
         let mut c = Command::new("setfacl");
         c.arg(format!("--restore={}", p.display()));
         command(c)?;
@@ -464,19 +485,8 @@ fn control(op: &str, v: &Value) -> Result<Value> {
                 v.clone()
             };
             validate(&next)?;
-            let active = stop()?;
-            if let Err(error) = restore().and_then(|_| {
-                for rule in next["rules"].as_array().unwrap() {
-                    snapshot(rule["target"].as_str().unwrap())?;
-                }
-                enforce(&next)
-            }) {
-                let _ = restore().and_then(|_| enforce(&current));
-                audit(&c, "Policy apply failed; workers stopped")?;
-                return Err(error);
-            }
             next["revision"] = json!(current["revision"].as_u64().unwrap_or(0) + 1);
-            next["enforced_revision"] = next["revision"].clone();
+            next["enforced_revision"] = Value::Null;
             next.as_object_mut().unwrap().remove("expected_revision");
             c.execute(
                 "INSERT OR IGNORE INTO history(revision,body) VALUES(?1,?2)",
@@ -486,6 +496,31 @@ fn control(op: &str, v: &Value) -> Result<Value> {
                 ],
             )
             .map_err(err)?;
+            // Publish the pending state before touching the OS. A crash or failed
+            // rollback must never leave a stale "Enforced" revision visible.
+            save(&next)?;
+            let active = match stop() {
+                Ok(units) => units,
+                Err(error) => {
+                    let _ = save(&current);
+                    return Err(error);
+                }
+            };
+            if let Err(error) = restore().and_then(|_| {
+                for rule in next["rules"].as_array().unwrap() {
+                    snapshot(rule["target"].as_str().unwrap())?;
+                }
+                enforce(&next)
+            }) {
+                if current["enforced_revision"].as_u64() == current["revision"].as_u64()
+                    && restore().and_then(|_| enforce(&current)).is_ok()
+                {
+                    let _ = save(&current);
+                }
+                audit(&c, "Policy apply failed; workers stopped")?;
+                return Err(error);
+            }
+            next["enforced_revision"] = next["revision"].clone();
             save(&next)?;
             start(&active)?;
             audit(
@@ -626,6 +661,22 @@ pub(crate) fn actor(v: &Value) -> Result<std::process::Child> {
         "huou07"
     };
     let (uid, gid) = crate::user_ids(user)?;
+    // Storage inherits the owner's actual Unix group rights; workers still drop
+    // all supplementary groups in sandbox.rs. Resolve NSS before fork.
+    let account = std::ffi::CString::new(user).map_err(err)?;
+    let mut groups = vec![gid; 32];
+    let mut count = groups.len() as libc::c_int;
+    if unsafe { libc::getgrouplist(account.as_ptr(), gid, groups.as_mut_ptr(), &mut count) } < 0 {
+        if !(1..=256).contains(&count) {
+            return Err("Owner group inventory exceeds the supported bound".into());
+        }
+        groups.resize(count as usize, gid);
+        if unsafe { libc::getgrouplist(account.as_ptr(), gid, groups.as_mut_ptr(), &mut count) } < 0
+        {
+            return Err("Owner groups unavailable".into());
+        }
+    }
+    groups.truncate(count as usize);
     let mut c = Command::new(std::env::current_exe().map_err(err)?);
     c.arg("fs-actor")
         .env_clear()
@@ -639,7 +690,7 @@ pub(crate) fn actor(v: &Value) -> Result<std::process::Child> {
         .stderr(Stdio::null());
     unsafe {
         c.pre_exec(move || {
-            if libc::setgroups(0, std::ptr::null()) != 0
+            if libc::setgroups(groups.len(), groups.as_ptr()) != 0
                 || libc::setgid(gid) != 0
                 || libc::setuid(uid) != 0
             {

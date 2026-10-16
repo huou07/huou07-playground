@@ -112,3 +112,36 @@ python3 tools/measure-product.py \
 
 This is an idle/HTTP microbenchmark; browser visibility, Permissions/Storage and
 large streaming transfer memory/integrity require their own journey measurements.
+
+## Worker requests and owner authentication
+
+The dashboard uses the existing owner's Linux PAM password. Every private API
+also requires a random proof kept only in dashboard memory: a host cookie alone
+is insufficient because browsers send host cookies to other service ports on the
+same VPN IP. Reload requires signing in again. Downloads and media use expiring
+file-specific links; signing out revokes them. Owner proof is never appended to a
+native app URL.
+
+Inside a managed worker, request ordinary owner data explicitly:
+
+```sh
+/opt/huou07-playground/current/bin/h07p-server request read /absolute/file
+/opt/huou07-playground/current/bin/h07p-server request list /absolute/folder
+printf '%s' 'new contents' | /opt/huou07-playground/current/bin/h07p-server request write /absolute/file --stdin
+printf '%s' 'new contents' | /opt/huou07-playground/current/bin/h07p-server request create /absolute/new-file --stdin
+/opt/huou07-playground/current/bin/h07p-server request delete /absolute/file
+/opt/huou07-playground/current/bin/h07p-server redeem APPROVAL_ID
+```
+
+The owner reviews the target, worker and concrete operation in Permissions and
+approves once. Requests expire after five minutes, bind the policy revision and
+object identity, and cannot cross workers or override a Block. Writes are fixed
+at request time and limited to 64 KiB UTF-8; reads are at most 1 MiB. Binary reads
+return explicit hexadecimal encoding. Execute, symlink/hardlink aliases and
+immutable owner/native/NAS boundaries are unsupported. Strict refuses outside
+workspace requests; balance uses this broker for outside data. A failed redemption
+is consumed and requires a fresh owner decision.
+
+Interrupted upload staging remains private. Active uploads are hidden; abandoned
+uploads appear as **Incomplete upload** for owner inspection or explicit confirmed
+deletion. They are never silently discarded during startup or upgrade.

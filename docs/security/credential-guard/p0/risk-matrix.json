@@ -1,0 +1,41 @@
+{
+  "status": "PARTIAL",
+  "risks": [
+    {
+      "principal": "dsh-worker",
+      "status": "UNRESOLVED_SAME_UID",
+      "decision": "Keep native harness credential handling unchanged as explicitly requested by the owner",
+      "observed_own_store_read": true
+    },
+    {
+      "principal": "dsh-worker",
+      "status": "DIRECTORY_METADATA_ONLY",
+      "path": "/etc/huou07-playground",
+      "reason": "Public configuration directory permits enumeration; both known private OpenCode environment files deny every worker"
+    },
+    {
+      "principal": "codex-worker",
+      "status": "UNRESOLVED_SAME_UID",
+      "decision": "Keep native harness credential handling unchanged as explicitly requested by the owner",
+      "observed_own_store_read": true
+    },
+    {
+      "principal": "codex-worker",
+      "status": "DIRECTORY_METADATA_ONLY",
+      "path": "/etc/huou07-playground",
+      "reason": "Public configuration directory permits enumeration; both known private OpenCode environment files deny every worker"
+    },
+    {
+      "principal": "opencode-worker",
+      "status": "UNRESOLVED_SAME_UID",
+      "decision": "Keep native harness credential handling unchanged as explicitly requested by the owner",
+      "observed_own_store_read": true
+    },
+    {
+      "principal": "opencode-worker",
+      "status": "DIRECTORY_METADATA_ONLY",
+      "path": "/etc/huou07-playground",
+      "reason": "Public configuration directory permits enumeration; both known private OpenCode environment files deny every worker"
+    }
+  ]
+}
