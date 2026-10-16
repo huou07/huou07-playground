@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=H07P Maintenance
+Name[vi]=H07P — Cài đặt và sửa lỗi
+Comment=Install, update, repair, rollback or uninstall H07P while retaining data
+Comment[vi]=Cài đặt, cập nhật, sửa lỗi và gỡ H07P, giữ nguyên dữ liệu
+Exec=/usr/sbin/h07p-setup
+Terminal=true
+Icon=applications-system
+Categories=System;Settings;

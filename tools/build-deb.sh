@@ -40,6 +40,10 @@ install -m 0644 "$repo/deploy/private-services.json" "$stage/etc/huou07-playgrou
 install -m 0644 "$repo/deploy/package/dashboard.env" "$stage/etc/huou07-playground/dashboard.env"
 install -m 0644 "$repo/deploy/package/"*.service "$stage/usr/lib/systemd/system/"
 install -m 0755 "$repo/deploy/package/lifecycle.py" "$stage/usr/lib/huou07-playground/lifecycle.py"
+install -d "$stage/usr/sbin" "$stage/usr/share/applications"
+install -m 0755 "$repo/deploy/package/setup.py" "$stage/usr/lib/huou07-playground/setup.py"
+install -m 0755 "$repo/deploy/package/h07p-setup" "$stage/usr/sbin/h07p-setup"
+install -m 0644 "$repo/deploy/package/h07p-setup.desktop" "$stage/usr/share/applications/h07p-setup.desktop"
 install -m 0755 "$repo/deploy/package/h07p-harness" "$stage/usr/lib/huou07-playground/h07p-harness"
 printf '%s\n' "$version" > "$stage/usr/lib/huou07-playground/version"
 chmod 0644 "$stage/usr/lib/huou07-playground/version"
@@ -90,3 +94,5 @@ mkdir -p "$out"
 find "$stage" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 dpkg-deb --root-owner-group --build "$stage" "$out/huou07-playground_${version}_amd64.deb"
 (cd "$out" && sha256sum "huou07-playground_${version}_amd64.deb" > "huou07-playground_${version}_amd64.deb.sha256")
+
+install -m 0755 "$repo/tools/h07p-install.sh" "$out/h07p-install.sh"

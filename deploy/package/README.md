@@ -145,3 +145,22 @@ is consumed and requires a fresh owner decision.
 Interrupted upload staging remains private. Active uploads are hidden; abandoned
 uploads appear as **Incomplete upload** for owner inspection or explicit confirmed
 deletion. They are never silently discarded during startup or upgrade.
+
+## Beginner install and maintenance
+
+Distribute the `.deb`, its `.sha256` and `h07p-install.sh` together. Run
+`sh h07p-install.sh` in that directory (or pass the `.deb` path). Debian APT resolves
+missing dependencies, including Python before the package's maintainer scripts.
+The bootstrap checks package identity, architecture and checksum, previews the
+APT transaction, refuses removals, and caches the verified installer for Repair.
+It does not add repositories or silently upgrade the OS.
+
+After installation, open **H07P — Cài đặt và sửa lỗi** from the applications menu,
+or run `sudo h07p-setup`. The Vietnamese menu provides diagnostics, install/update,
+repair from the cached `.deb`, rollback, data-preserving uninstall, and an explicit
+APT index refresh. `h07p-setup doctor` works without root and never reads credentials
+or log contents. CLI actions support `--dry-run` and `--yes`; `doctor --json`
+exports sanitized metadata for support. Dependency/lock/network failures explain
+what to do; unrelated package removals and conflicting unowned units are refused.
+Repair reinstalls program files and keeps owner state, NAS, native stores and
+accounts. Uninstall does not purge app data or forensic snapshots.
