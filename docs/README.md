@@ -14,6 +14,8 @@ source of truth; the Hub contains its pointer only.
 | [UX.md](UX.md) | Preserve design and make security/files usable |
 | [VALIDATION.md](VALIDATION.md) | GitHub CI, evidence, performance and .deb gates |
 | [ROADMAP.md](ROADMAP.md) | Single implementation tracker and first slice |
+| [Deployed 0.2.2 evidence](evidence/product-deployed-20261016.md) | Artifact identity, physical Debian checks, installer recovery, VPN and limitations |
+| [Credential Guard](security/credential-guard/README.md) | Opt-in monitoring, reviewed log cleanup and private recovery |
 | [REUSE.md](REUSE.md) | Upstream candidates, licensing and decisions |
 | [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) | Source inspection and its limits |
 | [../skills.md](../skills.md) | Shared system and project skill routing |

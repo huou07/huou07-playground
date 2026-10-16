@@ -15,12 +15,27 @@
     ]
   },
   "branch": "codex/h07p-product",
-  "closed": {},
+  "closed": {
+    "product": {
+      "checks": [
+        "docs/evidence/product-deployed-20261016.md; installed 0.2.2 SHA256 2dabddc477f1c70d18f0916c2aeb1579c00dd01e589c0b86f651966141ea45ae; Lintian; 32 Rust; 65 PAM/API; 31 Guard under systemd; 66 broker; 22 file adapter; 24+24 browser; 17 maintenance; actual rollback/update/repair; 9 encrypted VPN services; physical NAS denial/Storage positives; 33 metadata/sudo checks"
+      ],
+      "commit": "55da5e5d8ebc3e7aff4cab4efab58ce2a3dd815c",
+      "evidence": "PACKAGE_VERIFIED",
+      "residual_risk": "Own native credential stores retain same-UID access by owner choice. Signature detection is bounded and incomplete. No direct Android human acceptance, production model login, fresh hosted CI/VM/reboot or full energy/performance acceptance. Broker execute and folder archives unsupported.",
+      "why_not_stronger": null
+    }
+  },
   "created_at": "2026-10-15T16:07:55Z",
   "delegation": "Owner explicitly requests complete product implementation, Debian testing and deployment in this conversation",
   "objective": "Complete and deploy H07P P1-P7 with real Debian acceptance and preserved owner data",
   "schema_version": 1,
   "state_digest_at_init": "5da316256d25a0a37c8dc0370c8a141f45f37d1350a3bf2f17f9e5d510ee48fb",
   "state_path": "/Users/meomeo/Documents/vibecode projects/huou07 playground/docs/delivery-authority.json",
-  "units": []
+  "units": [
+    {
+      "at": "2026-10-16T04:09:11Z",
+      "unit": "product"
+    }
+  ]
 }

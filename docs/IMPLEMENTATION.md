@@ -1,6 +1,31 @@
 # Current implementation map
 
-Type: Source reference, inspected 2026-10-15.
+Current source: `55da5e5`, packaged as 0.2.2 on 2026-10-16.
+This maps code; [ROADMAP](ROADMAP.md) owns task state and
+[deployment evidence](evidence/product-deployed-20261016.md) owns executed claims.
+
+| Boundary | Current source | Implemented behavior |
+| --- | --- | --- |
+| Linux entry points | [main](../crates/server/src/main.rs) | HTTP, root helper, permanent-drop worker launcher, owner/service file actor and bounded broker CLI |
+| Owner API | [API](../crates/server/src/api.rs) | PAM login, private SQLite sessions, memory-only proof for reads/mutations, CSRF and identity-bound download/media tickets |
+| Native dashboard | [telemetry](../crates/server/src/telemetry.rs) | Metrics, processes, services, Cockpit, VPN, apps/icons, launch and registry mutation; bounded work and caches |
+| Policy control | [helper](../crates/server/src/helper.rs) | Typed peer-checked sockets, SQLite history/audit, reviewed ACL activation/rollback, pending/enforced revisions and expiry |
+| Managed workers | [sandbox](../crates/server/src/sandbox.rs), [broker](../crates/server/src/broker.rs) | Permanent IDs, empty groups, NNP/FD closure, optional Landlock and single-use list/read/write/create/delete approvals |
+| Detection | [scan](../crates/server/src/scan.rs) | Explicit bounded metadata/content suggestions using an unprivileged maintained scanner |
+| Integrated files | [files](../crates/server/src/files.rs) | Private NAS and owner Storage, descriptor-relative operations, previews/ranges, streamed uploads, explicit recovery and atomic replacement |
+| Credential Guard | [Guard](../crates/server/src/guard.rs), [redaction](../crates/server/src/redact.rs) | Opt-in bounded inotify, metadata incidents, reviewed closed-export cleanup, root-private originals and private NAS recovery; partial protection reported honestly |
+| Private web access | [relays](../crates/server/src/relays.rs), [native bridge](../crates/server/src/native_proxy.rs) | VPN-only relays, existing native web auth substitution and LAN handoff, HTTP/chunked/SSE/WebSocket transport |
+| Owner UI | [product UI](../web/static/product.js), [Guard UI](../web/static/guard.js) | Permissions, approvals, detection, private NAS, Storage and Guard; works on VPN HTTP without secure-context randomUUID |
+| Maintenance | [lifecycle](../deploy/package/lifecycle.py), [setup](../deploy/package/setup.py) | Versioned .deb, snapshots, rollback, dependency planning, install/update/repair/data-retaining uninstall and public listener migration |
+
+Native journeys are in `tests/native/`; kernel/cgroup/package lifecycle fixtures
+are `tests/package-*.sh`; browser contracts are `tests/e2e/`. Runtime evidence and
+limits remain separate: native model/provider login is intentionally untested,
+own-store same-UID isolation is unresolved by design, arbitrary hardware parity
+and complete energy/performance targets are not established.
+
+## Historical inspection baseline (superseded)
+
 Baseline: branch `codex/p1-rust-health-static`,
 commit `67dbcda735b5e1eb7d4b889cfd9bc749d5290571`.
 Recheck source before using this map; it is not live host state or a task tracker.

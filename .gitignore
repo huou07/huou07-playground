@@ -13,5 +13,6 @@ node_modules/
 playwright-report/
 test-results/
 target/
+/dist/
 
 web/static/branding.png

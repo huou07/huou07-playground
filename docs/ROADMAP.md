@@ -10,9 +10,14 @@ A check or source artifact never implies owner acceptance.
 
 P1–P7 now have integrated Rust/UI/package implementations on
 `codex/h07p-product`; the historical baseline rows below are not current source
-coverage. [Native evidence](evidence/product-native-20261015.md) records the exact
-executed boundaries and remaining release gates. This delivery is **in progress**:
-production cutover, final package/advisory checks and VPN verification are pending.
+coverage. **H07P 0.2.2 is installed and running on Dell Debian**, built from
+`55da5e5d8ebc3e7aff4cab4efab58ce2a3dd815c`.
+[Deployment evidence](evidence/product-deployed-20261016.md) records package identity,
+actual install/update/repair, rollback recovery, runtime UIDs, native tests,
+Playwright CLI and nine-service encrypted VPN verification. Earlier
+[native evidence](evidence/product-native-20261015.md) remains a dated checkpoint.
+This is package/physical-runtime verification, not human Android acceptance,
+fresh hosted CI, blanket credential protection or complete energy/performance proof.
 The earlier permissive shared-home model remains the default `none` preset.
 
 ## Historical outcomes and dependencies at the planning baseline
@@ -28,7 +33,7 @@ The earlier permissive shared-home model remains the default `none` preset.
 | P6 Storage | Host browse, operations/previews, copied path and accurate capacity | Planned; owner identity and safe file adapter required; preserve NAS/admin boundary |
 | P7 efficiency and packaging | Measured journey/resource improvements and reliable Linux .deb lifecycle | Planned; compare throughout migration; package/isolation/journey evidence before release |
 
-## Resume P1 at its first unverified boundary
+## Historical P1 planning baseline (superseded by deployed source above)
 
 | Boundary | State | Next observable evidence |
 | --- | --- | --- |
@@ -236,7 +241,8 @@ and Playwright CLI, and renews authorization for bounded synthetic testing and
 deployment on Dell Debian. The supplied Guard proposal is advisory; adopted scope
 and compatibility decisions are in
 [Guard integration](security/credential-guard/INTEGRATION.md). P0 metadata/access
-audit is recorded; Guard/installer implementation and native acceptance remain
-in progress. Existing native authentication stays unchanged and its same-UID
+audit is recorded; the guided installer and Guard are implemented and deployed in
+0.2.2. Guard content scanning is opt-in; cleanup requires a reviewed closed export.
+Existing native authentication stays unchanged and its same-UID
 limitation is explicit. This amendment extends the current delivery rather than
 canceling the original P1–P7/VPN/deployment objective.
