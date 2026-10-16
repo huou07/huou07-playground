@@ -6,7 +6,8 @@ Requires=h07p-helper.service
 [Service]
 LimitCORE=0
 Type=simple
-User=root
+# Use systemd’s default root identity: the launcher drops permanently itself.
+# Explicit User=root loses CAP_SETUID with this host’s restricted capability set.
 Group=root
 WorkingDirectory=/home/huou07/Projects
 Environment=H07P_CONTROL_DIR=/var/lib/h07p-control

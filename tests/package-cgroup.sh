@@ -44,6 +44,8 @@ systemd-run --quiet --collect --service-type=exec --unit="$unit" \
     --property="RootDirectory=$fixture" --property=MountAPIVFS=yes \
     --property=BindReadOnlyPaths=/usr --property=KillMode=control-group \
     --property=TimeoutStopSec=3s --property=NoNewPrivileges=yes \
+    --property=PrivateTmp=yes --property=ProtectKernelTunables=yes --property=ProtectKernelModules=yes \
+    --property=Group=root --property=LimitCORE=0 --property=AmbientCapabilities= \
     '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH' \
     /h07p-server worker dsh fixture
 attempt=0

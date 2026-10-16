@@ -370,11 +370,14 @@ mod linux {
             }
         }
         // Dropping IDs permanently is independent of Landlock; none/minimal retain DAC/ACL.
-        if unsafe { libc::setgroups(0, std::ptr::null()) } != 0
-            || unsafe { libc::setresgid(gid, gid, gid) } != 0
-            || unsafe { libc::setresuid(uid, uid, uid) } != 0
-        {
-            return Err(failure("Drop worker privileges"));
+        if unsafe { libc::setgroups(0, std::ptr::null()) } != 0 {
+            return Err(failure("Clear worker supplementary groups"));
+        }
+        if unsafe { libc::setresgid(gid, gid, gid) } != 0 {
+            return Err(failure("Set permanent worker GID"));
+        }
+        if unsafe { libc::setresuid(uid, uid, uid) } != 0 {
+            return Err(failure("Set permanent worker UID"));
         }
         if unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
             return Err(failure("Set no_new_privs"));
