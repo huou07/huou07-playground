@@ -26,7 +26,19 @@ pub fn catalog() -> Result<Value, String> {
 pub fn control(op: &str, v: &Value, lock: Arc<Mutex<()>>) -> Result<Value, String> {
     match op {
         "worker_setup_status" => catalog(),
-        "worker_setup_job" => Ok(job().lock().unwrap_or_else(|e| e.into_inner()).clone()),
+        "worker_setup_job" => {
+            let mut status = job().lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if let Ok(bytes) = fs::read(crate::helper::dir().join("worker-progress.json")) {
+                if bytes.len() <= 4096 {
+                    if let Ok(progress) = serde_json::from_slice::<Value>(&bytes) {
+                        if progress["id"] == status["id"] {
+                            status["progress"] = progress;
+                        }
+                    }
+                }
+            }
+            Ok(status)
+        }
         "worker_setup_run" => {
             let action = v["action"].as_str().ok_or("Select a worker action")?;
             if !["create", "repair", "remove", "start-web"].contains(&action) {
@@ -52,7 +64,8 @@ pub fn control(op: &str, v: &Value, lock: Arc<Mutex<()>>) -> Result<Value, Strin
                 return Err("Worker maintenance is already running. Wait for its result.".into());
             }
             *current = json!({"id":id,"state":"running","action":action,"workers":workers,"started_at":crate::now()});
-            let request = v.clone();
+            let mut request = v.clone();
+            request["job_id"] = json!(id);
             let job_id = id.clone();
             std::thread::spawn(move || {
                 let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -75,7 +88,7 @@ pub fn control(op: &str, v: &Value, lock: Arc<Mutex<()>>) -> Result<Value, Strin
         _ => Err("Unknown worker setup operation".into()),
     }
 }
-pub(crate) fn driver(action: &str, workers: &[Value]) -> Result<(), String> {
+pub(crate) fn driver(action: &str, workers: &[Value], job_id: &str) -> Result<(), String> {
     let path = std::env::var("H07P_WORKER_SETUP")
         .unwrap_or_else(|_| "/usr/lib/huou07-playground/workers.py".into());
     let metadata = fs::symlink_metadata(&path)
@@ -93,9 +106,16 @@ pub(crate) fn driver(action: &str, workers: &[Value]) -> Result<(), String> {
     }
     let control = crate::helper::dir();
     let control = control.to_str().ok_or("Invalid control path")?;
-    let mut arguments = vec![path.as_str(), action, "--control-dir", control];
+    let mut arguments = vec![
+        path.as_str(),
+        action,
+        "--control-dir",
+        control,
+        "--job-id",
+        job_id,
+    ];
     for worker in workers {
         arguments.push(worker.as_str().ok_or("Invalid worker")?);
     }
-    crate::telemetry::command("/usr/bin/python3",&arguments,300).ok_or_else(||"Account/ACL setup failed or exceeded its bound. Affected workers remain stopped; use Repair and inspect the protected ACL backup.".into()).map(|_|())
+    crate::telemetry::command("/usr/bin/python3",&arguments,900).ok_or_else(||"Account/ACL setup failed or exceeded its bound. Affected workers remain stopped; use Repair and inspect the protected ACL backup.".into()).map(|_|())
 }

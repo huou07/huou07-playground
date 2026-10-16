@@ -114,6 +114,10 @@ def main():
         response,_=actor(dict(op='fs_login_save',area='nas',entries=login_entries,expected_version='absent'))
         login=nas/'apps-login-password.md'
         check(response['ok'] and login.stat().st_mode&0o777==0o600,'login export creates an exclusive 0600 file')
+        response,_=actor(dict(op='fs_login_status',area='nas'))
+        check(response['data']['merge_supported'],'generated login file supports safe merging')
+        response,_=actor(dict(op='fs_login_save',area='nas',entries=[dict(name='Second app',username='fixture',password='synthetic-second-password')],mode='merge',expected_version=response['data']['version']))
+        check(response['ok'] and b'Fixture app' in login.read_bytes() and b'Second app' in login.read_bytes(),'merging a selected login preserves other saved app entries')
         response,_=actor(dict(op='fs_login_status',area='storage'))
         check(not response['ok'],'login operations cannot be redirected to host Storage')
         login.unlink();os.symlink('/etc/passwd',login)

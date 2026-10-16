@@ -591,7 +591,7 @@
       const run=action=>{
         if(!selected.size){message(d.status,'Select the workers to configure.',true);return;}
         const names=[...selected].filter(name=>action!=='start-web'||name!=='codex-worker');if(!names.length){message(d.status,'Codex uses its installed CLI; it has no managed web service.',true);return;}const review=dialog('Review worker '+action);
-        review.add(el('p',names.join(', ')),el('p',action==='remove'?'Disable and remove the active worker names. Shared data stays. A locked retired system identity preserves each old UID so future accounts cannot inherit its file permissions.':action==='start-web'?'Start the existing managed web services for these enabled workers, using their existing native configuration.':'Account/ACL changes stop managed worker tasks. Shared home/apps are reused; known private stores remain protected. Custom permission rules are reapplied before workers can restart.','product-warning'));
+        review.add(el('p',names.join(', ')),el('p',action==='remove'?'Disable and remove the active worker names. Shared data stays. A locked retired system identity preserves each old UID so future accounts cannot inherit its file permissions.':action==='start-web'?'Start the existing managed web services for these enabled workers, using their existing native configuration.':'Account/ACL changes stop managed worker tasks. New accounts are enabled for managed launch; existing disabled settings are preserved. Shared home/apps are reused; known private stores remain protected. Custom permission rules are reapplied before workers can restart.','product-warning'));
         const apply=button('Confirm '+action,async()=>{
           apply.disabled=true;review.actions.firstChild.textContent='Close (maintenance continues)';
           try{
@@ -602,7 +602,7 @@
               if(!d.node.isConnected)return;
               try{const state=await api('/api/setup/workers/job',{signal:controller.signal});
                 if(state.id!==job.id){message(d.status,'A newer maintenance job is active. Refresh worker setup.',true);return;}
-                if(state.state==='running'){message(d.status,'Worker maintenance running…');timer=setTimeout(poll,1500);return;}
+                if(state.state==='running'){message(d.status,state.progress?state.progress.phase+' · '+state.progress.count+' entries processed':'Worker maintenance running…');timer=setTimeout(poll,1500);return;}
                 if(review.node.isConnected)message(review.status,state.state==='completed'?'Worker maintenance completed.':state.result?.error||'Maintenance failed; workers remain stopped.',state.state!=='completed');
                 await load();message(d.status,state.state==='completed'?'Worker maintenance completed.':state.result?.error||'Maintenance failed; use Repair.',state.state!=='completed');
               }catch(error){if(error.name!=='AbortError')message(d.status,error.message,true);}
@@ -631,7 +631,7 @@
       for(const candidate of data.apps || []) {
         const row=el('div',undefined,'product-scan-row');
         row.append(el('strong',candidate.url),el('p',candidate.scope+' · HTTP '+candidate.http_status+' · Login unchanged','panel-note'));
-        if(candidate.loopback_only)row.append(el('p','This localhost link opens on the device using the browser. Configure its VPN relay before using it remotely.','product-warning'));
+        if(candidate.localhost_url??candidate.loopback_only)row.append(el('p','This localhost link opens on the device using the browser. Configure its VPN relay before using it remotely.','product-warning'));
         row.append(button('Use this service',()=>{
           // Reuse the registry's existing validation/review form; never auto-save discovery.
           $('app-cancel').click();
@@ -714,19 +714,20 @@
         row.append(label('App with an existing password',name),label('Existing username (if any)',username),label('Existing password',password),button('Remove entry',()=>{password.value='';manual.splice(manual.indexOf(record),1);row.remove();}));rows.append(row);name.focus();
       }));
       const replace=input('replace-login-file','','checkbox');
+      const canMerge=data.file.exists&&data.file.merge_supported===true;
       if(data.file.exists)content.append(label('Replace the entire existing file. Entries not selected here will be removed from that file.',replace));
       content.append(button('Open private NAS',()=>{d.close();location.hash='/files';}));
       const save=button('Save selected logins to NAS',async()=>{
-        if(data.file.exists&&!replace.checked){message(d.status,'Confirm replacement of the existing file, or keep it unchanged.',true);return;}
+        if(data.file.exists&&!canMerge&&!replace.checked){message(d.status,'Confirm replacement of the existing file, or keep it unchanged.',true);return;}
         if(!manual.length&&!selected.some(item=>item.check.checked)){message(d.status,'Choose an existing supported login or add an existing login manually.',true);return;}
         save.disabled=true;d.actions.firstChild.textContent='Close (save may continue)';
         try {
-          await api('/api/setup/logins',{method:'POST',body:{selected:selected.filter(item=>item.check.checked).map(item=>item.source.id),entries:manual.map(row=>({name:row.name.value,username:row.username.value,password:row.password.value})),expected_version:data.file.version,replace:replace.checked},signal:controller.signal});
+          await api('/api/setup/logins',{method:'POST',body:{selected:selected.filter(item=>item.check.checked).map(item=>item.source.id),entries:manual.map(row=>({name:row.name.value,username:row.username.value,password:row.password.value})),expected_version:data.file.version,replace:replace.checked,mode:canMerge&&!replace.checked?'merge':'replace'},signal:controller.signal});
           for(const row of manual)row.password.value='';
           if(d.node.isConnected){message(d.status,'Saved privately as apps-login-password.md. You can view, download or delete it in NAS. App authentication is unchanged.');save.remove();d.actions.firstChild.textContent='Close';}
         }catch(error){if(d.node.isConnected){message(d.status,error.message,true);save.disabled=false;}}
       },'primary');d.actions.append(save);
-      message(d.status,data.file.exists?'The file already exists. Replacement needs explicit confirmation.':'Nothing has been read into or saved to the login file yet. Select only the sources you want.');
+      message(d.status,canMerge?'Selected entries will be updated; other saved app logins will be kept.':data.file.exists?'The file already exists. Replacement needs explicit confirmation.':'Nothing has been read into or saved to the login file yet. Select only the sources you want.');
     }catch(error){if(error.name!=='AbortError'&&d.node.isConnected)message(d.status,error.message,true);}
   });
   async function route() {

@@ -41,7 +41,11 @@ test('slow collectors cannot overlap when refresh triggers arrive together', asy
     return route.fallback();
   });
   await page.goto('/#/home');
-  await expect.poll(() => paths.every(path => active.get(path) === 1)).toBe(true);
+  await expect.poll(() => active.get('/api/metrics') === 1).toBe(true);
+  await page.evaluate(()=>{location.hash='/services';});
+  await expect.poll(() => active.get('/api/services') === 1).toBe(true);
+  await page.evaluate(()=>{location.hash='/network';});
+  await expect.poll(() => active.get('/api/vpn') === 1).toBe(true);
   await page.evaluate(() => {
     for (let i = 0; i < 4; i++) {
       window.dispatchEvent(new CustomEvent('h07p-owner-session', { detail: true }));

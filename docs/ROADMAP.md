@@ -289,6 +289,27 @@ shared files and indirect attacks through owner-executed shared code remain
 limitations of the expressly requested permissive model. Future private owner
 data belongs in the protected stores, especially `~/.secrets`.
 
+## Resource and safety verification checkpoint, 2026-10-16
+
+Worker preparation now stages bounded metadata in a disposable, root-private SQLite
+plan instead of retaining the entire home inventory in RAM. Limits are five million
+entries / 300 seconds for inspection and 900 seconds for the reviewed job. Progress
+is job-bound; ACL rollback snapshots remain private and completed snapshots persist.
+A metadata-only Dell inspection visited 1,319,015 entries in 8.958 seconds, with
+15,544 KiB peak RSS; it changed no permissions or account data. Synthetic namespace
+tests exercise real account creation, retirement/recreation, disabled preservation,
+custom Block reapplication, interrupted repair and worker-owned Block rejection.
+
+Telemetry is route/visibility-aware. Playwright CLI against synthetic PAM sessions
+observed nine unrelated API requests in a 16-second NAS baseline window versus zero
+with the candidate. NAS list median/p95 observations were 9.3/11.8 and 9.8/12.5 ms
+baseline, 10.1/12.8 ms candidate; these small differences do not establish a latency
+improvement or an electricity saving. Candidate GUI discovery, selected login
+export defaults, filename search and mobile worker layout passed without page errors.
+Generated login files support version-bound selected-entry merge; manual edits
+disable automatic merge and require explicit replacement. No authentication is
+added to anonymous apps. Packaging/deployment acceptance remains pending here.
+
 ## Android VPN timeout investigation, 2026-10-15
 
 The owner reports Android WireGuard timing out at `http://10.8.0.1:8765/`.

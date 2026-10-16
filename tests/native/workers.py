@@ -6,6 +6,7 @@ from pathlib import Path
 import pwd
 import shutil
 import socket
+import signal
 import time
 import subprocess
 import sys
@@ -13,7 +14,8 @@ import tempfile
 
 
 def main():
-    assert os.geteuid()==0 and os.readlink('/proc/self/ns/mnt')!=os.readlink('/proc/1/ns/mnt')
+    assert os.geteuid()==0 and os.getpid()==1,'private PID namespace and mount namespace required'
+    signal.signal(signal.SIGTERM,lambda *_:sys.exit(143))
     repository=Path(__file__).resolve().parents[2]
     driver_source=(repository/'deploy/package/workers.py').read_bytes()
     acl_source=(repository/'deploy/harness-workers/setup.py').read_bytes()
@@ -34,6 +36,9 @@ def main():
         (etc/'login.defs').write_text('SYS_UID_MIN 65001\nSYS_UID_MAX 65020\nSYS_GID_MIN 65001\nSYS_GID_MAX 65020\nUID_MIN 65500\nGID_MIN 65500\nCREATE_HOME no\nCREATE_MAIL_SPOOL no\nMAIL_DIR /run/mail\n')
         (etc/'default/useradd').write_text('SHELL=/bin/bash\nCREATE_MAIL_SPOOL=no\n')
         home=root/'home';home.mkdir(mode=0o755);os.chown(home,65000,65000)
+        bulk=home/'fixture-batch';bulk.mkdir();os.chown(bulk,65000,65000)
+        for index in range(1001):
+            item=bulk/str(index);item.write_text('synthetic');os.chown(item,65000,65000)
         for relative in ('Projects','.ssh','.dsh','.codex','.config/opencode','.local/bin'):
             path=home/relative;path.mkdir(parents=True,exist_ok=True);os.chown(path,65000,65000)
         for relative in ('Projects/ordinary.txt','Projects/blocked-fixture','.ssh/private-fixture','.dsh/native-fixture','.codex/native-fixture','.local/bin/dsh'):
@@ -51,11 +56,13 @@ def main():
         for _ in range(100):
             if Path(channel_path).exists():break
             time.sleep(.02)
-        def rpc(op,**values):
+        def rpc(op,expect_ok=True,**values):
             with socket.socket(socket.AF_UNIX) as connection:
                 connection.settimeout(8);connection.connect(channel_path)
                 connection.sendall((json.dumps(dict(op=op,**values))+'\n').encode())
-                reply=json.loads(connection.makefile('rb').readline());assert reply['ok'],reply
+                reply=json.loads(connection.makefile('rb').readline())
+                if not expect_ok:return reply
+                assert reply['ok'],reply
                 return reply['data']
         def provision(action,*workers,success=True):
             revision=rpc('worker_setup_status')['revision']
@@ -71,6 +78,21 @@ def main():
         rpc('apply',expected_revision=0,preset='none',workspace='/home/huou07/Projects',rules=[dict(id='fixture-block',worker='dsh-worker',target='/home/huou07/Projects/blocked-fixture',action='block',operations=['list','read','write','create','delete','execute'],recursive=False,source='manual')])
         provision('create','dsh-worker','codex-worker','opencode-worker')
         dsh=pwd.getpwnam('dsh-worker');codex=pwd.getpwnam('codex-worker')
+        produced=Path('/home/huou07/Projects/worker-owned.txt');produced.write_text('synthetic worker output');os.chown(produced,dsh.pw_uid,dsh.pw_gid)
+        state=json.loads((control/'policy.json').read_text())
+        rejected=rpc('dry-run',expect_ok=False,expected_revision=state['revision'],preset='none',workspace='/home/huou07/Projects',rules=[dict(id='owned-file',worker='dsh-worker',target=str(produced),action='block',operations=['read','write'],recursive=False)])
+        assert not rejected['ok'] and 'owned by that worker' in rejected['error']
+        produced.unlink()
+        ancestor=Path('/home/huou07/Projects/worker-dir');ancestor.mkdir();os.chown(ancestor,dsh.pw_uid,dsh.pw_gid)
+        child=ancestor/'owner-file';child.write_text('synthetic');os.chown(child,65000,65000)
+        rejected=rpc('dry-run',expect_ok=False,expected_revision=state['revision'],preset='none',workspace='/home/huou07/Projects',rules=[dict(id='owned-parent',worker='dsh-worker',target=str(child),action='block',operations=['read','write'],recursive=False)])
+        assert not rejected['ok'] and 'ancestor owned by that worker' in rejected['error']
+        child.unlink();ancestor.rmdir()
+        policy=json.loads((control/'policy.json').read_text())
+        settings=policy.get('worker_settings',{});settings['dsh-worker']['enabled']=False
+        rpc('apply',expected_revision=policy['revision'],preset=policy['preset'],workspace=policy['workspace'],rules=policy['rules'],worker_settings=settings)
+        provision('create','dsh-worker')
+        assert json.loads((control/'policy.json').read_text())['worker_settings']['dsh-worker']['enabled'] is False
         assert dsh.pw_uid>65000 and dsh.pw_dir=='/home/huou07'
         assert os.getgrouplist('dsh-worker',dsh.pw_gid)==[dsh.pw_gid]
         assert worker_read(dsh.pw_uid,Path('/home/huou07/Projects/ordinary.txt'))==0
@@ -112,12 +134,16 @@ def main():
         provision('repair','dsh-worker')
         enforced=json.loads((control/'policy.json').read_text())
         assert enforced['revision']==enforced['enforced_revision']
-        print(json.dumps(dict(result='passed',checks=24,scope='real typed helper jobs, useradd/usermod/groupmod, worker DAC/ACL, failed pending policy and repair; synthetic NSS/private mounts',host_accounts_changed=False,owner_data_used=False)))
+        print(json.dumps(dict(result='passed',checks=27,scope='real typed helper jobs, useradd/usermod/groupmod, worker DAC/ACL, failed pending policy and repair; synthetic NSS/private mounts',host_accounts_changed=False,owner_data_used=False)))
     finally:
         if helper is not None:
             helper.terminate()
             try:helper.wait(timeout=5)
             except subprocess.TimeoutExpired:helper.kill();helper.wait()
+        for process in Path('/proc').iterdir():
+            if process.name.isdigit() and int(process.name)!=1:
+                try:os.kill(int(process.name),signal.SIGKILL)
+                except ProcessLookupError:pass
         for target in reversed(mounts):subprocess.run(['umount',target],check=True)
         shutil.rmtree(root)
 

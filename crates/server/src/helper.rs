@@ -192,6 +192,35 @@ fn validate(draft: &Value) -> Result<()> {
         if !["block", "allow"].contains(&rule["action"].as_str().unwrap_or("")) {
             return Err("Unknown rule action".into());
         }
+        if rule["action"] == "block" {
+            use std::os::unix::fs::MetadataExt;
+            let principals: Vec<_> = affected(rule)
+                .into_iter()
+                .filter_map(|name| crate::user_ids(name).ok().map(|ids| ids.0))
+                .collect();
+            for ancestor in p.ancestors().skip(1) {
+                if principals.contains(&fs::metadata(ancestor).map_err(err)?.uid()) {
+                    return Err("ACL cannot protect a Block through an ancestor owned by that worker. Select an owner-owned boundary; the draft has not been applied.".into());
+                }
+            }
+            let mut pending = vec![p.to_path_buf()];
+            let mut count = 0;
+            while let Some(path) = pending.pop() {
+                count += 1;
+                if count > 10000 {
+                    return Err("Block inspection exceeds 10000 objects; select a smaller scope or block the parent directory without recursion".into());
+                }
+                let metadata = fs::symlink_metadata(&path).map_err(err)?;
+                if principals.contains(&metadata.uid()) {
+                    return Err("ACL cannot enforce a Block on an object owned by that worker because its owner can change permissions. Select an owner-owned boundary; no protection has been claimed or applied.".into());
+                }
+                if metadata.is_dir() && rule["recursive"] == true {
+                    for entry in fs::read_dir(&path).map_err(err)? {
+                        pending.push(entry.map_err(err)?.path());
+                    }
+                }
+            }
+        }
         // A root helper must never turn owner policy into a privilege grant on
         // root-owned files or another account's objects, including hardlink aliases.
         if rule["action"] == "allow" {
@@ -514,7 +543,7 @@ fn status() -> Result<Value> {
             setting
         })
         .collect::<Vec<_>>());
-    p["capabilities"] = json!({"acl":true,"independent_write_create_delete":false,"owner_auth":"Linux PAM","nas_private":true,"approval_operations":["list","read","write","create","delete"],"managed_only":true});
+    p["capabilities"] = json!({"acl":true,"independent_write_create_delete":false,"worker_owned_block_boundaries":false,"owner_auth":"Linux PAM","nas_private":true,"approval_operations":["list","read","write","create","delete"],"managed_only":true});
     Ok(p)
 }
 fn control(op: &str, v: &Value) -> Result<Value> {
@@ -999,7 +1028,7 @@ pub(crate) fn maintain_workers(v: &Value) -> Result<Value> {
         if action == "remove" {
             policy["worker_settings"][name]["enabled"] = json!(false);
         }
-        if action == "create" {
+        if action == "create" && crate::user_ids(name).is_err() {
             policy["worker_settings"][name]["enabled"] = json!(true);
         }
     }
@@ -1019,7 +1048,11 @@ pub(crate) fn maintain_workers(v: &Value) -> Result<Value> {
         &database,
         &format!("Worker maintenance {action} revision {revision} started"),
     )?;
-    crate::worker_setup::driver(action, selected)?;
+    crate::worker_setup::driver(
+        action,
+        selected,
+        v["job_id"].as_str().ok_or("Missing worker setup job")?,
+    )?;
     // Recompile custom rules after broad shared-home provisioning, before any launch.
     enforce(&policy)?;
     policy["enforced_revision"] = json!(revision);

@@ -168,6 +168,7 @@ fn login_file(request: &Value) -> Result<Value> {
         }
     };
     let mut version = "absent".to_owned();
+    let mut existing_entries = None;
     let mut expected_request = json!({});
     if let Some(meta) = metadata {
         if meta.st_mode & libc::S_IFMT != libc::S_IFREG
@@ -194,20 +195,45 @@ fn login_file(request: &Value) -> Result<Value> {
             return Err("Login file changed. Refresh before saving.".into());
         }
         version = format!("{:x}", Sha256::digest(&bytes));
+        existing_entries = crate::app_logins::exported_entries(&bytes);
         bytes.fill(0);
         expected_request = json!({"expected_dev":after.dev(),"expected_ino":after.ino(),"expected_ctime":after.ctime(),"expected_ctime_nsec":after.ctime_nsec()});
     }
     if request["op"] == "fs_login_status" {
         return Ok(
-            json!({"exists":metadata.is_some(),"version":version,"path":"/apps-login-password.md"}),
+            json!({"exists":metadata.is_some(),"version":version,"merge_supported":existing_entries.is_some(),"path":"/apps-login-password.md"}),
         );
     }
     if request["expected_version"] != version {
         return Err("Login file changed. Refresh its status and review again.".into());
     }
-    let mut document = crate::app_logins::document(&request["entries"])?;
+    let merging = request["mode"] == "merge";
+    let mut entries = request["entries"]
+        .as_array()
+        .cloned()
+        .ok_or("Choose existing app logins")?;
+    // Validate incoming names before using them as merge keys.
+    let mut preview = crate::app_logins::document(&json!(entries))?;
+    preview.fill(0);
+    if merging && metadata.is_some() {
+        let mut previous = existing_entries
+            .ok_or("This file contains manual changes. Review explicit replacement instead.")?;
+        for entry in entries {
+            let key = entry["name"].as_str().unwrap().to_lowercase();
+            if let Some(position) = previous
+                .iter()
+                .position(|old| old["name"].as_str().unwrap().to_lowercase() == key)
+            {
+                previous[position] = entry;
+            } else {
+                previous.push(entry);
+            }
+        }
+        entries = previous;
+    }
+    let mut document = crate::app_logins::document(&json!(entries))?;
     let result = if metadata.is_some() {
-        if request["replace"] != true {
+        if !merging && request["replace"] != true {
             document.fill(0);
             return Err("Existing login file requires explicit replacement confirmation".into());
         }

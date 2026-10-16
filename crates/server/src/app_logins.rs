@@ -69,6 +69,25 @@ pub(crate) fn document(entries: &Value) -> Result<Vec<u8>, String> {
     }
     Ok(out.into_bytes())
 }
+pub(crate) fn exported_entries(bytes: &[u8]) -> Option<Vec<Value>> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let mut entries = Vec::new();
+    for section in text.split("\n```json\n").skip(1) {
+        let (block, _) = section.split_once("\n```\n")?;
+        let entry: Value = serde_json::from_str(block).ok()?;
+        entries.push(
+            json!({"name":entry["app"],"username":entry["username"],"password":entry["password"]}),
+        );
+        if entries.len() > 20 {
+            return None;
+        }
+    }
+    // Preserve manually added notes/formatting: only our exact known format can merge.
+    let mut canonical = document(&json!(entries)).ok()?;
+    let exact = canonical == bytes;
+    canonical.fill(0);
+    exact.then_some(entries)
+}
 fn supported_public_login() -> Option<Value> {
     // Public bridge login only. Backend/provider/harness credentials are excluded.
     let (user, password) = crate::native_proxy::public_login()?;
@@ -119,7 +138,7 @@ pub fn control(op: &str, v: &Value) -> Result<Value, String> {
             let mut preview = document(&json!(entries))?;
             preview.fill(0);
             file(
-                &json!({"op":"fs_login_save","area":"nas","entries":entries,"replace":v["replace"],"expected_version":v["expected_version"]}),
+                &json!({"op":"fs_login_save","area":"nas","entries":entries,"replace":v["replace"],"mode":v["mode"],"expected_version":v["expected_version"]}),
             )
         }
         _ => Err("Unsupported app-login action".into()),
@@ -140,5 +159,14 @@ mod tests {
         assert!(document(&json!([{"name":"Anonymous","username":"","password":""}])).is_err());
         assert!(document(&json!([{"name":"Bad\nname","username":"u","password":"p"}])).is_err());
         assert!(document(&json!([{"name":"a","username":"u","password":"p"},{"name":"A","username":"u","password":"p"}])).is_err());
+    }
+    #[test]
+    fn only_exact_generated_login_documents_can_merge() {
+        let entries = json!([{"name":"Fixture","username":"owner","password":"fake```value"}]);
+        let mut bytes = document(&entries).unwrap();
+        assert_eq!(exported_entries(&bytes), entries.as_array().cloned());
+        bytes.extend_from_slice(b"\nOwner's manual notes\n");
+        assert!(exported_entries(&bytes).is_none());
+        assert!(exported_entries(b"unrecognized manual login file").is_none());
     }
 }

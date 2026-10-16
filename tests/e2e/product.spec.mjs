@@ -82,7 +82,7 @@ test('owner login keeps credentials out of storage and logout clears private bro
   await login.getByLabel('Password').fill('synthetic-password');
   await login.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('button', { name: 'private.txt', exact: true })).toBeVisible();
-  expect(calls.some(call => call.path === '/api/metrics')).toBe(true);
+  expect(calls.some(call => call.path === '/api/metrics')).toBe(false);
   const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   expect(storage).not.toMatch(/fixture-csrf|synthetic-password/);
   await page.getByRole('button', { name: 'fixture-owner · Sign out' }).click();
@@ -381,7 +381,9 @@ test('worker scope changes only the selected settings and all-worker change clea
 test('expired session clears private files and telemetry before prompting for sign-in', async ({ page }) => {
   await fixture(page, { entries: [{ name: 'private-fixture.txt', path: '/private-fixture.txt', kind: 'file', size: 4 }] });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await gotoOwner(page, '/#/files');
+  await gotoOwner(page, '/#/home');
+  await expect(page.locator('#cpu-value')).toHaveText('12%');
+  await page.locator('#sidebar [data-route="files"]').click();
   await expect(page.getByRole('button', { name: 'private-fixture.txt', exact: true })).toBeVisible();
   await expect(page.locator('#cpu-value')).toHaveText('12%');
   await page.route('**/api/fs/list?**', route => route.fulfill({ status: 401, json: { error: 'Owner sign in required' } }));
@@ -413,7 +415,9 @@ test('cookie alone reveals no owner proof and reload requires signing in again',
 
 test('login proof accompanies every private API GET including text preview and session confirmation', async ({ page }) => {
   const { calls } = await fixture(page, { entries: [{ name: 'proof.txt', path: '/proof.txt', kind: 'file', size: 8 }] });
-  await gotoOwner(page, '/#/files');
+  await gotoOwner(page, '/#/home');
+  await expect(page.locator('#cpu-value')).toHaveText('12%');
+  await page.locator('#sidebar [data-route="files"]').click();
   await page.getByRole('button', { name: 'proof.txt', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'proof.txt' }).locator('pre')).toBeVisible();
   const privateReads = calls.filter(call => call.method === 'GET' && !['/api/owner/session', '/api/health'].includes(call.path));
@@ -595,4 +599,17 @@ test('all-worker launch toggle writes individual disabled settings into the revi
   await expect(page.getByRole('dialog',{name:'Review permission impact'})).toBeVisible();
   const body=state.calls.find(call=>call.path==='/api/control/dry-run').body;
   expect(body.worker_settings).toEqual({'dsh-worker':{enabled:false},'codex-worker':{enabled:false}});
+});
+
+test('file and permission views do not poll unrelated telemetry collectors',async({page})=>{
+  const {calls}=await fixture(page);
+  await gotoOwner(page,'/#/files');
+  await expect(page.locator('#nas-browser')).toContainText('This folder is empty');
+  await page.evaluate(async()=>{for(let index=0;index<3;index++){await refresh();await refreshOperations();await refreshVpn();}});
+  const telemetry=['/api/metrics','/api/processes','/api/services','/api/apps','/api/vpn','/api/cockpit'];
+  expect(calls.filter(call=>telemetry.includes(call.path))).toHaveLength(0);
+  await page.locator('#sidebar [data-route="services"]').click();
+  await expect.poll(()=>calls.some(call=>call.path==='/api/processes')).toBe(true);
+  expect(calls.some(call=>call.path==='/api/apps')).toBe(false);
+  expect(calls.some(call=>call.path==='/api/vpn')).toBe(false);
 });

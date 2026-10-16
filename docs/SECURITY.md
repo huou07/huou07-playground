@@ -158,3 +158,12 @@ includes NAS paths, bytes, thumbnails, scan report or owner credentials.
 
 See [VALIDATION.md](VALIDATION.md) for actual OS adversarial tests. Passing unit
 tests of rule evaluation is necessary but cannot establish isolation.
+
+### Worker-owned discretionary Block targets
+
+ACL denial cannot reliably protect an object or enclosing directory owned by the
+worker: its owner can change permissions or replace directory entries. Rule review
+rejects Block targets with a selected worker owning the target, a covered descendant
+or an ancestor. It does not silently claim enforcement or change native credential
+ownership. Move protected data into an owner-controlled directory before retrying.
+Own-harness native authentication keeps its existing behavior.

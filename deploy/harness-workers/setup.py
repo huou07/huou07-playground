@@ -4,6 +4,7 @@
 Only --apply changes the host. Secret contents are never read by this program.
 """
 import argparse
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
@@ -47,22 +48,30 @@ SECRET_NAMES = {
 }
 
 
+@lru_cache(maxsize=32)
+def prefixes(roots):
+    return tuple(root+'/' for root in roots)
+
+
 def under(path, roots):
-    return any(path == root or path.startswith(root + '/') for root in roots)
+    roots=tuple(roots)
+    return path in roots or path.startswith(prefixes(roots))
 
 
 def secret_name(name):
-    lower = name.lower()
-    sample = any(word in lower.split('.') for word in ('example', 'sample', 'template'))
-    return (lower in SECRET_NAMES or lower.endswith(('.pem', '.key', '.p12', '.pfx'))
-            or (not sample and (lower == '.env' or lower.startswith('.env.')
-                                or lower.endswith('.env'))))
+    lower=name.lower()
+    if lower in SECRET_NAMES or lower.endswith(('.pem','.key','.p12','.pfx')):
+        return True
+    if lower=='.env' or lower.startswith('.env.') or lower.endswith('.env'):
+        words=lower.split('.')
+        return not any(word in words for word in ('example','sample','template'))
+    return False
 
 
 def policy(relative, extra=()):
     if under(relative, NATIVE):
         return 'native'
-    if under(relative, (*PRIVATE, *extra)) or secret_name(Path(relative).name):
+    if under(relative, (*PRIVATE, *extra)) or secret_name(relative.rsplit('/',1)[-1]):
         return 'private'
     if '/' not in relative and (relative.startswith('clean-reinstall-')
                                or relative.startswith('an3-migration-')):
@@ -86,35 +95,32 @@ def validate_boundaries(extra):
                 break
 
 
-def inventory(extra, max_entries=None, max_seconds=None):
-    """Never follow symlinks or enter private/native stores or other mounts."""
-    result = {'shared': [HOME], 'readonly': [], 'private': [], 'native': []}
-    device = HOME.stat().st_dev
-    started = time.monotonic()
-    count = 0
-    def visit(directory):
+def iter_inventory(extra,max_entries=None,max_seconds=None):
+    """Stream metadata only; private/native stores, symlinks and other mounts stay closed."""
+    metadata=HOME.stat();device=metadata.st_dev;started=time.monotonic();count=0
+    yield 'shared',str(HOME),metadata
+    def visit(directory,prefix):
         nonlocal count
         with os.scandir(directory) as entries:
             for entry in entries:
-                count += 1
-                if ((max_entries is not None and count > max_entries)
-                        or (max_seconds is not None and time.monotonic() - started > max_seconds)):
-                    raise RuntimeError('Permission inventory limit reached before changes; reduce the shared-home tree and retry.')
-                if entry.is_symlink():
-                    continue
-                path = Path(entry.path)
-                metadata = entry.stat(follow_symlinks=False)
-                if metadata.st_dev != device or not (
-                        stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):
-                    continue
-                kind = policy(str(path.relative_to(HOME)), extra)
-                # Owner-created ordinary files are shared; root-managed files stay read-only.
-                if kind == 'shared' and metadata.st_uid == 0:
-                    kind = 'readonly'
-                result[kind].append(path)
-                if entry.is_dir(follow_symlinks=False) and kind not in ('private', 'native'):
-                    visit(path)
-    visit(HOME)
+                count+=1
+                if ((max_entries is not None and count>max_entries)
+                        or (max_seconds is not None and time.monotonic()-started>max_seconds)):
+                    raise RuntimeError('Permission inventory budget reached before changes; use a smaller shared-home tree and retry.')
+                if entry.is_symlink():continue
+                metadata=entry.stat(follow_symlinks=False)
+                if metadata.st_dev!=device or not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):continue
+                relative=prefix+entry.name;kind=policy(relative,extra)
+                if kind=='shared' and metadata.st_uid==0:kind='readonly'
+                yield kind,entry.path,metadata
+                if stat.S_ISDIR(metadata.st_mode) and kind not in ('private','native'):
+                    yield from visit(entry.path,relative+'/')
+    yield from visit(str(HOME),'')
+
+
+def inventory(extra,max_entries=None,max_seconds=None):
+    result={kind:[] for kind in ('shared','readonly','private','native')}
+    for kind,path,_ in iter_inventory(extra,max_entries,max_seconds):result[kind].append(Path(path))
     return result
 
 

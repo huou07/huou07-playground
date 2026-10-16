@@ -246,19 +246,80 @@ fn probe_web(client: &reqwest::blocking::Client, address: std::net::SocketAddr) 
             return Some(
                 json!({"name":format!("Web service {}",address.port()),"url":url,
                 "bind_address":address.ip().to_string(),"port":address.port(),
-                "scope":if address.ip().is_loopback(){"localhost"}else{"host interface"},
+                "scope":if address.ip().is_loopback(){"localhost endpoint"}else{"host interface"},
                 "http_status":response.status().as_u16(),"authentication":"unchanged",
-                "loopback_only":address.ip().is_loopback()}),
+                "localhost_url":address.ip().is_loopback()}),
             );
         }
     }
     None
 }
+fn expand_listeners(sockets: &str, interfaces: &Value) -> (Vec<std::net::SocketAddr>, bool) {
+    let (addresses, mut partial) = listening_targets(sockets);
+    let mut addresses: BTreeSet<_> = addresses.into_iter().collect();
+    let local: Vec<_> = interfaces
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|row| row["addr_info"].as_array().into_iter().flatten())
+        .filter(|address| address["scope"] == "global")
+        .filter_map(|address| {
+            address["local"]
+                .as_str()?
+                .parse::<std::net::Ipv4Addr>()
+                .ok()
+        })
+        .filter(|address| {
+            !address.is_unspecified() && !address.is_multicast() && !address.is_loopback()
+        })
+        .take(32)
+        .collect();
+    for line in sockets.lines() {
+        let fields: Vec<_> = line.split_whitespace().take(5).collect();
+        if fields.first() != Some(&"LISTEN") {
+            continue;
+        }
+        let Some((host, port)) = fields.get(3).and_then(|field| field.rsplit_once(':')) else {
+            continue;
+        };
+        if !["*", "0.0.0.0", "[::]", "::"].contains(&host) {
+            continue;
+        }
+        let Ok(port) = port.parse::<u16>() else {
+            continue;
+        };
+        if port == 0 {
+            continue;
+        }
+        for address in &local {
+            let endpoint = std::net::SocketAddr::new((*address).into(), port);
+            if addresses.contains(&endpoint) {
+                continue;
+            }
+            if addresses.len() == 64 {
+                partial = true;
+                continue;
+            }
+            addresses.insert(endpoint);
+        }
+    }
+    (addresses.into_iter().collect(), partial)
+}
+pub(crate) fn host_web_targets() -> Option<(Vec<std::net::SocketAddr>, bool)> {
+    let sockets = command("ss", &["-H", "-ltn"], 2)?;
+    let interfaces = command("ip", &["-j", "-4", "address", "show"], 2)
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let (addresses, mut partial) =
+        expand_listeners(&sockets, interfaces.as_ref().unwrap_or(&Value::Null));
+    if interfaces.is_none() {
+        partial = true;
+    }
+    Some((addresses, partial))
+}
 fn discover_web() -> Value {
-    let Some(sample) = command("ss", &["-H", "-ltn"], 2) else {
+    let Some((targets, partial)) = host_web_targets() else {
         return json!({"available":false,"apps":[],"reason":"Cannot inspect listening sockets. Install iproute2 or use a manual application URL."});
     };
-    let (targets, partial) = listening_targets(&sample);
     let Ok(client) = reqwest::blocking::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -278,7 +339,12 @@ fn discover_web() -> Value {
                 })
                 .collect();
             for job in jobs {
-                if let Ok(Some(app)) = job.join() {
+                if let Ok(Some(mut app)) = job.join() {
+                    app["name"] = json!(format!(
+                        "Web service {} · {}",
+                        app["port"],
+                        app["bind_address"].as_str().unwrap_or("host")
+                    ));
                     apps.push(app);
                 }
             }
@@ -1729,6 +1795,18 @@ mod tests {
         assert!(partial);
     }
     #[test]
+    fn wildcard_discovery_offers_real_host_lan_and_localhost_endpoints_only() {
+        let sockets = "LISTEN 0 128 0.0.0.0:8080 0.0.0.0:*\nLISTEN 0 128 127.0.0.1:9000 0.0.0.0:*";
+        let interfaces = json!([{"addr_info":[{"scope":"global","local":"192.168.1.4"},{"scope":"link","local":"169.254.1.2"},{"scope":"global","local":"external.invalid"}]}]);
+        let (targets, partial) = expand_listeners(sockets, &interfaces);
+        assert!(!partial);
+        assert_eq!(targets.len(), 3);
+        assert!(targets.contains(&"127.0.0.1:8080".parse().unwrap()));
+        assert!(targets.contains(&"192.168.1.4:8080".parse().unwrap()));
+        assert!(targets.contains(&"127.0.0.1:9000".parse().unwrap()));
+        assert!(!targets.contains(&"192.168.1.4:9000".parse().unwrap()));
+    }
+    #[test]
     fn discovery_preserves_auth_and_does_not_follow_redirects() {
         use std::net::TcpListener;
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1755,7 +1833,7 @@ mod tests {
         let app = probe_web(&client, address).unwrap();
         assert_eq!(app["http_status"], 302);
         assert_eq!(app["authentication"], "unchanged");
-        assert_eq!(app["loopback_only"], true);
+        assert_eq!(app["localhost_url"], true);
         server.join().unwrap();
         assert!(probe_web(&client, "127.0.0.1:4097".parse().unwrap()).is_none());
     }

@@ -293,6 +293,9 @@ fn read_configs() -> Result<Vec<Config>, String> {
 pub fn restore() {
     let mut relays = manager().lock().unwrap_or_else(|e| e.into_inner());
     let Ok(configs) = read_configs() else { return };
+    if configs.is_empty() {
+        return;
+    }
     let targets = host_targets();
     for config in configs {
         if !targets.contains(&config.target) {
@@ -308,8 +311,8 @@ pub fn restore() {
     }
 }
 fn host_targets() -> Vec<SocketAddr> {
-    crate::telemetry::command("ss", &["-H", "-ltn"], 2)
-        .map(|s| crate::telemetry::listening_targets(&s).0)
+    crate::telemetry::host_web_targets()
+        .map(|s| s.0)
         .unwrap_or_default()
 }
 pub fn control(op: &str, v: &Value) -> Result<Value, String> {

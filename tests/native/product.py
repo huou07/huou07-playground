@@ -70,6 +70,7 @@ def main():
         wrapper.write_text('#!/bin/sh\nif [ -e "'+str(root / 'fail-enforce')+'" ]; then exit 1; fi\nexec /usr/bin/setfacl "$@"\n')
         wrapper.chmod(0o755)
         env = dict(os.environ, H07P_OWNER=account, H07P_RELAYS="false",
+                   H07P_WORKER_SETUP=str(root / "fixture-no-live-account-provisioning.py"),
                    PATH=str(root / "bin")+":/usr/sbin:/usr/bin:/sbin:/bin",
                    H07P_MANAGED_UNITS=unit, H07P_CONTROL_DIR=str(root / "control"),
                    H07P_NAS_DIR=str(root / "nas"), H07P_STATE_DIR=str(root / "state"),
@@ -179,6 +180,11 @@ def main():
         check(request("/api/fs/upload?" + query, payload, method="PUT")[0] == 201, "stream upload")
         code,search=value('/api/fs/search',dict(area='nas',path='/',query='FIXTURE',recursive=True))
         check(code==200 and [e['path'] for e in search['entries']]==['/fixture.bin'] and search['content_searched'] is False,'authenticated owner search uses actual NAS actor')
+        storage_fixture = workspace / 'storage-search-fixture.txt'
+        storage_fixture.write_text('synthetic fixture; contents are not searched')
+        os.chown(storage_fixture, owner.pw_uid, owner.pw_gid)
+        code,search=value('/api/fs/search',dict(area='storage',path=str(workspace),query='storage-search-fixture',recursive=True))
+        check(code==200 and [e['path'] for e in search['entries']]==[str(storage_fixture)] and search['content_searched'] is False,'authenticated Storage search finds a synthetic owner file')
         code, _, body = request("/api/fs/download?" + query)
         check(code == 200 and hashlib.sha256(body).digest() == hashlib.sha256(payload).digest(), "download hash")
         code, ticket = value("/api/fs/ticket", dict(area="nas", path="/fixture.bin", kind="download"))
@@ -212,7 +218,7 @@ def main():
             fixture_file.write_text(json.dumps(dict(base=base, username=account, password=password, exports=str(export), path=str(log_export))))
             fixture_file.chmod(0o600)
             print(json.dumps({'playwright_cli': 'ready', 'port': port}), flush=True)
-            for _ in range(600):
+            for _ in range(1800):
                 if (cli / 'continue').exists():
                     break
                 time.sleep(1)

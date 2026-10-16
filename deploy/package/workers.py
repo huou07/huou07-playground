@@ -1,9 +1,14 @@
 #!/usr/bin/python3
 """Typed account/ACL provisioning only; never installs apps or rewrites native auth."""
 import argparse
+import atexit
+import shutil
 import grp
 import importlib.util
 import json
+import sqlite3
+import itertools
+import resource
 import os
 from pathlib import Path
 import pwd
@@ -63,14 +68,71 @@ def finish_retirement(name,record):
     record['state']='removed'
 
 
+def progress(control,job,phase,count):
+    target=control/'worker-progress.json';temporary=target.with_suffix('.pending')
+    with temporary.open('w') as output:
+        os.chmod(temporary,0o600);json.dump(dict(id=job,phase=phase,count=count,peak_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),output)
+    temporary.replace(target)
+
+
+def batches(database,kind=None):
+    cursor=database.execute('SELECT path,dev,ino FROM paths'+(' WHERE kind=?' if kind else ''),() if kind is None else (kind,))
+    while rows:=cursor.fetchmany(150):
+        paths=[]
+        for path,device,inode in rows:
+            metadata=os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode) or metadata.st_dev!=device or metadata.st_ino!=inode:
+                raise RuntimeError('Managed object changed during provisioning')
+            paths.append(Path(os.fsdecode(path)))
+        yield paths
+
+
+def stage(acl,extra,control,job):
+    plan=control/f'worker-plan-{job}.sqlite'
+    descriptor=os.open(plan,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(descriptor)
+    database=sqlite3.connect(plan)
+    def cleanup_plan():
+        database.close()
+        plan.unlink(missing_ok=True)
+    atexit.register(cleanup_plan)
+    database.execute('PRAGMA journal_mode=OFF');database.execute('PRAGMA synchronous=OFF');database.execute('PRAGMA cache_size=-4096')
+    database.execute('CREATE TABLE paths(path BLOB,kind TEXT,dev INTEGER,ino INTEGER)')
+    batch=[];count=0
+    for kind,path,metadata in acl.iter_inventory(extra,max_entries=5000000,max_seconds=300):
+        batch.append((os.fsencode(path),kind,metadata.st_dev,metadata.st_ino));count+=1
+        if len(batch)==1000:
+            database.executemany('INSERT INTO paths VALUES(?,?,?,?)',batch);batch.clear()
+            if count%10000==0:progress(control,job,'Inspecting metadata',count)
+    if batch:database.executemany('INSERT INTO paths VALUES(?,?,?,?)',batch)
+    database.commit();progress(control,job,'Saving ACL rollback snapshot',count)
+    directory=Path('/var/backups/h07p-harness-workers')/(time.strftime('%Y%m%d-%H%M%S')+'-'+str(time.time_ns()))
+    directory.mkdir(parents=True,mode=0o700);directory.parent.chmod(0o700)
+    try:
+        with (directory/'acl.restore').open('wb') as output:
+            os.chmod(directory/'acl.restore',0o600)
+            for paths in batches(database):
+                subprocess.run(['getfacl','-p','--',*[str(path) for path in paths]],check=True,stdout=output,stderr=subprocess.DEVNULL,timeout=90)
+            for relative in acl.NATIVE:
+                path=HOME/relative
+                if path.exists():subprocess.run(['getfacl','-R','-P','-p','--',str(path)],check=True,stdout=output,stderr=subprocess.DEVNULL,timeout=90)
+            output.flush();os.fsync(output.fileno())
+    except Exception:
+        shutil.rmtree(directory)
+        raise
+    return database,plan,directory
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=('create','repair','remove'))
     parser.add_argument('--control-dir',required=True,type=Path)
+    parser.add_argument('--job-id',required=True)
     parser.add_argument('workers',nargs='+',choices=CATALOG)
     args=parser.parse_args()
     assert os.geteuid()==0
     control=args.control_dir
+    job=args.job_id
+    if len(job)!=64 or any(character not in '0123456789abcdef' for character in job):raise RuntimeError('Invalid setup job')
     trusted(control)
     source=Path(__file__).with_name('worker-acl.py')
     trusted(source)
@@ -78,6 +140,11 @@ def main():
     acl=importlib.util.module_from_spec(spec);spec.loader.exec_module(acl)
     if HOME.is_symlink() or pwd.getpwnam('huou07').pw_dir!=str(HOME):
         raise RuntimeError('Unexpected shared owner home')
+    for stale in control.glob('worker-plan-*.sqlite'):
+        token=stale.name.removeprefix('worker-plan-').removesuffix('.sqlite')
+        info=stale.lstat()
+        if len(token)==64 and all(c in '0123456789abcdef' for c in token) and stat.S_ISREG(info.st_mode) and info.st_uid==0:
+            stale.unlink()
     selected=tuple(dict.fromkeys(args.workers))
     for name in selected: account(name)
     registry=control/'worker-accounts.json'
@@ -102,8 +169,7 @@ def main():
             raise RuntimeError('Invalid private-path manifest')
         acl.validate_boundaries(extra)
         # Complete inspection before any account/permission change. No secret contents.
-        groups=acl.inventory(extra,max_entries=100000,max_seconds=15)
-        backup=acl.backup([p for paths in groups.values() for p in paths])
+        database,plan,backup=stage(acl,extra,control,job)
         for name in selected:
             if account(name) is None:
                 if records.get(name,{}).get('state')=='removing':
@@ -111,11 +177,11 @@ def main():
                 command('useradd','--system','--no-create-home','--user-group','--home-dir',HOME,'--shell','/bin/bash',name)
             command('usermod','--groups','','--shell','/bin/bash',name);command('usermod','--lock',name)
         acl.WORKERS=selected
-        for paths in groups.values():
-            for path in paths:
-                if path.is_symlink():raise RuntimeError('Managed boundary changed during provisioning')
         for kind,permission in (('shared','rwX'),('readonly','r-X'),('private','---')):
-            acl.acl(groups[kind],permission)
+            count=0
+            for paths in batches(database,kind):
+                acl.acl(paths,permission);count+=len(paths)
+                if count%1500==0:progress(control,job,'Applying '+kind+' ACLs',count)
         existing=tuple(name for name in CATALOG if account(name) is not None)
         for relative,owner in acl.NATIVE.items():
             path=HOME/relative
@@ -133,10 +199,13 @@ def main():
                     user=account(owner);os.chown(instructions,user.pw_uid,user.pw_gid)
             elif path.exists():
                 command('setfacl','-m',','.join(f'u:{name}:---,d:u:{name}:---' for name in selected),'--',path)
-        acl.protect_ancestors([*groups['private'],*(HOME/p for p in acl.NATIVE),*(HOME/p for p in acl.READONLY)])
+        private_paths=(Path(os.fsdecode(row[0])) for row in database.execute("SELECT path FROM paths WHERE kind='private'"))
+        acl.protect_ancestors(itertools.chain(private_paths,(HOME/p for p in acl.NATIVE),(HOME/p for p in acl.READONLY)))
         for name in selected:
             records[name]=dict(state='ready',uid=account(name).pw_uid,backup=str(backup),at=int(time.time()))
+        database.close();plan.unlink()
     save_records(registry,records)
+    progress(control,job,'Account changes prepared; verifying policy',len(selected))
     print(json.dumps(dict(ok=True,workers=list(selected),action=args.action,data_retained=True)))
 
 
