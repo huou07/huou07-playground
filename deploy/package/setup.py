@@ -166,7 +166,7 @@ def install(info,args):
     if not info['checksum_present']:print('Lưu ý: không có file checksum kèm theo. Chỉ tiếp tục nếu đây là bộ cài từ nguồn bạn tin cậy.')
     confirm('Cài phiên bản '+info['Version']+' theo đúng kế hoạch trên? Dữ liệu và credentials native được giữ lại.',args.yes)
     candidate=cache(info)
-    arguments=['apt-get','--yes','--no-remove','--no-install-recommends']
+    arguments=['apt-get','--yes','--no-remove','--no-install-recommends','-o','Dpkg::Options::=--force-confold']
     if args.action=='repair':arguments.append('--reinstall')
     arguments.extend(['install',str(candidate)])
     code,out,error=command(arguments,timeout=900)

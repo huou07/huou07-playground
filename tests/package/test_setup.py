@@ -75,5 +75,15 @@ class SetupTests(unittest.TestCase):
                 with self.assertRaisesRegex(setup.SetupError,'không an toàn'):setup.cache(dict(Version='1.0'))
             self.assertEqual(list(target.iterdir()),[])
 
+    def test_install_retains_existing_owner_configuration_without_dpkg_prompt(self):
+        from argparse import Namespace
+        info=dict(path='/fixture.deb',Version='1.0',sha256='a'*64,checksum_present=True)
+        with patch.object(setup,'plan',return_value={'apt_plan':'reviewed plan'}),patch.object(setup,'require_root'),patch.object(setup,'cache',return_value=Path('/root-cache/fixture.deb')),patch.object(setup,'command',return_value=(0,'','')) as command,patch.object(setup,'health'),contextlib.redirect_stdout(io.StringIO()):
+            setup.install(info,Namespace(action='install',json=False,dry_run=False,yes=True))
+            args=command.call_args.args[0]
+            self.assertIn('Dpkg::Options::=--force-confold',args)
+            self.assertIn('--no-remove',args)
+            self.assertNotIn('--force-confnew',args)
+
 
 if __name__=='__main__':unittest.main()

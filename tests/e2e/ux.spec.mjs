@@ -26,6 +26,35 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('slow collectors cannot overlap when refresh triggers arrive together', async ({ page }) => {
+  const active = new Map(), peaks = new Map();
+  let release;
+  const barrier = new Promise(resolve => { release = resolve; });
+  const paths = ['/api/metrics', '/api/vpn', '/api/services'];
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (!paths.includes(path)) return route.fallback();
+    active.set(path, (active.get(path) || 0) + 1);
+    peaks.set(path, Math.max(peaks.get(path) || 0, active.get(path)));
+    await barrier;
+    active.set(path, active.get(path) - 1);
+    return route.fallback();
+  });
+  await page.goto('/#/home');
+  await expect.poll(() => paths.every(path => active.get(path) === 1)).toBe(true);
+  await page.evaluate(() => {
+    for (let i = 0; i < 4; i++) {
+      window.dispatchEvent(new CustomEvent('h07p-owner-session', { detail: true }));
+      window.dispatchEvent(new CustomEvent('metrics-refresh-change', { detail: 5000 }));
+    }
+  });
+  // A browser task barrier lets every event-triggered request reach interception.
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
+  release();
+  await expect.poll(() => [...active.values()].every(value => value === 0)).toBe(true);
+  expect(Object.fromEntries(peaks)).toEqual(Object.fromEntries(paths.map(path => [path, 1])));
+});
+
 test('360px keyboard navigation enters, cycles, closes and restores focus', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));

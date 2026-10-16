@@ -73,7 +73,7 @@ cached=$cache/huou07-playground_${version}_amd64.deb
 mv -f -- "$incoming" "$cached"
 printf '%s  %s\n' "$digest" "$(basename -- "$cached")" >"$cached.sha256"
 echo 'Đang cài H07P và dependency. Thao tác có thể mất vài phút; không tắt máy...'
-if ! apt-get --yes --no-remove --no-install-recommends install "$cached" >"$log" 2>&1; then
+if ! apt-get --yes --no-remove --no-install-recommends -o Dpkg::Options::=--force-confold install "$cached" >"$log" 2>&1; then
   show_log
   echo 'Cài chưa hoàn tất; không xóa dữ liệu hay credentials. Dùng sudo h07p-setup doctor/repair nếu menu đã được cài.' >&2
   exit 1
