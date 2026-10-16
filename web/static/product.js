@@ -379,7 +379,7 @@
     const capabilities=el('details'), capTitle=el('summary','Enforcement capabilities and limitations'); capabilities.append(capTitle,el('pre',JSON.stringify(policy.capabilities || {},null,2)));
     const scoped=policyScope==='*'?draft:{...draft,...(draft.worker_settings?.[policyScope]||{})};
     const scope=select([['*','All managed workers'],...workers.map(w=>[w.name,w.name])],policyScope);scope.setAttribute('aria-label','Configure worker');scope.addEventListener('change',()=>{policyScope=scope.value;renderPolicy();});
-    const setScoped=(key,value)=>{draft.worker_settings ||= {};if(policyScope==='*'){draft[key]=value;for(const setting of Object.values(draft.worker_settings))delete setting[key];}else{draft.worker_settings[policyScope] ||= {};draft.worker_settings[policyScope][key]=value;}};
+    const setScoped=(key,value)=>{draft.worker_settings ||= {};if(policyScope==='*'){if(key==='enabled'){for(const worker of workers){draft.worker_settings[worker.name] ||= {};draft.worker_settings[worker.name].enabled=value;}}else{draft[key]=value;for(const setting of Object.values(draft.worker_settings))delete setting[key];}}else{draft.worker_settings[policyScope] ||= {};draft.worker_settings[policyScope][key]=value;}};
     const preset=select([['none','None · existing OS rights'],['minimal','Minimal · confirmed sensitive rules'],['balance','Balance · approval outside workspace'],['strict','Strict · no outside workspace data']],scoped.preset);
     preset.setAttribute('aria-label','Security Level');
     preset.addEventListener('change',()=>{
@@ -391,6 +391,7 @@
     const workspace=input('workspace',scoped.workspace || '/'); workspace.setAttribute('aria-label','Worker workspace');
     workspace.addEventListener('change',()=>{setScoped('workspace',workspace.value);markDirty();});
     const configuration=el('div',undefined,'product-toolbar');configuration.append(label('Configure',scope),label('Security Level',preset),label('Workspace (absolute path)',workspace));
+    const enabled=input('worker-enabled','','checkbox');enabled.checked=policyScope==='*'?workers.every(worker=>draft.worker_settings?.[worker.name]?.enabled!==false):scoped.enabled!==false;enabled.addEventListener('change',()=>{setScoped('enabled',enabled.checked);markDirty();});configuration.append(label('Enable worker launches',enabled));
     const toolbar=el('div',undefined,'product-toolbar');
     toolbar.append(button('Block',()=>editRule({action:'block',worker:policyScope})),button('Allow',()=>editRule({action:'allow',worker:policyScope})),button('Auto Detect',scan),button('Review impact',reviewPolicy,'primary'));
     const discard=button('Discard draft',()=>{draft=structuredClone(policy);dirty=false;renderPolicy();});discard.disabled=!dirty;toolbar.append(discard);
@@ -571,6 +572,53 @@
     });
   }
   $('policy-refresh').addEventListener('click',()=>loadPolicy());
+  $('workers-setup').addEventListener('click',async()=>{
+    const d=dialog('Harness workers'),list=el('div'),controller=new AbortController();let timer=null;
+    d.add(el('p','Reuse installed DSH, Codex and OpenCode with separate worker accounts and the owner’s shared home, apps, tools, project AGENTS.md and skills. Workers get no root or administrator groups. Peer credentials and owner private stores stay protected.','panel-note'),list);
+    d.node.addEventListener('close',()=>{controller.abort();clearTimeout(timer);});
+    const load=async()=>{
+      const data=await api('/api/setup/workers',{signal:controller.signal});if(!d.node.isConnected)return;
+      list.replaceChildren();const selected=new Set();
+      for(const worker of data.workers||[]) {
+        const row=el('div',undefined,'product-scan-row'),check=input('selected-worker','','checkbox');
+        check.addEventListener('change',()=>{if(check.checked)selected.add(worker.name);else selected.delete(worker.name);});
+        row.append(label(worker.name,check),el('p',(worker.detected?'Harness detected':'Harness executable not detected')+' · '+(worker.account_exists?'Account UID '+worker.uid:'Account missing')+' · '+(worker.enabled?'Enabled':'Disabled'),'panel-note'));
+        if(worker.account_exists)row.append(button('Edit worker permissions',()=>{d.close();policyScope=worker.name;location.hash='/permissions';loadPolicy({preserveDraft:true});}));
+        list.append(row);
+      }
+      list.append(el('p',data.note,'panel-note'));
+      const actions=el('div',undefined,'product-toolbar');
+      const run=action=>{
+        if(!selected.size){message(d.status,'Select the workers to configure.',true);return;}
+        const names=[...selected].filter(name=>action!=='start-web'||name!=='codex-worker');if(!names.length){message(d.status,'Codex uses its installed CLI; it has no managed web service.',true);return;}const review=dialog('Review worker '+action);
+        review.add(el('p',names.join(', ')),el('p',action==='remove'?'Disable and remove the active worker names. Shared data stays. A locked retired system identity preserves each old UID so future accounts cannot inherit its file permissions.':action==='start-web'?'Start the existing managed web services for these enabled workers, using their existing native configuration.':'Account/ACL changes stop managed worker tasks. Shared home/apps are reused; known private stores remain protected. Custom permission rules are reapplied before workers can restart.','product-warning'));
+        const apply=button('Confirm '+action,async()=>{
+          apply.disabled=true;review.actions.firstChild.textContent='Close (maintenance continues)';
+          try{
+            const job=await api('/api/setup/workers',{method:'POST',body:{action,workers:names,expected_revision:data.revision,confirmed:true}});
+            message(review.status,'Maintenance started. You may close this dialog and return to check its result.');
+            apply.remove();
+            const poll=async()=>{
+              if(!d.node.isConnected)return;
+              try{const state=await api('/api/setup/workers/job',{signal:controller.signal});
+                if(state.id!==job.id){message(d.status,'A newer maintenance job is active. Refresh worker setup.',true);return;}
+                if(state.state==='running'){message(d.status,'Worker maintenance running…');timer=setTimeout(poll,1500);return;}
+                if(review.node.isConnected)message(review.status,state.state==='completed'?'Worker maintenance completed.':state.result?.error||'Maintenance failed; workers remain stopped.',state.state!=='completed');
+                await load();message(d.status,state.state==='completed'?'Worker maintenance completed.':state.result?.error||'Maintenance failed; use Repair.',state.state!=='completed');
+              }catch(error){if(error.name!=='AbortError')message(d.status,error.message,true);}
+            };await poll();
+          }catch(error){if(review.node.isConnected){message(review.status,error.message,true);apply.disabled=false;}}
+        },action==='remove'?'danger':'primary');review.actions.append(apply);
+      };
+      for(const [action,title] of [['create','Create selected accounts'],['repair','Repair selected ACLs'],['remove','Remove selected workers'],['start-web','Start selected web services']])actions.append(button(title,()=>run(action)));
+      actions.append(button('Select all workers',()=>{for(const check of list.querySelectorAll('input[name="selected-worker"]')){check.checked=true;check.dispatchEvent(new Event('change'));}}));
+      list.append(actions);
+      if(data.job?.state==='running')message(d.status,'Existing maintenance is running. Close and reopen to check its result.');
+      else message(d.status,data.job?.state==='failed'?data.job.result?.error||'Previous maintenance failed. Use Repair.':'Review selected worker accounts before changing them.',data.job?.state==='failed');
+    };
+    d.actions.append(button('Refresh workers',()=>load().catch(error=>{if(error.name!=='AbortError'&&d.node.isConnected)message(d.status,error.message,true);})));
+    message(d.status,'Detecting supported harnesses and accounts…');try{await load();}catch(error){if(error.name!=='AbortError'&&d.node.isConnected)message(d.status,error.message,true);}
+  });
   $('apps-discover').addEventListener('click', async () => {
     const d=dialog('Detect web services'), results=el('div'), controller=new AbortController();
     d.add(el('p','Check web services listening on this server only. Detection reads no passwords and keeps each app’s authentication unchanged. Nothing is added automatically.','panel-note'),results);

@@ -120,6 +120,7 @@ def main():
         check(request("/api/metrics", authenticated=False)[0] == 401, "telemetry requires owner")
         check(request('/api/apps/discover',{},authenticated=False)[0]==401,'web discovery requires owner authentication')
         check(request('/api/setup/vpn/apps',authenticated=False)[0]==401,'VPN app metadata requires owner authentication')
+        check(request('/api/setup/workers',authenticated=False)[0]==401,'worker setup requires owner authentication')
         check(request('/api/fs/search',dict(area='nas',path='/',query='fixture'),authenticated=False)[0]==401,'private search requires owner authentication')
         check(value("/api/owner/session")[1]["authenticated"] is False, "anonymous session")
         check(request("/api/owner/login", {"username": account, "password": "incorrect"})[0] == 401,
@@ -132,6 +133,17 @@ def main():
         code,vpn_apps=value('/api/setup/vpn/apps')
         check(code==200 and vpn_apps['relays']==[],'owner can inspect isolated VPN app configuration')
         check(request('/api/setup/vpn/apps/unknown',{})[0]==404,'VPN setup rejects arbitrary helper operations')
+        code,workers=value('/api/setup/workers')
+        check(code==200 and len(workers['workers'])==3,'owner can inspect supported harness/account metadata')
+        check(request('/api/setup/workers',dict(action='create',workers=['root'],confirmed=True,expected_revision=0))[0]==400,'worker setup cannot select an arbitrary Unix identity')
+        check(request('/api/setup/workers',dict(action='repair',workers=['dsh-worker'],confirmed=False,expected_revision=0))[0]==400,'worker changes require explicit review confirmation')
+        code,job=value('/api/setup/workers',dict(action='create',workers=['dsh-worker'],confirmed=True,expected_revision=999999))
+        check(code==200 and job['id'],'owner reviewed worker maintenance returns a bounded job handle')
+        for _ in range(100):
+            state=value('/api/setup/workers/job')[1]
+            if state['state']!='running':break
+            time.sleep(.02)
+        check(state['state']=='failed' and 'REVISION_CONFLICT' in state['result']['error'] and value('/api/control/status')[1]['revision']==0,'stale worker setup fails before account/ACL changes')
         code,logins=value('/api/setup/logins')
         check(code==200 and logins['file']['version']=='absent' and logins['sources'][0]['available'],'selected login status exposes capabilities without credentials')
         export=dict(selected=['opencode-public'],entries=[],expected_version='absent',replace=False)

@@ -86,13 +86,20 @@ def validate_boundaries(extra):
                 break
 
 
-def inventory(extra):
+def inventory(extra, max_entries=None, max_seconds=None):
     """Never follow symlinks or enter private/native stores or other mounts."""
     result = {'shared': [HOME], 'readonly': [], 'private': [], 'native': []}
     device = HOME.stat().st_dev
+    started = time.monotonic()
+    count = 0
     def visit(directory):
+        nonlocal count
         with os.scandir(directory) as entries:
             for entry in entries:
+                count += 1
+                if ((max_entries is not None and count > max_entries)
+                        or (max_seconds is not None and time.monotonic() - started > max_seconds)):
+                    raise RuntimeError('Permission inventory limit reached before changes; reduce the shared-home tree and retry.')
                 if entry.is_symlink():
                     continue
                 path = Path(entry.path)
@@ -130,7 +137,7 @@ def owner_systemctl(*args):
 
 
 def backup(paths):
-    directory = Path('/var/backups/h07p-harness-workers') / time.strftime('%Y%m%d-%H%M%S')
+    directory = Path('/var/backups/h07p-harness-workers') / (time.strftime('%Y%m%d-%H%M%S') + '-' + str(time.time_ns()))
     directory.mkdir(parents=True, mode=0o700)
     directory.parent.chmod(0o700)
     # getfacl includes ownership, default ACLs and sticky flags; restore with --restore.

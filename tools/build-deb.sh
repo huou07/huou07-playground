@@ -42,6 +42,8 @@ install -m 0644 "$repo/deploy/package/"*.service "$stage/usr/lib/systemd/system/
 install -m 0755 "$repo/deploy/package/lifecycle.py" "$stage/usr/lib/huou07-playground/lifecycle.py"
 install -d "$stage/usr/sbin" "$stage/usr/share/applications"
 install -m 0755 "$repo/deploy/package/setup.py" "$stage/usr/lib/huou07-playground/setup.py"
+install -m 0755 "$repo/deploy/package/workers.py" "$stage/usr/lib/huou07-playground/workers.py"
+install -m 0644 "$repo/deploy/harness-workers/setup.py" "$stage/usr/lib/huou07-playground/worker-acl.py"
 install -m 0755 "$repo/deploy/package/h07p-setup" "$stage/usr/sbin/h07p-setup"
 install -m 0644 "$repo/deploy/package/h07p-setup.desktop" "$stage/usr/share/applications/h07p-setup.desktop"
 install -d "$stage/usr/share/man/man8"
@@ -83,7 +85,7 @@ Version: $version
 Architecture: amd64
 Maintainer: H07P maintainers <huou07@users.noreply.github.com>
 Pre-Depends: python3
-Depends: libc6 (>= $glibc), libgcc-s1, libpam0g, adduser, systemd (>= 254), acl, gitleaks (>= 8.16)
+Depends: libc6 (>= $glibc), libgcc-s1, libpam0g, adduser, passwd, iproute2, systemd (>= 254), acl, gitleaks (>= 8.16)
 Section: admin
 Priority: optional
 Description: H07P owner dashboard and protected helper

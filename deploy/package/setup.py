@@ -18,7 +18,7 @@ import tempfile
 PACKAGE='huou07-playground'
 CACHE=Path('/var/cache/huou07-playground')
 UNITS=['h07p-helper.service','huou07-playground.service','h07p-dsh.service','h07p-opencode.service']
-DEPENDENCIES=['python3','libc6','libgcc-s1','libpam0g','adduser','systemd','acl','gitleaks']
+DEPENDENCIES=['python3','libc6','libgcc-s1','libpam0g','adduser','passwd','iproute2','systemd','acl','gitleaks']
 
 
 class SetupError(Exception):pass

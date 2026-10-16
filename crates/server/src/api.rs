@@ -364,6 +364,19 @@ async fn vpn_apps_get() -> Response {
 async fn app_logins_get() -> Response {
     rpc_response(rpc(&json!({"op":"app_logins_status"})).await)
 }
+async fn workers_get() -> Response {
+    rpc_response(rpc(&json!({"op":"worker_setup_status"})).await)
+}
+async fn workers_job() -> Response {
+    rpc_response(rpc(&json!({"op":"worker_setup_job"})).await)
+}
+async fn workers_post(Json(mut v): Json<Value>) -> Response {
+    if !v.is_object() {
+        return fail(StatusCode::BAD_REQUEST, "Select supported workers");
+    }
+    v["op"] = "worker_setup_run".into();
+    rpc_response(rpc(&v).await)
+}
 async fn app_logins_post(Json(mut v): Json<Value>) -> Response {
     if !v.is_object() {
         return fail(StatusCode::BAD_REQUEST, "Choose existing app logins");
@@ -621,6 +634,8 @@ pub fn app(static_root: PathBuf) -> Result<Router, String> {
         .route("/api/owner/logout", post(logout))
         .route("/api/control/status", get(status))
         .route("/api/setup/vpn/apps", get(vpn_apps_get))
+        .route("/api/setup/workers", get(workers_get).post(workers_post))
+        .route("/api/setup/workers/job", get(workers_job))
         .route(
             "/api/setup/logins",
             get(app_logins_get).post(app_logins_post),

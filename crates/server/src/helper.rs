@@ -391,6 +391,13 @@ fn enforce(policy: &Value) -> Result<()> {
     // All grants first, all blocks last. Parent grants cannot silently undo a block.
     for action in ["allow", "block"] {
         for rule in rules.iter().filter(|r| r["action"] == action) {
+            let present: Vec<_> = affected(rule)
+                .into_iter()
+                .filter(|name| crate::user_ids(name).is_ok())
+                .collect();
+            if present.is_empty() {
+                continue;
+            }
             if rule["expires_at"]
                 .as_u64()
                 .is_some_and(|t| t <= crate::now())
@@ -422,7 +429,7 @@ fn enforce(policy: &Value) -> Result<()> {
                     }
                 )
             };
-            let spec = affected(rule)
+            let spec = present
                 .iter()
                 .map(|u| format!("u:{u}:{permission}"))
                 .collect::<Vec<_>>()
@@ -435,7 +442,7 @@ fn enforce(policy: &Value) -> Result<()> {
             command(cmd)?;
             // No new child can bypass a directory Block. Default ACLs cover recreated children.
             if Path::new(p).is_dir() {
-                let default = affected(rule)
+                let default = present
                     .iter()
                     .map(|u| format!("d:u:{u}:{permission}"))
                     .collect::<Vec<_>>()
@@ -799,7 +806,7 @@ fn reply(stream: &mut UnixStream, result: Result<Value>) {
     };
     let _ = writeln!(stream, "{}", value);
 }
-fn client(stream: UnixStream, broker: bool, lock: &Mutex<()>) {
+fn client(stream: UnixStream, broker: bool, lock: &Arc<Mutex<()>>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(120)));
     let uid = match peer(&stream) {
@@ -825,6 +832,13 @@ fn client(stream: UnixStream, broker: bool, lock: &Mutex<()>) {
     if broker {
         let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
         reply(input.get_mut(), broker_request(uid, &v));
+        return;
+    }
+    if op.starts_with("worker_setup_") {
+        reply(
+            input.get_mut(),
+            crate::worker_setup::control(op, &v, lock.clone()),
+        );
         return;
     }
     if op.starts_with("guard_") {
@@ -931,4 +945,95 @@ pub fn run() -> Result<()> {
         crate::bounded_spawn(move || client(s, false, &l));
     }
     Ok(())
+}
+
+pub(crate) fn maintain_workers(v: &Value) -> Result<Value> {
+    let mut policy = load()?;
+    if v["expected_revision"] != policy["revision"] {
+        return Err(
+            "REVISION_CONFLICT: policy changed. Refresh worker setup and review again.".into(),
+        );
+    }
+    let action = v["action"].as_str().ok_or("Select an action")?;
+    let selected = v["workers"].as_array().ok_or("Select supported workers")?;
+    if action == "start-web" {
+        if policy["revision"] != policy["enforced_revision"] {
+            return Err("Apply or repair the pending policy before starting workers".into());
+        }
+        let mut units = Vec::new();
+        for worker in selected {
+            let name = worker.as_str().ok_or("Invalid worker")?;
+            if worker_setting(&policy, name)["enabled"] == false {
+                return Err("Enable the selected worker in Permissions first".into());
+            }
+            let unit = match name {
+                "dsh-worker" => "h07p-dsh.service",
+                "opencode-worker" => "h07p-opencode.service",
+                _ => {
+                    return Err(
+                        "This harness has no managed web service; use its installed CLI".into(),
+                    )
+                }
+            };
+            units.push(unit.to_owned());
+        }
+        start(&units)?;
+        return Ok(json!({"started":units}));
+    }
+    if !["create", "repair", "remove"].contains(&action) {
+        return Err("Unsupported worker maintenance".into());
+    }
+    let revision = policy["revision"]
+        .as_u64()
+        .ok_or("Invalid policy revision")?
+        .checked_add(1)
+        .ok_or("Policy revision exhausted")?;
+    if !policy["worker_settings"].is_object() {
+        policy["worker_settings"] = json!({});
+    }
+    for worker in selected {
+        let name = worker.as_str().ok_or("Invalid worker")?;
+        if !policy["worker_settings"][name].is_object() {
+            policy["worker_settings"][name] = json!({});
+        }
+        if action == "remove" {
+            policy["worker_settings"][name]["enabled"] = json!(false);
+        }
+        if action == "create" {
+            policy["worker_settings"][name]["enabled"] = json!(true);
+        }
+    }
+    validate(&policy)?;
+    policy["revision"] = json!(revision);
+    policy["enforced_revision"] = json!(0);
+    save(&policy)?;
+    let active = stop()?;
+    let database = db()?;
+    database
+        .execute(
+            "INSERT OR REPLACE INTO history(revision,body) VALUES(?1,?2)",
+            params![revision, policy.to_string()],
+        )
+        .map_err(err)?;
+    audit(
+        &database,
+        &format!("Worker maintenance {action} revision {revision} started"),
+    )?;
+    crate::worker_setup::driver(action, selected)?;
+    // Recompile custom rules after broad shared-home provisioning, before any launch.
+    enforce(&policy)?;
+    policy["enforced_revision"] = json!(revision);
+    save(&policy)?;
+    database
+        .execute(
+            "UPDATE history SET body=?2 WHERE revision=?1",
+            params![revision, policy.to_string()],
+        )
+        .map_err(err)?;
+    audit(
+        &database,
+        &format!("Worker maintenance {action} revision {revision} enforced"),
+    )?;
+    start(&active)?;
+    Ok(json!({"revision":revision,"enforced_revision":revision,"data_retained":true}))
 }

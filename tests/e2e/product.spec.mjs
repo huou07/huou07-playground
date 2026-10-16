@@ -566,3 +566,33 @@ test('supported existing web password change requires confirmation and clears pa
   await expect(d.getByLabel('New password',{exact:true})).toHaveValue('');
   expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain('synthetic-new-fixture-password');
 });
+
+test('worker GUI detects without installing and reviews selected account maintenance',async({page})=>{
+  await fixture(page);const writes=[];
+  await page.route('**/api/setup/workers',route=>{
+    if(route.request().method()==='POST'){writes.push(route.request().postDataJSON());return route.fulfill({json:{id:'fixture-job',state:'running'}});}
+    return route.fulfill({json:{revision:7,workers:[{name:'dsh-worker',harness:'dsh',detected:true,account_exists:true,uid:995,enabled:true},{name:'codex-worker',harness:'codex',detected:true,account_exists:false,enabled:false}],job:{state:'idle'},note:'Shared apps are reused; retired identities keep their UID.'}});
+  });
+  await page.route('**/api/setup/workers/job',route=>route.fulfill({json:{id:'fixture-job',state:'completed',result:{revision:8,enforced_revision:8}}}));
+  await gotoOwner(page,'/#/settings');
+  await page.getByRole('button',{name:'Detect harnesses & manage workers'}).click();
+  const d=page.getByRole('dialog',{name:'Harness workers',exact:true});
+  await expect(d).toContainText('Harness detected');expect(writes).toHaveLength(0);
+  await d.getByRole('button',{name:'Select all workers',exact:true}).click();
+  await d.getByRole('button',{name:'Create selected accounts'}).click();
+  const review=page.getByRole('dialog',{name:'Review worker create'});
+  await expect(review).toContainText('stop managed worker tasks');expect(writes).toHaveLength(0);
+  await review.getByRole('button',{name:'Confirm create'}).click();
+  await expect(review).toContainText('Worker maintenance completed');
+  expect(writes[0]).toEqual({action:'create',workers:['dsh-worker','codex-worker'],expected_revision:7,confirmed:true});
+});
+
+test('all-worker launch toggle writes individual disabled settings into the reviewed policy',async({page})=>{
+  const state=await fixture(page);state.setPolicy({...state.getPolicy(),workers:[{name:'dsh-worker',preset:'none',state:'running'},{name:'codex-worker',preset:'none',state:'stopped'}]});
+  await gotoOwner(page,'/#/permissions');
+  await page.getByRole('checkbox',{name:'Enable worker launches'}).uncheck();
+  await page.getByRole('button',{name:'Review impact',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Review permission impact'})).toBeVisible();
+  const body=state.calls.find(call=>call.path==='/api/control/dry-run').body;
+  expect(body.worker_settings).toEqual({'dsh-worker':{enabled:false},'codex-worker':{enabled:false}});
+});

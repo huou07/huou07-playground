@@ -22,6 +22,8 @@ mod scan;
 mod telemetry;
 #[cfg(target_os = "linux")]
 mod vpn_apps;
+#[cfg(target_os = "linux")]
+mod worker_setup;
 use std::{io::Read, path::PathBuf};
 pub fn now() -> u64 {
     std::time::SystemTime::now()

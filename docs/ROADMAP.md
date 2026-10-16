@@ -84,6 +84,23 @@ synthetic accounts; no production password was inspected or changed. GUI worker
 lifecycle, complete onboarding/bootstrap, final measurements and deployment remain
 open.
 
+Fifth implementation checkpoint: the setup GUI detects the three supported
+harness executables without executing them, reviews selected/all account
+create/repair/remove jobs, links individual permission editing, toggles selected
+or all worker launches, and starts supported existing web units. Provisioning
+reuses the existing metadata/ACL classifier; it does not install apps or rewrite
+native auth. Jobs publish a pending policy before stopping workers, preserve ACL
+backups and reapply custom rules before marking enforcement complete. Removed
+names become locked UID/GID tombstones with retained files; recreation uses new
+identities. A private journal repairs interrupted user/group retirement. Metadata
+inventory is bounded at 100k entries/15s before changes; job subprocesses are
+bounded at 300s. Debian passed 24 isolated actual account/ACL/helper checks,
+including failed retirement repair, custom Block reapplication and failed pending
+policy recovery; 84 native PAM/API checks; and 32 browser contracts. No production
+account was created, removed or reconfigured for these fixtures. Package dependencies
+now explicitly include passwd and iproute2. Final packaging, efficiency comparison,
+Playwright CLI and deployment remain open.
+
 
 ## Current authorized product integration, 2026-10-15
 
