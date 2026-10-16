@@ -1,6 +1,9 @@
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
+  // getRandomValues also works on VPN HTTP origins; randomUUID requires HTTPS
+  // or a trusted localhost origin. These IDs identify UI dialogs/rules only.
+  const uniqueId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
   const el = (tag, text, className) => {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -34,7 +37,7 @@
   function dialog(title) {
     const previous = document.activeElement;
     const node = el('dialog', undefined, 'product-dialog');
-    const heading = el('h2', title); heading.id = 'dialog-' + crypto.randomUUID();
+    const heading = el('h2', title); heading.id = 'dialog-' + uniqueId();
     node.setAttribute('aria-labelledby', heading.id);
     node.append(heading);
     const status = el('p', '', 'product-status'); status.setAttribute('role', 'status');
@@ -464,7 +467,7 @@
       event.preventDefault();const selected=operationInputs.filter(box=>box.checked).map(box=>box.name);
       if(!selected.length) {message(d.status,'Select at least one operation.',true);return;}
       if(expires.value && Date.parse(expires.value)<=Date.now()) {message(d.status,'Expiry must be in the future.',true);return;}
-      const rule={...existing,id:existing.id || crypto.randomUUID(),worker:worker.value,target:target.value,kind:kind.value,action:action.value,operations:selected,recursive:recursive.checked,source:existing.source || 'manual',expires_at:expires.value?Math.floor(Date.parse(expires.value)/1000):null};
+      const rule={...existing,id:existing.id || uniqueId(),worker:worker.value,target:target.value,kind:kind.value,action:action.value,operations:selected,recursive:recursive.checked,source:existing.source || 'manual',expires_at:expires.value?Math.floor(Date.parse(expires.value)/1000):null};
       const index=draft.rules.findIndex(item=>item.id===rule.id);
       if(index<0) draft.rules.push(rule);else draft.rules[index]=rule;
       d.close();markDirty();
@@ -537,7 +540,7 @@
           const chosen=[...selected].map(index=>findings[index]),confirm=dialog('Review ' + chosen.length + ' selected suggestions');
           confirm.add(el('p',chosen.map(finding=>finding.path).join('\n')),el('p','These ' + scanMode + ' rules will be added to the draft only. Review impact and Apply are required before enforcement.','product-warning'));
           confirm.actions.append(button('Add selected to draft',()=>{
-            for(const finding of chosen) draft.rules.push({id:crypto.randomUUID(),worker:'*',target:finding.path,action:scanMode,operations:['list','read','write','create','delete','execute'],recursive:true,source:'detection',expires_at:null});
+            for(const finding of chosen) draft.rules.push({id:uniqueId(),worker:'*',target:finding.path,action:scanMode,operations:['list','read','write','create','delete','execute'],recursive:true,source:'detection',expires_at:null});
             confirm.close();d.close();markDirty();
           },'primary'));
         },'primary');review.dataset.review='true';review.disabled=true;d.actions.append(review);

@@ -318,6 +318,21 @@ test('failed login retains username, clears password and permits safe retry', as
   await expect(page.locator('#connection-label')).toHaveText('Connected');
 });
 
+test('VPN HTTP API availability supports sign-in and new rule dialogs', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(Crypto.prototype, 'randomUUID', { value: undefined }));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await fixture(page, { authenticated: false });
+  await gotoOwner(page, '/#/permissions');
+  await signInOwner(page);
+  await page.getByRole('button', { name:'Block', exact:true }).click();
+  const rule=page.getByRole('dialog', { name:'New permission rule' });
+  await rule.getByLabel('Absolute target path').fill('/fixtures/closed-export.log');
+  await rule.getByRole('button', { name:'Save draft rule' }).click();
+  await expect(rule).toHaveCount(0);
+  await expect(page.locator('[aria-label="Permission rules"]')).toContainText('/fixtures/closed-export.log');
+  expect(errors).toEqual([]);
+});
+
 test('expired session clears private files and telemetry before prompting for sign-in', async ({ page }) => {
   await fixture(page, { entries: [{ name: 'private-fixture.txt', path: '/private-fixture.txt', kind: 'file', size: 4 }] });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
