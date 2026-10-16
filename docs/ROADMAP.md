@@ -69,6 +69,21 @@ contracts. Synthetic secrets were checked for response/log leakage. Stream adapt
 RSS samples for 16/64 MiB uploads were 4408/4200 KiB; these are memory observations,
 not electricity measurements. This increment is not deployed yet.
 
+Fourth implementation checkpoint: the existing public OpenCode web/DSH LAN
+bridge login has an explicit password-change GUI. It requires a configured
+original login; absent/anonymous apps cannot gain authentication through this
+adapter. Native backend/provider credentials remain unchanged. A private root
+override persists rotation, new connections use the updated cached login and
+active public/backend streams close on rotation. A password export is refreshed
+only by a separate explicit export operation. Uncertain post-rename durability
+fails closed. Debian passed Clippy/release, 39 Rust tests, 78 native owner/API
+checks, 30 browser contracts and 19 isolated typed-helper/network checks including
+old/new password acceptance, active backend disconnection, restart persistence,
+and refusal to introduce authentication without an original login. These are
+synthetic accounts; no production password was inspected or changed. GUI worker
+lifecycle, complete onboarding/bootstrap, final measurements and deployment remain
+open.
+
 
 ## Current authorized product integration, 2026-10-15
 

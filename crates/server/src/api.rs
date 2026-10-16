@@ -365,6 +365,9 @@ async fn app_logins_get() -> Response {
     rpc_response(rpc(&json!({"op":"app_logins_status"})).await)
 }
 async fn app_logins_post(Json(mut v): Json<Value>) -> Response {
+    if !v.is_object() {
+        return fail(StatusCode::BAD_REQUEST, "Choose existing app logins");
+    }
     if v.to_string().len() > 120000 {
         return fail(
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -372,6 +375,16 @@ async fn app_logins_post(Json(mut v): Json<Value>) -> Response {
         );
     }
     v["op"] = "app_logins_save".into();
+    rpc_response(rpc(&v).await)
+}
+async fn app_logins_change(Json(mut v): Json<Value>) -> Response {
+    if !v.is_object() || v.to_string().len() > 4096 {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "Select an existing supported app login and a bounded password",
+        );
+    }
+    v["op"] = "app_logins_change".into();
     rpc_response(rpc(&v).await)
 }
 async fn vpn_apps_post(Path(op): Path<String>, Json(mut v): Json<Value>) -> Response {
@@ -612,6 +625,7 @@ pub fn app(static_root: PathBuf) -> Result<Router, String> {
             "/api/setup/logins",
             get(app_logins_get).post(app_logins_post),
         )
+        .route("/api/setup/logins/change", post(app_logins_change))
         .route("/api/setup/vpn/apps/{op}", post(vpn_apps_post))
         .route("/api/control/{op}", post(control))
         .route(

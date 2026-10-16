@@ -643,6 +643,18 @@
       for(const source of data.sources||[]) {
         const check=input('login-source','','checkbox');check.disabled=!source.available;
         content.append(label(source.name+(source.available?'':' · No supported existing login'),check),el('p',source.description,'panel-note'));
+        if(source.can_change)content.append(button('Change existing '+source.name+' password',()=>{
+          const change=dialog('Change existing app password'),password=input('new-app-password','','password'),confirm=input('confirm-app-password','','password');
+          password.autocomplete=confirm.autocomplete='new-password';password.maxLength=confirm.maxLength=256;
+          change.add(el('p','Change the existing public OpenCode web and DSH LAN bridge login. Active bridge connections will close. Native harness and provider credentials stay unchanged. A saved NAS login file must be exported again explicitly.','product-warning'),label('New password',password),label('Confirm new password',confirm));
+          change.node.addEventListener('close',()=>{password.value=confirm.value='';});
+          const apply=button('Change password',async()=>{
+            if(password.value!==confirm.value||new TextEncoder().encode(password.value).length<12){message(change.status,'Use at least 12 bytes and enter the same password twice.',true);return;}
+            apply.disabled=true;
+            try {await api('/api/setup/logins/change',{method:'POST',body:{source:source.id,password:password.value}});password.value=confirm.value='';if(change.node.isConnected){message(change.status,'Existing web password changed. Sign in to the app again and refresh any saved login export.');apply.remove();change.actions.firstChild.textContent='Close';}}
+            catch(error){password.value=confirm.value='';if(change.node.isConnected){message(change.status,error.message,true);apply.disabled=false;}}
+          },'primary');change.actions.append(apply);
+        }));
         selected.push({source,check});
       }
       content.append(el('p',data.note,'panel-note'));

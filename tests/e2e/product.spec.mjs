@@ -546,3 +546,23 @@ test('password export starts unselected, requires replace confirmation and never
   expect(calls.filter(call=>call.path.startsWith('/api/setup/vpn/')&&call.method==='POST')).toHaveLength(0);
   expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain('password');
 });
+
+test('supported existing web password change requires confirmation and clears password fields', async ({page})=>{
+  await fixture(page);
+  let changed=null;
+  await page.route('**/api/setup/logins',route=>route.fulfill({json:{file:{exists:false,version:'absent'},sources:[{id:'opencode-public',name:'Existing bridge',available:true,can_change:true,description:'Existing web login'}]}}));
+  await page.route('**/api/setup/logins/change',route=>{changed=route.request().postDataJSON();return route.fulfill({json:{changed:true,credentials_returned:false}});});
+  await gotoOwner(page,'/#/settings');
+  await page.getByRole('button',{name:'Detect passwords',exact:true}).click();
+  await page.getByRole('button',{name:'Change existing Existing bridge password'}).click();
+  const d=page.getByRole('dialog',{name:'Change existing app password'});
+  await d.getByLabel('New password',{exact:true}).fill('synthetic-new-fixture-password');
+  await d.getByRole('button',{name:'Change password',exact:true}).click();
+  expect(changed).toBeNull();
+  await d.getByLabel('Confirm new password').fill('synthetic-new-fixture-password');
+  await d.getByRole('button',{name:'Change password',exact:true}).click();
+  await expect(d).toContainText('Existing web password changed');
+  expect(changed).toEqual({source:'opencode-public',password:'synthetic-new-fixture-password'});
+  await expect(d.getByLabel('New password',{exact:true})).toHaveValue('');
+  expect(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).not.toContain('synthetic-new-fixture-password');
+});

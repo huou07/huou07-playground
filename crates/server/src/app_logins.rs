@@ -71,9 +71,7 @@ pub(crate) fn document(entries: &Value) -> Result<Vec<u8>, String> {
 }
 fn supported_public_login() -> Option<Value> {
     // Public bridge login only. Backend/provider/harness credentials are excluded.
-    let user = std::env::var("OPENCODE_PUBLIC_USERNAME").ok()?;
-    let password = std::env::var("OPENCODE_PUBLIC_PASSWORD").ok()?;
-    crate::native_proxy::basic(&user, &password)?;
+    let (user, password) = crate::native_proxy::public_login()?;
     Some(json!({"name":"OpenCode public web / DSH LAN bridge","username":user,"password":password}))
 }
 pub fn control(op: &str, v: &Value) -> Result<Value, String> {
@@ -81,7 +79,21 @@ pub fn control(op: &str, v: &Value) -> Result<Value, String> {
         "app_logins_status" => {
             let status = file(&json!({"op":"fs_login_status","area":"nas"}))?;
             Ok(
-                json!({"file":status,"sources":[{"id":"opencode-public","name":"OpenCode public web / DSH LAN bridge","available":supported_public_login().is_some(),"description":"Existing public bridge login only; native backend and provider credentials excluded."}],"note":"Linux/Cockpit/PAM and other hash-only passwords cannot be recovered. Unsupported apps use manual entry or their existing administration page. Apps without passwords need no entry."}),
+                json!({"file":status,"sources":[{"id":"opencode-public","name":"OpenCode public web / DSH LAN bridge","available":supported_public_login().is_some(),"can_change":crate::native_proxy::credentials().is_some(),"description":"Existing public bridge login only; native backend and provider credentials excluded."}],"note":"Linux/Cockpit/PAM and other hash-only passwords cannot be recovered. Unsupported apps use manual entry or their existing administration page. Apps without passwords need no entry."}),
+            )
+        }
+        "app_logins_change" => {
+            if v["source"] != "opencode-public" {
+                return Err("This app has no supported password-change adapter; use its existing administration page".into());
+            }
+            let (username, _) =
+                crate::native_proxy::public_login().ok_or("No existing supported web login")?;
+            crate::native_proxy::change_public_login(
+                &username,
+                v["password"].as_str().ok_or("Enter the new password")?,
+            )?;
+            Ok(
+                json!({"changed":true,"credentials_returned":false,"scope":"OpenCode public web and DSH LAN bridge only. Native/provider credentials are unchanged. Existing login exports need an explicit refresh."}),
             )
         }
         "app_logins_save" => {

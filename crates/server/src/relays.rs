@@ -15,13 +15,12 @@ pub fn run() {
         Ok(v) => v,
         Err(_) => return,
     };
-    let auth = crate::native_proxy::credentials();
     let local = std::env::var("OPENCODE_LOCAL_FORWARD_PORT")
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
         .filter(|p| *p >= 1024)
         .unwrap_or(4096);
-    native_listener("127.0.0.1".into(), local, 4097, None, auth.clone(), false);
+    native_listener("127.0.0.1".into(), local, 4097, None, false);
     if let Ok(interface) = std::env::var("LAN_DSH_INTERFACE") {
         if !interface.is_empty()
             && interface.len() <= 15
@@ -48,7 +47,6 @@ pub fn run() {
                                 14096,
                                 4097,
                                 Some(interface.clone()),
-                                auth.clone(),
                                 false,
                             );
                             native_listener(
@@ -56,7 +54,6 @@ pub fn run() {
                                 3080,
                                 3080,
                                 Some(interface.clone()),
-                                auth.clone(),
                                 true,
                             );
                         }
@@ -78,7 +75,6 @@ pub fn run() {
                 port as u16,
                 4097,
                 Some("wg0".into()),
-                auth.clone(),
                 false,
             );
             continue;
@@ -136,7 +132,6 @@ fn native_listener(
     port: u16,
     backend: u16,
     interface: Option<String>,
-    auth: Option<(String, String)>,
     handoff: bool,
 ) {
     std::thread::spawn(move || loop {
@@ -160,21 +155,8 @@ fn native_listener(
                 }
             }
             for stream in listener.incoming().flatten() {
-                let auth = auth.clone();
                 crate::bounded_spawn(move || {
-                    let (public, private) = auth.unwrap_or_default();
-                    // Missing trusted configuration always rejects authentication.
-                    crate::native_proxy::serve(
-                        stream,
-                        backend,
-                        &public,
-                        if handoff {
-                            None
-                        } else {
-                            Some(private.as_str())
-                        },
-                        handoff,
-                    );
+                    crate::native_proxy::managed_serve(stream, backend, handoff)
                 });
             }
         }

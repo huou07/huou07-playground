@@ -1,8 +1,12 @@
 //! Preserve the installed native web authentication bridge. Credentials stay in
 //! trusted service memory, never in URLs, reports, logs or worker launch envs.
 use std::{
+    collections::BTreeMap,
+    fs::OpenOptions,
     io::{self, BufRead, BufReader, Read, Write},
-    net::TcpStream,
+    net::{Shutdown, TcpStream},
+    os::unix::fs::OpenOptionsExt,
+    sync::{Mutex, OnceLock},
     time::Duration,
 };
 
@@ -22,16 +26,154 @@ pub fn basic(user: &str, password: &str) -> Option<String> {
         .map(str::to_owned)
 }
 pub fn credentials() -> Option<(String, String)> {
+    let (user, password) = public_login()?;
     Some((
-        basic(
-            &std::env::var("OPENCODE_PUBLIC_USERNAME").ok()?,
-            &std::env::var("OPENCODE_PUBLIC_PASSWORD").ok()?,
-        )?,
+        basic(&user, &password)?,
         basic(
             &std::env::var("OPENCODE_BACKEND_USERNAME").ok()?,
             &std::env::var("OPENCODE_BACKEND_PASSWORD").ok()?,
         )?,
     ))
+}
+pub(crate) fn public_login() -> Option<(String, String)> {
+    // Never enable a new auth layer when the original bridge has no login.
+    let initial = (
+        std::env::var("OPENCODE_PUBLIC_USERNAME").ok()?,
+        std::env::var("OPENCODE_PUBLIC_PASSWORD").ok()?,
+    );
+    basic(&initial.0, &initial.1)?;
+    match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(crate::helper::dir().join("public-web-login.json"))
+    {
+        Ok(file) => {
+            if file.metadata().ok()?.len() > 8192 {
+                return None;
+            }
+            let value: serde_json::Value = serde_json::from_reader(file.take(8193)).ok()?;
+            let login = (
+                value["username"].as_str()?.to_owned(),
+                value["password"].as_str()?.to_owned(),
+            );
+            basic(&login.0, &login.1)?;
+            Some(login)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Some(initial),
+        Err(_) => None,
+    }
+}
+struct Active {
+    client: TcpStream,
+    backend: Option<TcpStream>,
+}
+struct Live {
+    auth: Option<(String, String)>,
+    generation: u64,
+    next: u64,
+    active: BTreeMap<u64, Active>,
+}
+fn disconnect(state: &mut Live) {
+    state.generation = state.generation.wrapping_add(1);
+    for connection in state.active.values() {
+        let _ = connection.client.shutdown(Shutdown::Both);
+        if let Some(backend) = &connection.backend {
+            let _ = backend.shutdown(Shutdown::Both);
+        }
+    }
+    state.active.clear();
+}
+fn live() -> &'static Mutex<Live> {
+    static AUTH: OnceLock<Mutex<Live>> = OnceLock::new();
+    AUTH.get_or_init(|| {
+        Mutex::new(Live {
+            auth: credentials(),
+            generation: 0,
+            next: 0,
+            active: BTreeMap::new(),
+        })
+    })
+}
+pub(crate) fn change_public_login(username: &str, password: &str) -> Result<(), String> {
+    if public_login().is_none() || credentials().is_none() {
+        return Err(
+            "No supported existing public web login. No authentication will be added.".into(),
+        );
+    }
+    if username.len() > 256
+        || username.chars().any(char::is_control)
+        || !(12..=256).contains(&password.len())
+        || password.chars().any(char::is_control)
+    {
+        return Err("Use a valid existing username and a password of 12 to 256 bytes without control characters.".into());
+    }
+    let public = basic(username, password).ok_or("Invalid public login")?;
+    let mut state = live().lock().unwrap_or_else(|e| e.into_inner());
+    let Some((_, backend)) = &state.auth else {
+        return Err("Public bridge configuration is unavailable".into());
+    };
+    let replacement = (public, backend.clone());
+    let path = crate::helper::dir().join("public-web-login.json");
+    let temporary = path.with_extension(crate::random_token()?);
+    let mut bytes =
+        serde_json::to_vec(&serde_json::json!({"username":username,"password":password}))
+            .map_err(|_| "Login encoding failed")?;
+    let mut renamed = false;
+    let result = (|| -> io::Result<()> {
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&temporary)?;
+        output.write_all(&bytes)?;
+        output.sync_all()?;
+        std::fs::rename(&temporary, &path)?;
+        renamed = true;
+        std::fs::File::open(crate::helper::dir())?.sync_all()
+    })();
+    bytes.fill(0);
+    if result.is_err() {
+        let _ = std::fs::remove_file(temporary);
+        if renamed {
+            state.auth = None;
+            disconnect(&mut state);
+            return Err("Login persistence is uncertain. The bridge was disabled; repair storage and restart the H07P helper before retrying.".into());
+        }
+        return Err("Could not save the public web login".into());
+    }
+    state.auth = Some(replacement);
+    disconnect(&mut state);
+    Ok(())
+}
+pub(crate) fn managed_serve(client: TcpStream, port: u16, handoff: bool) {
+    let (id, generation, auth) = {
+        let mut state = live().lock().unwrap_or_else(|e| e.into_inner());
+        let Ok(copy) = client.try_clone() else { return };
+        state.next = state.next.wrapping_add(1);
+        let id = state.next;
+        state.active.insert(
+            id,
+            Active {
+                client: copy,
+                backend: None,
+            },
+        );
+        (id, state.generation, state.auth.clone().unwrap_or_default())
+    };
+    serve_inner(
+        client,
+        port,
+        &auth.0,
+        if handoff { None } else { Some(&auth.1) },
+        handoff,
+        Some((id, generation)),
+    );
+    live()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .active
+        .remove(&id);
 }
 fn equal(a: &[u8], b: &[u8]) -> bool {
     let mut difference = a.len() ^ b.len();
@@ -206,12 +348,23 @@ fn chunks(input: impl Read, output: &mut impl Write) -> io::Result<()> {
 fn respond(client: &mut TcpStream, code: &str, extra: &str) {
     let _=write!(client,"HTTP/1.1 {code}\r\n{extra}Cache-Control: no-store\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
 }
+#[cfg(test)]
 pub fn serve(
+    client: TcpStream,
+    port: u16,
+    expected: &str,
+    replacement: Option<&str>,
+    handoff: bool,
+) {
+    serve_inner(client, port, expected, replacement, handoff, None);
+}
+fn serve_inner(
     mut client: TcpStream,
     port: u16,
     expected: &str,
     replacement: Option<&str>,
     handoff: bool,
+    managed: Option<(u64, u64)>,
 ) {
     let _ = client.set_read_timeout(Some(Duration::from_secs(5)));
     let _ = client.set_write_timeout(Some(Duration::from_secs(180)));
@@ -269,6 +422,19 @@ pub fn serve(
         respond(&mut client, "503 Service Unavailable", "");
         return;
     };
+    if let Some((id, generation)) = managed {
+        let mut state = live().lock().unwrap_or_else(|e| e.into_inner());
+        if generation != state.generation {
+            return;
+        }
+        let Some(connection) = state.active.get_mut(&id) else {
+            return;
+        };
+        let Ok(copy) = upstream.try_clone() else {
+            return;
+        };
+        connection.backend = Some(copy);
+    }
     for stream in [&client, &upstream] {
         let _ = stream.set_read_timeout(Some(Duration::from_secs(180)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(180)));
