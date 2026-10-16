@@ -36,6 +36,18 @@ drop-ins require reconciliation before installation; other customizations remain
 Dashboard/helper drop-ins remain active and require review because they can
 change the packaged unit's restrictions.
 The root helper owns existing VPN relays; the dashboard listens on loopback.
+The installed legacy Python dashboard also owned an OpenCode password bridge.
+The Rust helper now preserves this bridge on loopback 4096, VPN 14096 and the
+previously configured LAN interface. Existing root-protected
+`opencode-proxy.env` supplies the same public/backend credentials; they are never
+rewritten or exposed to workers. Only public listener settings are migrated from
+the adopted unit into `native-network.env`, retaining later owner edits. The
+bridge replaces owner Authorization, strips the dashboard cookie, streams bounded
+Content-Length/chunked requests and SSE responses, and supports WebSocket upgrade.
+Normal HTTP uses one request per connection; ambiguous/pipelined framing is
+rejected and chunked trailers are dropped. The existing DSH LAN login handoff is
+retained. Authenticated behavior uses synthetic bridge fixtures; production
+passwords/model calls are not acceptance fixtures.
 The helper shares host `/tmp` for owner Storage visibility. Managed worker services
 have their own systemd temporary namespace and a per-worker 0700 TMPDIR. DSH web
 has a narrow runtime-handoff write exception; all other external runtime paths

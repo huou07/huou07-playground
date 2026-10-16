@@ -14,6 +14,56 @@ pub fn run() {
         Ok(v) => v,
         Err(_) => return,
     };
+    let auth = crate::native_proxy::credentials();
+    let local = std::env::var("OPENCODE_LOCAL_FORWARD_PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .filter(|p| *p >= 1024)
+        .unwrap_or(4096);
+    native_listener("127.0.0.1".into(), local, 4097, None, auth.clone(), false);
+    if let Ok(interface) = std::env::var("LAN_DSH_INTERFACE") {
+        if !interface.is_empty()
+            && interface.len() <= 15
+            && interface
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+        {
+            if let Ok(output) = std::process::Command::new("/usr/sbin/ip")
+                .args(["-j", "-4", "address", "show", "dev", &interface])
+                .output()
+            {
+                if let Ok(rows) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                    for address in rows
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|r| r["addr_info"].as_array().into_iter().flatten())
+                        .filter_map(|r| r["local"].as_str())
+                        .take(16)
+                    {
+                        if address.parse::<std::net::Ipv4Addr>().is_ok() {
+                            native_listener(
+                                address.into(),
+                                14096,
+                                4097,
+                                Some(interface.clone()),
+                                auth.clone(),
+                                false,
+                            );
+                            native_listener(
+                                address.into(),
+                                3080,
+                                3080,
+                                Some(interface.clone()),
+                                auth.clone(),
+                                true,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
     for service in value["services"].as_array().into_iter().flatten() {
         let Some(port) = service["wireguard_port"].as_u64() else {
             continue;
@@ -21,6 +71,17 @@ pub fn run() {
         let Some(backend) = service["backend_port"].as_u64() else {
             continue;
         };
+        if service["id"] == "opencode-web" {
+            native_listener(
+                "10.8.0.1".into(),
+                port as u16,
+                4097,
+                Some("wg0".into()),
+                auth.clone(),
+                false,
+            );
+            continue;
+        }
         std::thread::spawn(move || loop {
             match TcpListener::bind(("10.8.0.1", port as u16)) {
                 Ok(listener) => {
@@ -67,4 +128,55 @@ pub fn run() {
             }
         });
     }
+}
+
+fn native_listener(
+    address: String,
+    port: u16,
+    backend: u16,
+    interface: Option<String>,
+    auth: Option<(String, String)>,
+    handoff: bool,
+) {
+    std::thread::spawn(move || loop {
+        if let Ok(listener) = TcpListener::bind((address.as_str(), port)) {
+            if let Some(ref device) = interface {
+                let Ok(device) = std::ffi::CString::new(device.as_str()) else {
+                    return;
+                };
+                if unsafe {
+                    libc::setsockopt(
+                        listener.as_raw_fd(),
+                        libc::SOL_SOCKET,
+                        libc::SO_BINDTODEVICE,
+                        device.as_ptr() as *const _,
+                        device.as_bytes_with_nul().len() as _,
+                    )
+                } != 0
+                {
+                    std::thread::sleep(Duration::from_secs(2));
+                    continue;
+                }
+            }
+            for stream in listener.incoming().flatten() {
+                let auth = auth.clone();
+                crate::bounded_spawn(move || {
+                    let (public, private) = auth.unwrap_or_default();
+                    // Missing trusted configuration always rejects authentication.
+                    crate::native_proxy::serve(
+                        stream,
+                        backend,
+                        &public,
+                        if handoff {
+                            None
+                        } else {
+                            Some(private.as_str())
+                        },
+                        handoff,
+                    );
+                });
+            }
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    });
 }

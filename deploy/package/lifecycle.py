@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
+import re
 import subprocess
 import sys
 import time
@@ -252,6 +254,7 @@ def configure():
     version = path('/usr/lib/huou07-playground/version').read_text().strip()
     if not version or '/' in version or version in ('.', '..'):
         raise RuntimeError('Invalid installed release version')
+    preserve_native_network(current_backup())
     for name in SERVICES:
         path('/etc/systemd/system').mkdir(parents=True, exist_ok=True)
         path('/etc/systemd/system/' + name).unlink(missing_ok=True)
@@ -296,6 +299,34 @@ def configure():
             raise RuntimeError('Dashboard health check failed')
     except Exception:
         raise
+
+
+def preserve_native_network(backup):
+    """Copy only public listener metadata from the adopted unit, never its auth."""
+    destination = path('/etc/huou07-playground/native-network.env')
+    if destination.is_symlink():
+        raise RuntimeError('Refusing symbolic link native network settings')
+    if destination.exists() or backup is None:
+        return
+    unit = backup / 'huou07-playground.service'
+    if not unit.is_file():
+        return
+    settings = {}
+    for line in unit.read_text().splitlines():
+        if not line.startswith('Environment='):
+            continue
+        for value in shlex.split(line.split('=', 1)[1]):
+            key, sep, item = value.partition('=')
+            if not sep:
+                continue
+            if key == 'LAN_DSH_INTERFACE' and re.fullmatch(r'[A-Za-z0-9_-]{1,15}', item):
+                settings[key] = item
+            if key == 'OPENCODE_LOCAL_FORWARD_PORT' and item.isdigit() and 1024 <= int(item) <= 65535:
+                settings[key] = item
+    if settings:
+        with destination.open('x') as output:
+            output.write(''.join(key+'='+value+'\n' for key, value in sorted(settings.items())))
+        destination.chmod(0o644)
 
 
 def main():

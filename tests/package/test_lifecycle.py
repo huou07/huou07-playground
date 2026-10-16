@@ -31,6 +31,17 @@ class PackageBoundary(unittest.TestCase):
             lifecycle.protected('/var/lib/huou07-playground')
         self.assertEqual(list(outside.iterdir()), [])
 
+    def test_only_public_native_listener_settings_migrate(self):
+        backup=self.root/'backup';backup.mkdir()
+        (self.root/'etc/huou07-playground').mkdir(parents=True)
+        (backup/'huou07-playground.service').write_text('Environment="LAN_DSH_INTERFACE=eth0" "OPENCODE_LOCAL_FORWARD_PORT=4096" "OPENCODE_PUBLIC_PASSWORD=synthetic-private"\nEnvironment=UNRELATED=synthetic-other\n')
+        lifecycle.preserve_native_network(backup)
+        target=lifecycle.path('/etc/huou07-playground/native-network.env')
+        self.assertEqual(target.read_text(),'LAN_DSH_INTERFACE=eth0\nOPENCODE_LOCAL_FORWARD_PORT=4096\n')
+        target.write_text('LAN_DSH_INTERFACE=owner-changed\n')
+        lifecycle.preserve_native_network(backup)
+        self.assertEqual(target.read_text(),'LAN_DSH_INTERFACE=owner-changed\n')
+
     def test_unknown_unit_is_never_adopted(self):
         unit = self.root / 'etc/systemd/system/huou07-playground.service'
         unit.parent.mkdir(parents=True)

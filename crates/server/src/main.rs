@@ -8,6 +8,8 @@ mod files;
 mod guard;
 #[cfg(target_os = "linux")]
 mod helper;
+#[cfg(target_os = "linux")]
+mod native_proxy;
 mod redact;
 #[cfg(target_os = "linux")]
 mod relays;
