@@ -64,6 +64,7 @@ pub fn router() -> Router {
         .route("/api/vpn", get(vpn))
         .route("/api/private-service-ports", get(ports))
         .route("/api/apps", get(apps).post(mutate))
+        .route("/api/apps/discover", axum::routing::post(discover))
         .route("/api/apps/icon", get(icon))
         .route("/api/apps/launch", get(launch))
         .layer(axum::extract::DefaultBodyLimit::max(65536))
@@ -188,8 +189,123 @@ async fn ports() -> Response {
     )
 }
 
+// Read host socket metadata, never probe a subnet or accept a client-supplied target.
+pub(crate) fn listening_targets(sample: &str) -> (Vec<std::net::SocketAddr>, bool) {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+    let mut targets = BTreeSet::new();
+    let mut partial = false;
+    for line in sample.lines() {
+        let fields: Vec<_> = line.split_whitespace().take(6).collect();
+        if fields.first() != Some(&"LISTEN") {
+            continue;
+        }
+        let Some(endpoint) = fields.get(3) else {
+            continue;
+        };
+        let Some((host, port)) = endpoint.rsplit_once(':') else {
+            continue;
+        };
+        let Ok(port) = port.parse::<u16>() else {
+            continue;
+        };
+        if port == 0 {
+            continue;
+        }
+        let host = host.trim_matches(['[', ']']);
+        let ip = match host {
+            "*" | "0.0.0.0" => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            "::" => IpAddr::V6(Ipv6Addr::LOCALHOST),
+            _ => match host.parse::<IpAddr>() {
+                Ok(ip) => ip,
+                Err(_) => continue,
+            },
+        };
+        if ip.is_multicast() || ip.is_unspecified() {
+            continue;
+        }
+        let address = SocketAddr::new(ip, port);
+        if targets.contains(&address) {
+            continue;
+        }
+        if targets.len() == 64 {
+            partial = true;
+            continue;
+        }
+        targets.insert(address);
+    }
+    (targets.into_iter().collect(), partial)
+}
+fn probe_web(client: &reqwest::blocking::Client, address: std::net::SocketAddr) -> Option<Value> {
+    // Never offer the unprotected native backend behind H07P's existing auth bridge.
+    if address.port() == 4097 {
+        return None;
+    }
+    for scheme in ["http", "https"] {
+        let url = format!("{scheme}://{address}/");
+        if let Ok(response) = client.head(&url).send() {
+            return Some(
+                json!({"name":format!("Web service {}",address.port()),"url":url,
+                "bind_address":address.ip().to_string(),"port":address.port(),
+                "scope":if address.ip().is_loopback(){"localhost"}else{"host interface"},
+                "http_status":response.status().as_u16(),"authentication":"unchanged",
+                "loopback_only":address.ip().is_loopback()}),
+            );
+        }
+    }
+    None
+}
+fn discover_web() -> Value {
+    let Some(sample) = command("ss", &["-H", "-ltn"], 2) else {
+        return json!({"available":false,"apps":[],"reason":"Cannot inspect listening sockets. Install iproute2 or use a manual application URL."});
+    };
+    let (targets, partial) = listening_targets(&sample);
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_millis(300))
+        .build()
+    else {
+        return json!({"available":false,"apps":[],"reason":"HTTP discovery is unavailable."});
+    };
+    let mut apps = Vec::new();
+    for batch in targets.chunks(8) {
+        std::thread::scope(|scope| {
+            let jobs: Vec<_> = batch
+                .iter()
+                .map(|address| {
+                    let client = &client;
+                    scope.spawn(move || probe_web(client, *address))
+                })
+                .collect();
+            for job in jobs {
+                if let Ok(Some(app)) = job.join() {
+                    apps.push(app);
+                }
+            }
+        });
+    }
+    json!({"available":true,"apps":apps,"partial":partial,"checked":targets.len(),
+        "limit":64,"credentials_read":false,"authentication_changed":false,
+        "note":"Host listeners only; HEAD requests without credentials or redirects. TLS certificate errors, slow services and services requiring GET may need a manual URL. Localhost URLs require a VPN relay or SSH forward on another device."})
+}
+async fn discover(State(api): State<Shared>) -> Response {
+    // One interactive scan at a time; no timer, persistent index or idle work.
+    let Ok(permit) = api.work.clone().try_acquire_many_owned(8) else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    match tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        discover_web()
+    })
+    .await
+    {
+        Ok(value) => json_response(value),
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+}
+
 /// Bounded command output and wall time, with no shell or inherited locale.
-fn command(binary: &str, args: &[&str], seconds: u64) -> Option<String> {
+pub(crate) fn command(binary: &str, args: &[&str], seconds: u64) -> Option<String> {
     use std::os::unix::process::CommandExt;
     let mut cmd = Command::new(binary);
     cmd.args(args)
@@ -1596,6 +1712,53 @@ async fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn discovery_uses_only_valid_bounded_host_listeners() {
+        let sample = "LISTEN 0 128 0.0.0.0:8765 0.0.0.0:*\nLISTEN 0 128 [::]:9090 [::]:*\nLISTEN 0 128 192.168.1.2:3000 0.0.0.0:*\nLISTEN 0 128 dns.invalid:80 0.0.0.0:*\nLISTEN 0 128 224.0.0.1:4000 0.0.0.0:*\nESTAB 0 0 127.0.0.1:1 127.0.0.1:2\nLISTEN 0 128 127.0.0.1:8765 0.0.0.0:*";
+        let (targets, partial) = listening_targets(sample);
+        assert!(!partial);
+        assert_eq!(targets.len(), 3);
+        assert!(targets.contains(&"127.0.0.1:8765".parse().unwrap()));
+        assert!(targets.contains(&"[::1]:9090".parse().unwrap()));
+        assert!(targets.contains(&"192.168.1.2:3000".parse().unwrap()));
+        let many = (1000..1100)
+            .map(|p| format!("LISTEN 0 128 127.0.0.1:{p} 0.0.0.0:*\n"))
+            .collect::<String>();
+        let (targets, partial) = listening_targets(&many);
+        assert_eq!(targets.len(), 64);
+        assert!(partial);
+    }
+    #[test]
+    fn discovery_preserves_auth_and_does_not_follow_redirects() {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut bytes = [0; 4096];
+            let n = stream.read(&mut bytes).unwrap();
+            let request = String::from_utf8_lossy(&bytes[..n]);
+            assert!(request.starts_with("HEAD / HTTP/1.1"));
+            assert!(!request.to_lowercase().contains("authorization:"));
+            assert!(!request.to_lowercase().contains("cookie:"));
+            stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://unrelated.invalid/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        });
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap();
+        let app = probe_web(&client, address).unwrap();
+        assert_eq!(app["http_status"], 302);
+        assert_eq!(app["authentication"], "unchanged");
+        assert_eq!(app["loopback_only"], true);
+        server.join().unwrap();
+        assert!(probe_web(&client, "127.0.0.1:4097".parse().unwrap()).is_none());
+    }
     fn fixture() -> PathBuf {
         let p = std::env::temp_dir().join(format!(
             "telemetry-fixture-{}-{}",

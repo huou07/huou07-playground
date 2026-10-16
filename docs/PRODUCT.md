@@ -10,6 +10,12 @@ UI preferences and versioned policy templates. Extensibility starts with typed
 internal adapters and versioned APIs; add extension boundaries for demonstrated
 callers rather than a speculative plugin daemon or platform.
 
+Optimization must preserve owner authentication, private NAS, worker credential
+separation and safe data handling. Web-app discovery, shortcuts and VPN exposure
+preserve each application's existing login behavior. Do not introduce passwords
+or an authentication proxy for apps that have no existing password. Supported
+password export/change is a separate explicit owner action for existing app logins.
+
 This preparation stage maintains contracts and verification paths; the existing
 Rust health/static baseline is mapped in [IMPLEMENTATION.md](IMPLEMENTATION.md).
 Remaining migration and new screens are tracked only in [ROADMAP.md](ROADMAP.md).

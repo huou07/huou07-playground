@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 pub fn run() {
+    crate::vpn_apps::restore();
     let config = std::env::var("H07P_PRIVATE_SERVICES")
         .unwrap_or_else(|_| "/etc/huou07-playground/private-services.json".into());
     let bytes = std::fs::read(config)

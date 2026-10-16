@@ -358,6 +358,16 @@ async fn guard_post(Path(op): Path<String>, Json(mut v): Json<Value>) -> Respons
     v["op"] = format!("guard_{op}").into();
     rpc_response(rpc(&v).await)
 }
+async fn vpn_apps_get() -> Response {
+    rpc_response(rpc(&json!({"op":"vpn_apps_status"})).await)
+}
+async fn vpn_apps_post(Path(op): Path<String>, Json(mut v): Json<Value>) -> Response {
+    if !["add", "remove"].contains(&op.as_str()) {
+        return fail(StatusCode::NOT_FOUND, "Unknown VPN operation");
+    }
+    v["op"] = format!("vpn_apps_{op}").into();
+    rpc_response(rpc(&v).await)
+}
 async fn mutate(Json(mut v): Json<Value>) -> Response {
     v["op"] = "fs_mutate".into();
     rpc_response(rpc(&v).await)
@@ -584,6 +594,8 @@ pub fn app(static_root: PathBuf) -> Result<Router, String> {
         .route("/api/owner/session", get(owner_session))
         .route("/api/owner/logout", post(logout))
         .route("/api/control/status", get(status))
+        .route("/api/setup/vpn/apps", get(vpn_apps_get))
+        .route("/api/setup/vpn/apps/{op}", post(vpn_apps_post))
         .route("/api/control/{op}", post(control))
         .route(
             "/api/security/credential-guard/{op}",

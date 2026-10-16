@@ -571,6 +571,67 @@
     });
   }
   $('policy-refresh').addEventListener('click',()=>loadPolicy());
+  $('apps-discover').addEventListener('click', async () => {
+    const d=dialog('Detect web services'), results=el('div'), controller=new AbortController();
+    d.add(el('p','Check web services listening on this server only. Detection reads no passwords and keeps each app’s authentication unchanged. Nothing is added automatically.','panel-note'),results);
+    d.node.addEventListener('close',()=>controller.abort());
+    message(d.status,'Checking host listeners…');
+    try {
+      const data=await api('/api/apps/discover',{method:'POST',body:{},signal:controller.signal});
+      if(!d.node.isConnected)return;
+      if(!data.available)throw new Error(data.reason || 'Discovery unavailable. Enter an application URL manually.');
+      for(const candidate of data.apps || []) {
+        const row=el('div',undefined,'product-scan-row');
+        row.append(el('strong',candidate.url),el('p',candidate.scope+' · HTTP '+candidate.http_status+' · Login unchanged','panel-note'));
+        if(candidate.loopback_only)row.append(el('p','This localhost link opens on the device using the browser. Configure its VPN relay before using it remotely.','product-warning'));
+        row.append(button('Use this service',()=>{
+          // Reuse the registry's existing validation/review form; never auto-save discovery.
+          $('app-cancel').click();
+          const form=$('app-form');
+          form.elements.name.value=candidate.name;
+          form.elements.url.value=candidate.url;
+          form.elements.description.value='Detected web service on this server';
+          $('app-form-status').textContent='Review the name and reachable URL, then choose Add application. Login remains unchanged.';
+          d.close();form.elements.name.focus();form.scrollIntoView({block:'center'});
+        }),button('Set up VPN access',()=>setupAppVpn(candidate)));results.append(row);
+      }
+      message(d.status,((data.apps || []).length+' web services detected. ')+(data.partial?'Partial result: listener limit reached. ':'')+(data.note || ''));
+    }catch(error){if(error.name!=='AbortError'&&d.node.isConnected)message(d.status,error.message,true);}
+  });
+  function setupAppVpn(candidate) {
+    const d=dialog('Set up app VPN access'), name=input('vpn-name',candidate.name), port=input('vpn-port',candidate.port,'number');
+    port.min='1024';port.max='65535';name.maxLength=60;
+    d.add(label('App name',name),label('VPN port',port),el('p','Forward '+candidate.url+' through WireGuard at 10.8.0.1. Only devices authorized by your VPN can reach this relay. Each app keeps its existing login behavior; apps without passwords stay without passwords.','panel-note'),el('p','Choose a different VPN port if this port is already in use. This does not configure your router or create a WireGuard tunnel.','product-warning'));
+    const apply=button('Create VPN relay',async()=>{
+      if(!name.value.trim()||!port.checkValidity()) {message(d.status,'Enter an app name and a valid VPN port.',true);return;}
+      apply.disabled=true;message(d.status,'Creating the selected relay…');
+      try {
+        const target=new URL(candidate.url), backend=target.hostname.includes(':')?target.hostname.replace(/^\[|\]$/g,''):target.hostname;
+        const address=(backend.includes(':')?'['+backend+']':backend)+':'+(target.port||(target.protocol==='https:'?'443':'80'));
+        await api('/api/setup/vpn/apps/add',{method:'POST',body:{config:{name:name.value.trim(),target:address,port:Number(port.value)}}});
+        target.hostname='10.8.0.1';target.port=port.value;
+        $('app-cancel').click();const form=$('app-form');form.elements.name.value=name.value.trim();form.elements.url.value=target.href;
+        $('app-form-status').textContent='VPN relay created. Choose Add application to save this shortcut. App login is unchanged.';
+        message(d.status,'Relay configured at '+target.href+'. Add its shortcut in the application form.');apply.remove();d.actions.firstChild.textContent='Close';
+      }catch(error){message(d.status,error.message,true);apply.disabled=false;}
+    },'primary');d.actions.append(apply);
+  }
+  $('apps-vpn').addEventListener('click',async()=>{
+    const d=dialog('App VPN relays'),list=el('div');d.add(list);message(d.status,'Loading VPN configuration…');
+    const load=async()=>{
+      const data=await api('/api/setup/vpn/apps');if(!d.node.isConnected)return;
+      list.replaceChildren(el('p',data.wireguard_present?'WireGuard interface wg0 is present.':'WireGuard wg0 is unavailable. Open your existing WireGuard administration app to finish tunnel setup.','panel-note'));
+      for(const relay of data.relays||[]) {
+        const row=el('div',undefined,'product-scan-row');row.append(el('strong',relay.name),el('p',relay.target+' → '+relay.host+':'+relay.port+' · '+(relay.listening?'Listening':'Unavailable — remove and detect again')));
+        row.append(button('Remove relay',()=>{
+          const confirm=dialog('Remove VPN relay');confirm.add(el('p','Close '+relay.host+':'+relay.port+' and disconnect its active relay connections. The app and its saved shortcut remain.'));
+          const remove=button('Confirm removal',async()=>{remove.disabled=true;try{await api('/api/setup/vpn/apps/remove',{method:'POST',body:{port:relay.port}});confirm.close();await load();}catch(error){message(confirm.status,error.message,true);remove.disabled=false;}},'danger');confirm.actions.append(remove);
+        }));list.append(row);
+      }
+      message(d.status,(data.relays||[]).length+' additional app relays. Built-in relays are managed by the installed package. App authentication is unchanged.');
+    };
+    try{await load();}catch(error){if(d.node.isConnected)message(d.status,error.message,true);}
+  });
   async function route() {
     await window.h07pSessionReady;
     const current=location.hash.slice(2);

@@ -495,3 +495,36 @@ test('app icons use authenticated blobs and harness launch fetches its private U
   await expect(page.locator('.app-icon')).toHaveCount(0);
   expect((await page.evaluate(() => window.fixtureRevoked)).length).toBeGreaterThan(0);
 });
+
+test('web discovery is explicit and offers a registry draft without changing app authentication', async ({ page }) => {
+  const { calls } = await fixture(page);
+  await page.route('**/api/apps/discover', route => route.fulfill({json:{available:true,apps:[{name:'Web service 8088',url:'http://127.0.0.1:8088/',scope:'localhost',http_status:200,loopback_only:true}],checked:1,partial:false,note:'Login stays unchanged.'}}));
+  await gotoOwner(page,'/#/settings');
+  expect(calls.filter(call=>call.path==='/api/apps/discover')).toHaveLength(0);
+  await page.getByRole('button',{name:'Detect web services',exact:true}).click();
+  const detection=page.getByRole('dialog',{name:'Detect web services',exact:true});
+  await expect(detection).toContainText('http://127.0.0.1:8088/');
+  await expect(detection).toContainText('Login unchanged');
+  await detection.getByRole('button',{name:'Use this service'}).click();
+  await expect(page.locator('#app-form input[name="url"]')).toHaveValue('http://127.0.0.1:8088/');
+  expect(calls.filter(call=>call.path==='/api/apps'&&call.method==='POST')).toHaveLength(0);
+  await expect(page.locator('#app-form-status')).toContainText('Login remains unchanged');
+});
+
+test('VPN setup reviews a selected app and preserves anonymous app authentication', async ({ page }) => {
+  const {calls}=await fixture(page);
+  await page.route('**/api/apps/discover',route=>route.fulfill({json:{available:true,apps:[{name:'Anonymous fixture',url:'http://127.0.0.1:8088/',port:8088,scope:'localhost',http_status:200,loopback_only:true}]}}));
+  await gotoOwner(page,'/#/settings');
+  await page.getByRole('button',{name:'Detect web services',exact:true}).click();
+  await page.getByRole('button',{name:'Set up VPN access',exact:true}).click();
+  const review=page.getByRole('dialog',{name:'Set up app VPN access',exact:true});
+  await expect(review).toContainText('apps without passwords stay without passwords');
+  await review.getByLabel('VPN port').fill('18088');
+  await review.getByRole('button',{name:'Create VPN relay'}).click();
+  await expect(review).toContainText('http://10.8.0.1:18088/');
+  const call=calls.find(call=>call.path==='/api/setup/vpn/apps/add');
+  expect(call.body.config).toEqual({name:'Anonymous fixture',target:'127.0.0.1:8088',port:18088});
+  expect(Object.keys(call.body.config)).not.toContain('password');
+  expect(call.headers['x-h07p-csrf']).toBe('fixture-csrf');
+  expect(calls.filter(call=>call.path==='/api/apps'&&call.method==='POST')).toHaveLength(0);
+});

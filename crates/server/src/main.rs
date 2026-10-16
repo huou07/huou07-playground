@@ -18,6 +18,8 @@ mod sandbox;
 #[cfg(target_os = "linux")]
 mod scan;
 mod telemetry;
+#[cfg(target_os = "linux")]
+mod vpn_apps;
 use std::{io::Read, path::PathBuf};
 pub fn now() -> u64 {
     std::time::SystemTime::now()

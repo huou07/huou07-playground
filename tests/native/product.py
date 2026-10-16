@@ -118,6 +118,8 @@ def main():
                 pass
             time.sleep(.05)
         check(request("/api/metrics", authenticated=False)[0] == 401, "telemetry requires owner")
+        check(request('/api/apps/discover',{},authenticated=False)[0]==401,'web discovery requires owner authentication')
+        check(request('/api/setup/vpn/apps',authenticated=False)[0]==401,'VPN app metadata requires owner authentication')
         check(request('/api/fs/search',dict(area='nas',path='/',query='fixture'),authenticated=False)[0]==401,'private search requires owner authentication')
         check(value("/api/owner/session")[1]["authenticated"] is False, "anonymous session")
         check(request("/api/owner/login", {"username": account, "password": "incorrect"})[0] == 401,
@@ -127,11 +129,15 @@ def main():
         csrf = login["csrf"]
         check(all(c.has_nonstandard_attr("HttpOnly") for c in jar), "HTTP-only cookie")
         check(value("/api/owner/session")[1]["authenticated"], "session persisted")
+        code,vpn_apps=value('/api/setup/vpn/apps')
+        check(code==200 and vpn_apps['relays']==[],'owner can inspect isolated VPN app configuration')
+        check(request('/api/setup/vpn/apps/unknown',{})[0]==404,'VPN setup rejects arbitrary helper operations')
         saved = csrf
         csrf = ""
         check(value("/api/owner/session")[1]["authenticated"] is False,
               "cookie exposed to another port cannot bootstrap owner proof")
         check(request("/api/metrics")[0] == 403, "cookie alone cannot read owner telemetry")
+        check(request('/api/apps/discover',{})[0]==403,'web discovery rejects a cross-port cookie without owner proof')
         csrf = saved
         check(request("/api/fs/mutate", {"area": "nas", "action": "mkdir", "path": "/forged"},
                       headers={"Origin": "http://evil.invalid"})[0] == 403, "cross-origin mutation rejected")

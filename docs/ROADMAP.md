@@ -40,6 +40,21 @@ owner/API checks, 26 browser contract tests, and real sandbox checks including
 individual-worker overrides and disabled launches. These checks do not establish
 the remaining setup, discovery, worker lifecycle or password GUI outcomes.
 
+Second implementation checkpoint: explicit host-listener web discovery and
+reviewed additional-app VPN relay GUI are implemented. Discovery uses at most
+64 host sockets, eight bounded HEAD probes at a time, no credentials, no redirects
+and no persistent polling. Additional relays bind exclusively to wg0/10.8.0.1,
+preserve app authentication, reserve built-in/internal ports, persist privately,
+and close active streams on removal. Existing UFW rules must be preserved.
+Debian checks passed: 38 Rust tests, Clippy, release build, 69 native PAM/API
+checks, 28 browser contracts, and the new isolated-network typed-helper test
+covering actual interface denial, stream preservation, revocation and persistence.
+An initial test incorrectly treated host-local traffic as LAN ingress; the
+discriminating veth/network-namespace check now tests actual foreign-interface
+ingress. This is not fresh WireGuard bootstrap, encrypted dynamic-relay acceptance,
+GUI worker lifecycle, password management or deployment acceptance. Those remain
+open; production remains 0.2.2.
+
 
 ## Current authorized product integration, 2026-10-15
 
