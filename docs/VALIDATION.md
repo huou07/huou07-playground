@@ -48,14 +48,21 @@ full Debian systemd VM installation test.
 | `secret-scan` | pinned Gitleaks 8.30.1 with the shipped ruleset, redacted, over the commit range under review | the range, not the whole tree: a whole-tree scan reports the repository's synthetic test fixtures and any local lab cache, so whole-tree enforcement needs an owner decision |
 | `security-audit` | `sudo python3 tools/security-audit.py` against the synthetic owner/service/worker identities created in the job, then uploads its metadata-only reports | the identities are synthetic: it proves the audit tool executes and emits evidence, not the real Debian finding |
 
-Hosted execution for the revision this table was written for: CI run
-`39042858735` (push, `095603b8ae0e43ef7c052a1204d37087ad00dce0`, workflow CI) is
-green for every job in the table above that existed at that revision, including
-the aggregate `release-gate`. The `security-audit` job was added after that
-revision, so its first hosted execution is the dispatched `release.yml` run
-recorded in [QUALITY](QUALITY.md) once it has run. Re-check the run for a later
-revision: a green run at another SHA is `STALE`, not evidence for HEAD, and a
-skipped or not-run lane is never a pass.
+Hosted execution, checked 2026-10-18:
+
+- CI run `39054428135` (push, `f6580e4905ace4e1006aaa4ff5c3e5c426e41b43`) is
+  green for every job in the table above, including the new `security-audit` job
+  and the aggregate `release-gate`.
+- Release workflow dispatch run `39054436095` (same SHA) is green for the
+  reusable `gates` jobs and the `package` job, and its `publish` job is
+  **skipped**. It uploaded the artifact
+  `h07p-release-0.0.0-dispatch.f6580e4905ac` and created no GitHub release, so a
+  dispatch exercises the build and audit gates without publishing.
+- CI run `39042858735` covers the earlier revision `095603b8` and remains the
+  record for the pre-contract tree.
+
+Re-check the run for a later revision: a green run at another SHA is `STALE`, not
+evidence for HEAD, and a skipped or not-run lane is never a pass.
 
 See [IMPLEMENTATION.md](IMPLEMENTATION.md) for source coverage. The browser runner
 selects the actual backend, uses a temporary apps registry/fixture app server and

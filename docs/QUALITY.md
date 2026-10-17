@@ -95,8 +95,9 @@ budget. A budget that cannot be measured is `UNVERIFIED`, never a pass.
 ## Verified at this revision
 
 Each statement that an earlier revision of this file got wrong has a command that
-proves or disproves it. They were run on the named host at `095603b8` with a clean
-tree; re-run them rather than trusting this prose.
+proves or disproves it. The tree statements were verified at `095603b8`; the
+hosted statements at `f6580e49`, the commit this record describes (only this
+documentation changes after it). Re-run them rather than trusting this prose.
 
 | Statement | Command that proves it |
 |---|---|
@@ -105,7 +106,8 @@ tree; re-run them rather than trusting this prose.
 | `docs/prompts/UPGRADE-H07P.md` is tracked | `git ls-files docs/prompts/UPGRADE-H07P.md` |
 | `.delivery/` holds no tracked ledger | `git ls-files .delivery`; `ls -A .delivery` |
 | Every `docs/**/*.md` is indexed and marked | `python3 tools/check-framework.py` |
-| The CI jobs ran green at `095603b8` | `gh run view 39042858735` (push, CI; all jobs success including the aggregate `release-gate`) |
+| The CI jobs run green including `security-audit` | `gh run view 39054428135` (push, `f6580e49`; every job success, aggregate `release-gate` success) |
+| A release dispatch builds and audits without publishing | `gh run view 39054436095` (workflow_dispatch, `f6580e49`; `gates` and `package` success, `publish` skipped, artifact `h07p-release-0.0.0-dispatch.f6580e4905ac`) |
 
 Hosted CI for a later revision must be re-checked at that revision. A run at a
 different SHA is `STALE`, not evidence for HEAD, and a skipped or not-run lane is
