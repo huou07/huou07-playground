@@ -43,7 +43,12 @@ def acl_snapshot_name(name):
 
 
 def select_acl_baseline(root=None,expected_uid=0):
-    """Newest validated pre-worker ACL snapshot, replacing a fixed historical path."""
+    """Newest validated pre-worker ACL snapshot, replacing a fixed historical path.
+
+    Nanosecond mtime first, then the timestamped directory name, so two snapshots
+    written inside one second still select deterministically instead of depending
+    on directory iteration order.
+    """
     root=ACL_BASELINE_ROOT if root is None else Path(root)
     best=None
     try: candidates=list(root.iterdir())
@@ -58,8 +63,9 @@ def select_acl_baseline(root=None,expected_uid=0):
         if info.st_uid!=expected_uid or info.st_mode&0o022: continue
         if not 1_000_000<=info.st_size<=500*1024*1024: continue
         if not stat.S_ISDIR(parent.st_mode) or parent.st_uid!=expected_uid or parent.st_mode&0o022: continue
-        if best is None or info.st_mtime_ns>best[0]: best=(info.st_mtime_ns,candidate)
-    return None if best is None else best[1]
+        key=(info.st_mtime_ns,directory.name)
+        if best is None or key>(best[0],best[1]): best=(key[0],key[1],candidate)
+    return None if best is None else best[2]
 
 
 def account(name):

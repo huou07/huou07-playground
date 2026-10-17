@@ -64,8 +64,14 @@ fn valid_acl_baseline(path: &std::path::Path, expected_uid: u32) -> bool {
 }
 
 /// Newest validated snapshot under `root`, or `None` when none qualifies.
+///
+/// Ordering uses the full modification time — seconds *and* the fractional
+/// nanosecond component, which is all `mtime_nsec` provides — and then the
+/// timestamped directory name. Seconds alone is too coarse: the adapter can
+/// write two snapshots inside one second, and the registry must still pick the
+/// same one every time rather than following directory iteration order.
 fn select_acl_baseline_in(root: &std::path::Path, expected_uid: u32) -> Option<std::path::PathBuf> {
-    let mut best: Option<(i64, std::path::PathBuf)> = None;
+    let mut best: Option<((i64, i64), String, std::path::PathBuf)> = None;
     for entry in fs::read_dir(root).ok()?.flatten() {
         let candidate = entry.path().join("acl.restore");
         if !valid_acl_baseline(&candidate, expected_uid) {
@@ -74,11 +80,17 @@ fn select_acl_baseline_in(root: &std::path::Path, expected_uid: u32) -> Option<s
         let Ok(meta) = fs::symlink_metadata(&candidate) else {
             continue;
         };
-        if best.as_ref().is_none_or(|(when, _)| meta.mtime() > *when) {
-            best = Some((meta.mtime(), candidate));
+        let stamp = (meta.mtime(), meta.mtime_nsec());
+        let name = entry.file_name().to_string_lossy().to_string();
+        let newer = match &best {
+            None => true,
+            Some((when, previous, _)) => (stamp, &name) > (*when, previous),
+        };
+        if newer {
+            best = Some((stamp, name, candidate));
         }
     }
-    best.map(|(_, path)| path)
+    best.map(|(_, _, path)| path)
 }
 
 fn select_acl_baseline() -> Option<std::path::PathBuf> {
@@ -252,11 +264,30 @@ mod tests {
         let root = scratch("select");
         let uid = fs::metadata(&root).unwrap().uid();
         let older = snapshot(&root, "20261001-000000-1", 0o600, 1_100_000);
-        std::thread::sleep(Duration::from_millis(20));
+        // Written back to back: a seconds-resolution mtime cannot order these,
+        // so the timestamped name must break the tie deterministically.
         let newer = snapshot(&root, "20261015-220803", 0o600, 1_100_000);
         let selected = select_acl_baseline_in(&root, uid);
         assert_eq!(selected.as_deref(), Some(newer.as_path()));
         assert_ne!(selected.as_deref(), Some(older.as_path()));
+        assert_eq!(
+            select_acl_baseline_in(&root, uid).as_deref(),
+            selected.as_deref()
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_later_snapshot_wins_even_when_names_sort_early() {
+        let root = scratch("recency");
+        let uid = fs::metadata(&root).unwrap().uid();
+        // Same timestamped prefix, one directory per second: mtime decides.
+        let first = snapshot(&root, "20261015-220803", 0o600, 1_100_000);
+        std::thread::sleep(Duration::from_millis(1100));
+        let second = snapshot(&root, "20261015-220700", 0o600, 1_100_000);
+        let selected = select_acl_baseline_in(&root, uid);
+        assert_eq!(selected.as_deref(), Some(second.as_path()));
+        assert_ne!(selected.as_deref(), Some(first.as_path()));
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -142,15 +142,28 @@ class AclBaselineRegistryTests(unittest.TestCase):
 
     def test_selects_newest_validated_snapshot(self):
         import os
-        import time
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             uid = os.getuid()
             older = self._snapshot(root, '20261001-000000-1')
-            time.sleep(0.02)
+            # Written back to back: nanoseconds can tie, so the timestamped name
+            # must break the tie deterministically.
             newer = self._snapshot(root, '20261015-220803')
             self.assertEqual(workers.select_acl_baseline(root, uid), newer)
             self.assertNotEqual(workers.select_acl_baseline(root, uid), older)
+            self.assertEqual(workers.select_acl_baseline(root, uid),
+                             workers.select_acl_baseline(root, uid))
+
+    def test_recency_wins_over_directory_name_order(self):
+        import os
+        import time
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            uid = os.getuid()
+            self._snapshot(root, '20261015-220803')
+            time.sleep(1.1)
+            later = self._snapshot(root, '20261015-220700')
+            self.assertEqual(workers.select_acl_baseline(root, uid), later)
 
     def test_rejects_untrusted_or_unnamed_snapshots(self):
         import os
