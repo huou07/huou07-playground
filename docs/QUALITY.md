@@ -67,10 +67,13 @@ is unresolved), a published package repository, or cross-platform support.
 
 ## Evidence rules
 
-- Source gate: `make check` — Python reference, deploy scripts and Python tests.
-- Acceptance gate: `bash tools/acceptance.sh` — source gate plus Rust format,
-  clippy with warnings as errors, and the workspace test suite; `--full` adds the
-  release build.
-- Release gate: hosted CI (`ci.yml`, `release.yml`) plus the owner's lab for guest
-  and package acceptance.
+- Source gate: `make check` — Python reference, deploy scripts and Python tests,
+  plus Rust format, clippy with warnings as errors and the workspace test suite.
+  Cargo and Python caches resolve to a writable path (`tools/cargo-env.sh`) so the
+  gate also runs when the verifier does not own the checkout.
+- Acceptance gate: `bash tools/acceptance.sh` — source gate plus the same Rust
+  lanes again, the browser journeys for both backends when `node_modules` and node
+  are present, and `--full` adds the release build.
+- Release gate: hosted CI (`ci.yml`, `release.yml`) with the aggregate
+  `release-gate` job, plus the owner's lab for guest and package acceptance.
 - A skipped, missing or unavailable check is `UNVERIFIED`; it is never PASS.

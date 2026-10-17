@@ -5,6 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+  merge_group:
 
 permissions:
   contents: read
@@ -37,10 +38,10 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
-      - name: Check legacy behavior
-        run: make check
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
+      - name: Check legacy behavior and Rust workspace (make check)
+        run: make check
       - name: Require checked-in dependency graph
         run: git ls-files --error-unmatch Cargo.lock && test -s Cargo.lock
       - name: Check Rust formatting
@@ -189,9 +190,19 @@ jobs:
         run: cargo +1.90.0 build --locked -p h07p-server
       - name: Make the fixture readable by the demoted service account
         run: |
-          sudo chmod o+rx "$RUNNER_WORKSPACE" "$GITHUB_WORKSPACE" 2>/dev/null || true
+          set -euo pipefail
+          binary="$PWD/target/debug/h07p-server"
+          # The fixtures demote to the synthetic service account before exec, so
+          # that account needs search on every ancestor of the binary, not only on
+          # the checkout root. Walk the chain up to (but not including) /.
+          sudo sh -c 'p="$1"; while [ "$p" != "/" ] && [ -n "$p" ]; do chmod o+rx "$p"; p=$(dirname "$p"); done' sh "$GITHUB_WORKSPACE"
           sudo chmod -R a+rX web/static
-          sudo chmod a+rx target target/debug target/debug/h07p-server
+          sudo chmod a+rx target target/debug "$binary"
+          # Prove the demoted account can actually reach and execute the binary
+          # before the fixtures run, so a permission gap fails here with a clear
+          # diagnostic instead of an exec traceback.
+          sudo -u huou07-playground namei -l "$binary"
+          sudo -u huou07-playground test -x "$binary"
       - name: Run the native isolation fixtures
         env:
           H07P_SCANNER: /usr/bin/gitleaks
@@ -246,3 +257,40 @@ jobs:
           gitleaks detect --no-banner --redact --log-level error --exit-code 10 \
             --config deploy/package/gitleaks.toml --source . \
             --log-opts="${{ steps.range.outputs.range }}"
+
+  # Single aggregate gate: make this job the required check. It runs even when a
+  # dependency failed and exits non-zero unless every gate succeeded, so a
+  # skipped, neutral or cancelled job can never satisfy the requirement.
+  release-gate:
+    name: release-gate
+    needs: [framework, checks, browser, package-lifecycle, native-isolation, secret-scan]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every gate to have succeeded
+        env:
+          GATE_RESULTS: >-
+            framework=${{ needs.framework.result }}
+            checks=${{ needs.checks.result }}
+            browser=${{ needs.browser.result }}
+            package-lifecycle=${{ needs.package-lifecycle.result }}
+            native-isolation=${{ needs.native-isolation.result }}
+            secret-scan=${{ needs.secret-scan.result }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GATE_RESULTS"
+          failed=0
+          for entry in $GATE_RESULTS; do
+            name=${entry%%=*}
+            result=${entry#*=}
+            if [ "$result" != "success" ]; then
+              printf '::error title=%s gate::%s result was %s, not success\n' "$name" "$name" "$result"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "RELEASE_GATE=FAIL"
+            exit 1
+          fi
+          echo "RELEASE_GATE=PASS"

@@ -44,12 +44,20 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 3
 fi
 
-# The checked-out target/ cache was built by another UID and its file ACLs deny
-# this worker, so cargo fails with "failed to link or copy". Use a per-worker
-# target directory, the documented remedy for the shared-cache gap; CI keeps the
-# default. Set CARGO_TARGET_DIR explicitly to opt out.
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/.h07p-dev/target-uid$(id -u)}"
-printf 'cargo target dir: %s\n' "$CARGO_TARGET_DIR"
+# The Hub can run this gate as a worker that owns neither this checkout nor the
+# ambient cargo cache, and `test -w` is not reliable on ACL-managed trees. Resolve
+# both with a real writability probe; an explicit value wins only when usable.
+CARGO_HOME=$(sh "$ROOT/tools/cargo-env.sh" cargo-home)
+export CARGO_HOME
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$(sh "$ROOT/tools/cargo-env.sh" target-dir)}"
+printf 'cargo home: %s\ncargo target dir: %s\n' "$CARGO_HOME" "$CARGO_TARGET_DIR"
+if ! mkdir -p "$CARGO_TARGET_DIR" 2>/dev/null \
+  || ! (umask 077; : > "$CARGO_TARGET_DIR/.h07p-write-probe.$$") 2>/dev/null; then
+  printf 'RESULT: UNVERIFIED — CARGO_TARGET_DIR=%s is not writable by uid %s; point CARGO_TARGET_DIR at a writable path\n' \
+    "$CARGO_TARGET_DIR" "$(id -u)"
+  exit 3
+fi
+rm -f "$CARGO_TARGET_DIR/.h07p-write-probe.$$"
 
 run 'Source gate: Python reference, deploy scripts and tests (make check)' \
   make check
@@ -63,8 +71,25 @@ else
   printf '\nRESULT: UNVERIFIED — release build not run (pass --full, or let CI run it)\n'
 fi
 
-printf '\nNOTE: guest isolation, .deb install/upgrade/purge, browser matrix and hosted\n'
-printf '      acceptance remain CI/owner-lab authority and were not exercised here.\n'
+# Browser journeys run locally when node_modules and node are present; the Rust
+# backend lane additionally needs the checkout's own target/debug path because
+# tests/e2e/run.mjs launches $ROOT/target/debug/h07p-server. Anything unavailable
+# stays UNVERIFIED, never a silent PASS.
+if [ -f "$ROOT/node_modules/@playwright/test/package.json" ] && command -v node >/dev/null 2>&1; then
+  run 'Browser journeys (Python backend)' env HUOU07_E2E_BACKEND=python npm run test:e2e
+  if [ -w "$ROOT/target" ] || mkdir -p "$ROOT/target" 2>/dev/null; then
+    run 'Rust debug server for browser acceptance' \
+      env CARGO_TARGET_DIR="$ROOT/target" cargo build --locked -p h07p-server
+    run 'Browser journeys (Rust backend)' env HUOU07_E2E_BACKEND=rust npm run test:e2e
+  else
+    printf '\nRESULT: UNVERIFIED — Rust browser lane needs a writable %s/target/debug (run.mjs path)\n' "$ROOT"
+  fi
+else
+  printf '\nRESULT: UNVERIFIED — browser lanes need node_modules (@playwright/test) and node\n'
+fi
+
+printf '\nNOTE: guest isolation, .deb install/upgrade/purge and hosted acceptance remain\n'
+printf '      CI/owner-lab authority and were not exercised here.\n'
 if (( failed )); then
   printf '\nPROJECT_ACCEPTANCE=FAIL\n'
   exit 1

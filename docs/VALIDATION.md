@@ -282,3 +282,5 @@ This framework change does not create a fake binary release. Installation on the
 owner's host remains a separate owner request.
 
 `make check` now runs `tests/package/` as well: the directory is importable, so `unittest discover -s tests` reaches the package lifecycle fixtures (131 tests total).
+
+`make check` also runs the Rust workspace now (`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`), so the verify gate fails on a compile error instead of passing on a Python-only tree. `tools/cargo-env.sh` resolves `CARGO_HOME`, `CARGO_TARGET_DIR` and `PYTHONPYCACHEPREFIX` to writable locations for the calling uid, which lets the Hub run the gate as a worker that does not own the checkout; `tools/acceptance.sh` reports `UNVERIFIED` when its target directory cannot be written instead of surfacing a cargo permission error.

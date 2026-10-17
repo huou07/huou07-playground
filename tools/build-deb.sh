@@ -76,7 +76,15 @@ install -d "$doc" "$stage/usr/share/lintian/overrides"
 chmod 0644 "$doc/copyright"
 if [ -f "$audit_dir/THIRD_PARTY_LICENSES.txt" ]; then gzip -n -9 -c "$audit_dir/THIRD_PARTY_LICENSES.txt" > "$doc/third-party-notices.gz"; fi
 if [ -f "$audit_dir/sbom.cdx.json" ]; then install -m 0644 "$audit_dir/sbom.cdx.json" "$doc/sbom.cdx.json"; fi
-printf 'huou07-playground (%s) unstable; urgency=medium\n\n  * Versioned Linux dashboard and managed worker policy launcher.\n\n -- H07P maintainers <huou07@users.noreply.github.com>  %s\n' "$version" "$(date -u -d "@$SOURCE_DATE_EPOCH" -R)" | gzip -n -9 > "$doc/changelog.gz"
+# Lintian requires changelog.Debian.gz when the version carries a Debian revision
+# (a non-native package) and changelog.gz for a native version. The CI fixture
+# builds 0.0.0-ci, whose revision made the always-changelog.gz form fail with
+# debian-changelog-file-missing-or-wrong-name.
+case "$version" in
+  *-*) changelog_name=changelog.Debian.gz ;;
+  *) changelog_name=changelog.gz ;;
+esac
+printf 'huou07-playground (%s) unstable; urgency=medium\n\n  * Versioned Linux dashboard and managed worker policy launcher.\n\n -- H07P maintainers <huou07@users.noreply.github.com>  %s\n' "$version" "$(date -u -d "@$SOURCE_DATE_EPOCH" -R)" | gzip -n -9 > "$doc/$changelog_name"
 printf '# Owner-distributed application intentionally retains its requested versioned /opt layout.\nhuou07-playground: dir-or-file-in-opt [opt/huou07-playground/*]\n' > "$stage/usr/share/lintian/overrides/huou07-playground"
 chmod 0644 "$doc/"* "$stage/usr/share/lintian/overrides/huou07-playground"
 cat > "$stage/DEBIAN/control" <<CONTROL
