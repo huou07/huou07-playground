@@ -85,9 +85,12 @@ itself proof that every production journey was verified.
 - `native_proxy.rs` now adds that header only for an exact same-origin request
   on a loopback/private/local host authority. A focused regression covers
   allowed origins, untrusted hosts, duplicate headers and the 401 response.
-- The production executable remains unchanged pending hosted CI and the
-  owner-approved package rollout. DSH and OpenCode workers were observed active;
-  this source change is not yet production acceptance evidence.
+- Full hosted CI passed for source commit `3ac4c449378ef5f711fdc3702f0fea7a0e1c2293`
+  (run [39010751330](https://github.com/huou07/huou07-playground/actions/runs/39010751330)):
+  Rust lint/tests/release build/HTTP smoke and Python/Rust browser lanes.
+- The installed executable remains v0.3.7 until the updated package rollout;
+  DSH and OpenCode workers are active, but the proxy fix is not yet production
+  acceptance evidence.
 
 ## Known limits
 
