@@ -127,3 +127,8 @@ different SHA is `STALE`, not evidence for HEAD, and a skipped or not-run lane i
 - Release gate: hosted CI (`ci.yml`, `release.yml`) with the aggregate
   `release-gate` job, plus the owner's lab for guest and package acceptance.
 - A skipped, missing or unavailable check is `UNVERIFIED`; it is never PASS.
+- Hosted evidence: after a successful hosted run for the current commit,
+  `bash tools/record-hosted-evidence.sh <workflow>` records it in `.hub/hosted-evidence.json`. The Hub
+  merges it into a verification record only when it names that exact revision;
+  without it `release-check` is `BLOCKED` by "no hosted-runner evidence", which
+  is true, not a defect.
