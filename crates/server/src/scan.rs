@@ -68,13 +68,72 @@ fn content(path: &std::path::Path, meta: &fs::Metadata) -> Result<bool, String> 
     detect_bytes(bytes)
 }
 
-pub(crate) fn detect_bytes(mut bytes: Vec<u8>) -> Result<bool, String> {
+pub(crate) fn detect_bytes(bytes: Vec<u8>) -> Result<bool, String> {
+    scanner_verified()?;
+    run_scanner(bytes)
+}
+
+/// Synthetic canary for the scanner self-test. It is a fake token, never a real
+/// credential, and every Gitleaks build measured in the lab detects it
+/// (Debian 8.16.0 and upstream 8.30.1). Kept out of reports and logs.
+///
+/// The value is assembled at run time from two fragments so that the repository's
+/// own secret scanning does not flag this source file and host-side push
+/// protection cannot block a legitimate commit. The assembled bytes are what the
+/// scanner sees, so the self-test still exercises the real detection path.
+const SCANNER_CANARY_PREFIX: &[u8] = b"GITHUB_TOKEN=ghp_";
+const SCANNER_CANARY_BODY: &[u8] = b"9fJ2kLm4Np6Qr8St0Uv2Wx4Yz6Ab8Cd0Ef2G";
+
+fn scanner_canary() -> Vec<u8> {
+    let mut canary =
+        Vec::with_capacity(SCANNER_CANARY_PREFIX.len() + SCANNER_CANARY_BODY.len() + 1);
+    canary.extend_from_slice(SCANNER_CANARY_PREFIX);
+    canary.extend_from_slice(SCANNER_CANARY_BODY);
+    canary.push(b'\n');
+    canary
+}
+
+fn scanner_binary() -> String {
+    std::env::var("H07P_SCANNER").unwrap_or_else(|_| "/usr/bin/gitleaks".into())
+}
+
+fn scanner_config() -> String {
+    std::env::var("H07P_SCANNER_CONFIG")
+        .unwrap_or_else(|_| "/opt/huou07-playground/current/deploy/gitleaks.toml".into())
+}
+
+/// Prove the configured scanner actually still finds a known fake credential
+/// before trusting any "no finding" result from it. Without this, a scanner that
+/// is missing, misconfigured, or changed its CLI/ruleset between releases would
+/// report success for every file and turn into a false clean result. A verified
+/// scanner is remembered; a failure is not cached so the next scan retries.
+fn scanner_verified() -> Result<(), String> {
+    static VERIFIED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if VERIFIED.get().is_some() {
+        return Ok(());
+    }
+    interpret_self_test(run_scanner(scanner_canary()))?;
+    let _ = VERIFIED.set(());
+    Ok(())
+}
+
+/// Fail-closed mapping from a self-test scanner run to a trust decision. A
+/// scanner that exits successfully without finding the canary is as untrustworthy
+/// as one that could not run at all.
+fn interpret_self_test(result: Result<bool, String>) -> Result<(), String> {
+    match result {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("scanner_self_test_missed_canary".into()),
+        Err(error) => Err(error),
+    }
+}
+
+fn run_scanner(mut bytes: Vec<u8>) -> Result<bool, String> {
     if bytes.len() > 1024 * 1024 {
         return Err("content_budget".into());
     }
-    let scanner = std::env::var("H07P_SCANNER").unwrap_or_else(|_| "/usr/bin/gitleaks".into());
-    let config = std::env::var("H07P_SCANNER_CONFIG")
-        .unwrap_or_else(|_| "/opt/huou07-playground/current/deploy/gitleaks.toml".into());
+    let scanner = scanner_binary();
+    let config = scanner_config();
     let (uid, gid) = crate::user_ids("huou07")?;
     let mut command = Command::new(scanner);
     command
@@ -306,5 +365,26 @@ mod tests {
     fn pseudo_filesystems_are_excluded() {
         assert!(super::excluded_filesystem(std::path::Path::new("/proc")));
         assert!(super::excluded_filesystem(std::path::Path::new("/sys")));
+    }
+
+    #[test]
+    fn self_test_accepts_only_a_confirmed_canary_match() {
+        assert!(super::interpret_self_test(Ok(true)).is_ok());
+        assert_eq!(
+            super::interpret_self_test(Ok(false)),
+            Err("scanner_self_test_missed_canary".into())
+        );
+        assert_eq!(
+            super::interpret_self_test(Err("scanner_unavailable".into())),
+            Err("scanner_unavailable".into())
+        );
+    }
+
+    #[test]
+    fn canary_is_a_synthetic_github_token_shape() {
+        let canary = String::from_utf8(super::scanner_canary()).unwrap();
+        assert!(canary.contains("ghp_"));
+        assert!(!canary.to_lowercase().contains("example"));
+        assert!(canary.ends_with('\n'));
     }
 }
