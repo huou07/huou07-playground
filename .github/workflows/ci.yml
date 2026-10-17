@@ -223,6 +223,10 @@ jobs:
       - name: Run the native isolation fixtures
         env:
           H07P_SCANNER: /usr/local/bin/gitleaks
+          # scan.rs defaults this to the installed path
+          # (/opt/huou07-playground/current/deploy/gitleaks.toml), which does not
+          # exist in a checkout; point the fixture at the repository's own config.
+          H07P_SCANNER_CONFIG: ${{ github.workspace }}/deploy/package/gitleaks.toml
         run: |
           set -euo pipefail
           binary="$PWD/target/debug/h07p-server"

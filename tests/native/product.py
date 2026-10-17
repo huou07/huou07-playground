@@ -333,8 +333,20 @@ def main():
         check(code == 200 and not detected["content_scanned"], "content scan defaults off")
         if os.environ.get("H07P_SCANNER"):
             code, detected = value("/api/control/scan", dict(scope=str(workspace), mode="block", content=True))
+            # Redacted diagnostic: reasons and counters only, never the bytes a
+            # finding matched. A bare assertion here cost three CI rounds.
+            detail = "opt-in maintained scanner finds synthetic content secret: " + json.dumps(dict(
+                code=code,
+                reasons=[f.get("reason") for f in detected.get("findings", [])],
+                skipped=[s.get("reason") for s in detected.get("skipped", [])][:8],
+                partial=detected.get("partial"),
+                content_files=detected.get("content_files"),
+                content_bytes=detected.get("content_bytes"),
+                scanner=os.environ.get("H07P_SCANNER"),
+                scanner_config=os.environ.get("H07P_SCANNER_CONFIG", "<unset>"),
+            ))
             check(code == 200 and any(f["reason"] == "maintained_scanner_match" for f in detected["findings"]),
-                  "opt-in maintained scanner finds synthetic content secret")
+                  detail)
             check("ghp_" not in json.dumps(detected), "scan response contains no matching bytes")
         current_revision = value("/api/control/status")[1]["revision"]
         expiring = dict(draft, expected_revision=current_revision,
