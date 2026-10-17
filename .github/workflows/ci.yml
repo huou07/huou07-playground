@@ -279,12 +279,64 @@ jobs:
             --config deploy/package/gitleaks.toml --source . \
             --log-opts="${{ steps.range.outputs.range }}"
 
+  # tools/security-audit.py had no caller before this job. The script needs root
+  # and real account names, so the job reuses the native-isolation identity
+  # fixture and proves the audit tool executes and emits its metadata-only
+  # evidence on a disposable runner. It reads DAC metadata and effective-access
+  # results, never credential bytes. Real Debian findings stay owner-host
+  # evidence; see QUALITY.md.
+  security-audit:
+    name: Security audit (metadata only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Create synthetic owner and worker identities
+        run: |
+          set -euo pipefail
+          sudo useradd --create-home --shell /bin/bash huou07
+          sudo install -d -o huou07 -g huou07 /home/huou07/Projects
+          sudo chmod 0755 /home/huou07 /home/huou07/Projects
+          # The audit resolves its source HEAD through this owner-home path.
+          sudo ln -s "$GITHUB_WORKSPACE" /home/huou07/Projects/H07P
+          for worker in dsh-worker codex-worker opencode-worker; do
+            sudo useradd --create-home --shell /bin/bash "$worker"
+          done
+          # The audit records source_head with `git -C` as root, so the checkout
+          # must be a safe.directory even though its real path differs from HOME.
+          sudo git config --system --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Run the metadata-only credential and isolation audit
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/security-audit"
+          sudo python3 tools/security-audit.py --output "$output"
+          sudo chown -R "$(id -u):$(id -g)" "$output"
+          sudo chmod -R u+rwX,go-rwx "$output"
+          test -s "$output/access-matrix.json"
+          test -s "$output/risk-matrix.json"
+          test -s "$output/compatibility-baseline.json"
+      - name: Preserve the audit reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-audit-evidence
+          path: ${{ runner.temp }}/security-audit/
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Single aggregate gate: make this job the required check. It runs even when a
   # dependency failed and exits non-zero unless every gate succeeded, so a
   # skipped, neutral or cancelled job can never satisfy the requirement.
   release-gate:
     name: release-gate
-    needs: [framework, checks, browser, package-lifecycle, native-isolation, secret-scan]
+    needs: [framework, checks, browser, package-lifecycle, native-isolation, secret-scan, security-audit]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -298,6 +350,7 @@ jobs:
             package-lifecycle=${{ needs.package-lifecycle.result }}
             native-isolation=${{ needs.native-isolation.result }}
             secret-scan=${{ needs.secret-scan.result }}
+            security-audit=${{ needs.security-audit.result }}
         run: |
           set -euo pipefail
           printf '%s\n' "$GATE_RESULTS"

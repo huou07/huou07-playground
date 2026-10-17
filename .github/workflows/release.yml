@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  # A manual dispatch at a branch exercises the gate, audit, build and Lintian
+  # steps without publishing: the publish job below is gated on a tag ref, and a
+  # dispatch stamps a synthetic non-release version.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,10 +20,26 @@ jobs:
     needs: gates
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Resolve the package version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            # Non-tag manual dispatch: never a publishable release version.
+            version="0.0.0-dispatch.$(git rev-parse --short=12 HEAD)"
+          fi
+          case "$version" in *[!0-9A-Za-z.+~:-]*|'') echo "Invalid Debian version: $version" >&2; exit 2;; esac
+          dpkg --validate-version "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          printf 'resolved package version: %s\n' "$version"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
       - name: Install cargo-audit
@@ -40,23 +60,30 @@ jobs:
           sudo apt-get install --yes lintian
       - name: Build the versioned Debian package twice
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          set -euo pipefail
           epoch=$(git show -s --format=%ct HEAD)
-          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$version" target/release/h07p-server dist/first
-          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$version" target/release/h07p-server dist/repeat
-          cmp "dist/first/huou07-playground_${version}_amd64.deb" "dist/repeat/huou07-playground_${version}_amd64.deb"
+          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$VERSION" target/release/h07p-server dist/first
+          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$VERSION" target/release/h07p-server dist/repeat
+          cmp "dist/first/huou07-playground_${VERSION}_amd64.deb" "dist/repeat/huou07-playground_${VERSION}_amd64.deb"
           mkdir -p dist/release
           cp dist/first/* dist/release/
           cp artifacts/release-audit/{report.json,sbom.cdx.json,licenses.json,THIRD_PARTY_LICENSES.txt} dist/release/
-          printf 'source=%s\ntag=%s\n' "$(git rev-parse HEAD)" "$GITHUB_REF_NAME" > dist/release/SOURCE.txt
-          (cd dist/release && sha256sum -c "huou07-playground_${version}_amd64.deb.sha256")
-          lintian --fail-on error "dist/release/huou07-playground_${version}_amd64.deb"
-          dpkg-deb --info "dist/release/huou07-playground_${version}_amd64.deb"
+          printf 'source=%s\nref=%s\n' "$(git rev-parse HEAD)" "$GITHUB_REF" > dist/release/SOURCE.txt
+          (cd dist/release && sha256sum -c "huou07-playground_${VERSION}_amd64.deb.sha256")
+          lintian --fail-on error "dist/release/huou07-playground_${VERSION}_amd64.deb"
+          dpkg-deb --info "dist/release/huou07-playground_${VERSION}_amd64.deb"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            release_line="Tag ${GITHUB_REF_NAME} on ${GITHUB_REPOSITORY}@${GITHUB_SHA}; this artifact is the release candidate for that tag."
+          else
+            release_line="Manual workflow_dispatch at ${GITHUB_REF} (${GITHUB_SHA}); this artifact is a build-gate exercise and was NOT published."
+          fi
           cat > dist/release/RELEASE_NOTES.md <<EOF
-          H07P ${version} for Linux amd64.
+          H07P ${VERSION} for Linux amd64.
 
-          Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA} (tag ${GITHUB_REF_NAME}).
+          ${release_line}
           Built twice on a fresh Ubuntu 24.04 GitHub-hosted runner; package hashes matched.
           Required CI, dependency audit, package lifecycle fixtures and Lintian passed.
 
@@ -65,13 +92,16 @@ jobs:
       - name: Upload release package and provenance
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: h07p-release-${{ github.ref_name }}
+          name: h07p-release-${{ steps.version.outputs.version }}
           path: dist/release/
           if-no-files-found: error
           retention-days: 30
 
+  # Publication is tag-only by construction: a workflow_dispatch at a branch can
+  # never reach this job, so it cannot create a GitHub release or publish a version.
   publish:
     needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -81,7 +111,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: h07p-release-${{ github.ref_name }}
+          name: h07p-release-${{ needs.package.outputs.version }}
           path: dist/release
       - name: Publish GitHub release
         env:
