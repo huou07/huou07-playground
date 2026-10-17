@@ -92,6 +92,34 @@ navigation = (
 for name in navigation:
     if f"]({name})" not in agents:
         errors.append(f"AGENTS.md: missing navigation link {name}")
+
+# Documentation index gate: every Markdown file under docs/ must be listed in
+# docs/README.md with an explicit Current or Historical marker. A document that
+# nobody can find, or whose era is unstated, is how contradictory "current"
+# claims accumulate; this makes the index authoritative instead of decorative.
+INDEX_ROW = re.compile(r"^\|\s*\[[^\]]+\]\(([^)|]+)\)\s*\|([^|]*)\|([^|]*)\|\s*$")
+index_path = ROOT / "docs/README.md"
+listed, markers = {}, {}
+for line in index_path.read_text(encoding="utf-8").splitlines():
+    match = INDEX_ROW.match(line)
+    if not match:
+        continue
+    target = match.group(1).strip().strip("<>")
+    resolved = (index_path.parent / unquote(target)).resolve()
+    if resolved.is_relative_to(ROOT):
+        listed[resolved] = match.group(2).strip()
+        markers[resolved] = match.group(3).strip()
+listed[index_path.resolve()] = "the index itself"
+markers[index_path.resolve()] = "Current"
+for document in sorted((ROOT / "docs").rglob("*.md")):
+    relative = document.relative_to(ROOT).as_posix()
+    if document.resolve() not in listed:
+        errors.append(f"{relative}: absent from docs/README.md index")
+    elif markers.get(document.resolve()) not in {"Current", "Historical"}:
+        errors.append(
+            f"{relative}: index entry lacks a Current/Historical marker"
+        )
+
 if len(agents.splitlines()) > 40 or "## " in agents or re.search(r"^\s*\d+\.", agents, re.M):
     errors.append("AGENTS.md must remain a short navigation table, not a procedure")
 
