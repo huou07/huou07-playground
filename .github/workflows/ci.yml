@@ -173,6 +173,19 @@ jobs:
           rustup toolchain install 1.90.0 --profile minimal
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends acl
+      - name: Install pinned Gitleaks with a verified checksum
+        # The fixtures claim the opt-in maintained scanner (H07P_SCANNER), so the
+        # scanner they point at has to exist on the runner. Same version and
+        # checksum as the secret-scan job above; without this the scanner check
+        # fails with "maintained scanner finds synthetic content secret".
+        run: |
+          set -euo pipefail
+          version=8.30.1
+          curl -fsSL -o /tmp/gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+          gitleaks version
       - name: Create synthetic owner, service and worker identities
         run: |
           set -euo pipefail
@@ -209,7 +222,7 @@ jobs:
           sudo -u huou07-playground test -x "$binary"
       - name: Run the native isolation fixtures
         env:
-          H07P_SCANNER: /usr/bin/gitleaks
+          H07P_SCANNER: /usr/local/bin/gitleaks
         run: |
           set -euo pipefail
           binary="$PWD/target/debug/h07p-server"
