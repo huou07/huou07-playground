@@ -16,6 +16,7 @@ production provenance is kept separate from product design and CI results.
 | [STATUS.md](STATUS.md) | Current production and publication status |
 | [ROADMAP.md](ROADMAP.md) | Single task tracker and exact source/run evidence |
 | [REUSE.md](REUSE.md) | Dependency origins, licensing, and reuse decisions |
+| [Implementation prompt](prompts/IMPLEMENT-H07P.md) | Safe scope and evidence rules for implementation work |
 | [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) | Historical source inspection and its limits |
 | [Production provenance](evidence/production-v0.3.7-source-provenance.md) | Sanitized runtime/source identity and component mapping |
 | [Credential Guard](security/credential-guard/README.md) | Optional detection and reviewed cleanup behavior |
