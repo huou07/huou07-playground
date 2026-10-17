@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "project": "H07P",
+  "product_type": "linux-web-control-panel",
+  "supported_platforms": ["linux-x64"],
+  "required_gates": ["source-integrity", "admission"],
+  "release_gates": ["package-lifecycle", "native-isolation", "secret-scan"],
+  "external_requirements": [],
+  "hosted_ci": "required",
+  "gates": {
+    "source-integrity": {"gate": "verify"},
+    "admission": {"gate": "acceptance"},
+    "package-lifecycle": {"gate": "release"},
+    "native-isolation": {"gate": "release"},
+    "secret-scan": {"gate": "release"}
+  },
+  "report": ".hub/gate-report.json",
+  "artifacts": [],
+  "policies": {
+    "missing_evidence": "block",
+    "stale_evidence": "block",
+    "skipped_required_gate": "block",
+    "production_changes": "require_approval"
+  }
+}
