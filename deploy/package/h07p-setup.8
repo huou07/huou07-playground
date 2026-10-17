@@ -1,0 +1,58 @@
+.TH H07P-SETUP 8 "October 2026" "H07P" "System Administration"
+.SH NAME
+h07p-setup \- install and maintain the H07P dashboard
+.SH SYNOPSIS
+.B h07p-setup
+.RI [ action ] " [package.deb] [options]"
+.SH DESCRIPTION
+Without arguments, opens an interactive maintenance menu.
+Install and update simulate dependency resolution before applying changes.
+Unrelated package removals are rejected. Existing owner configuration is retained.
+Mutations require root; diagnostics and dry runs can run without root.
+.SH ACTIONS
+.TP
+.B doctor
+Show dependency, service and disk status without reading credentials or log contents.
+.TP
+.BR install ", " update
+Install a trusted local H07P Debian package, resolving dependencies through APT.
+Place its matching SHA256 file beside the package when available.
+.TP
+.B repair
+Reinstall the most recently cached H07P package. A package path may be supplied.
+.TP
+.B rollback
+Restore the previous protected release/configuration snapshot.
+.TP
+.B uninstall
+Remove H07P while retaining NAS, state, native accounts, authentication and backups.
+.TP
+.B refresh-index
+Refresh existing APT repository indexes without upgrading installed packages.
+.SH OPTIONS
+.TP
+.B \-\-dry-run
+Show the plan without installing, stopping services or modifying data.
+.TP
+.B \-\-yes
+Accept the displayed action without an interactive confirmation.
+.TP
+.B \-\-json
+Emit structured diagnostic or installation-plan output.
+.TP
+.B \-\-help
+Display command help.
+.SH FILES
+.TP
+.I /var/cache/huou07-playground
+Verified local package cache for repair.
+.TP
+.I /var/backups/huou07-playground
+Root-private release and state snapshots.
+.SH NOTES
+Do not delete dpkg locks or credential files to repair a dependency conflict.
+Use doctor, resolve the reported repository/network issue, then retry repair.
+Native harness login and provider configuration remain unchanged.
+.SH SEE ALSO
+.BR apt-get (8),
+.BR dpkg (1)

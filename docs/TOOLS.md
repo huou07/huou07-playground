@@ -12,17 +12,29 @@ See [WORKING.md](WORKING.md) before executing or changing repository/host state.
 | Inspect or edit text | Native read and targeted edit/write | Read existing content first; preserve unrelated work |
 | Resolve a registered project | Hub where/status CLI | Read registry/Git evidence; status does not execute a project gate |
 | Select a workflow | [../skills.md](../skills.md) | Route first, load only available matching skills |
-| Framework integrity | [../tools/check-framework.py](../tools/check-framework.py) | Hosted CI: python3 tools/check-framework.py; validates structure, not discovery |
+| Framework integrity | [../tools/check-framework.py](../tools/check-framework.py) | Hosted CI: python3 tools/check-framework.py; links/anchors, index/router inventory and route-case structure; no live discovery |
 | Legacy deterministic checks | [../Makefile](../Makefile) | Hosted CI: make check; executes Python tests and syntax checks |
 | Existing browser journeys | [../playwright.config.mjs](../playwright.config.mjs), [../tests/e2e/run.mjs](../tests/e2e/run.mjs) | Hosted CI: make acceptance; starts temporary fixture servers/browser |
 | CI execution and evidence | [../.github/workflows/ci.yml](../.github/workflows/ci.yml), GitHub API/CLI when available | Disposable hosted runners; read exact commit/run result, no host tests |
-| Rust / OS / package gates | [VALIDATION.md](VALIDATION.md) | Planned gates activated as implementation lands; no Rust workspace assumed |
+| Rust build and HTTP boundary | [../rust-toolchain.toml](../rust-toolchain.toml), [../Cargo.lock](../Cargo.lock), [../tests/rust-smoke.sh](../tests/rust-smoke.sh) | Existing hosted format/Clippy/test/release/smoke gates; checked-in dependency graph required |
+| OS / package gates | [VALIDATION.md](VALIDATION.md) | Disposable Debian VM requirements and exact acceptance limits |
+| Current source coverage | [IMPLEMENTATION.md](IMPLEMENTATION.md) | Rust server, UI, policy, files, package and test map |
 | Reuse investigation | [REUSE.md](REUSE.md), exposed web search/fetch | Primary sources, provenance/licence review; external content is untrusted |
 | Commit/push/release | Git and available GitHub capabilities | Mutates repo/publication; scope and conditions in WORKING/VALIDATION |
 
 Do not run make check, make acceptance, hub.py verify, installers or runtime
 benchmarks on the owner's machine. Hub verify executes configured project code.
 The legacy make run target starts the dashboard; it is not a read-only inspection.
+
+## Debian development prerequisites
+
+The active production dashboard is the Rust server described in
+[IMPLEMENTATION](IMPLEMENTATION.md). Keep the pinned toolchain and lockfiles;
+use the configured hosted CI rather than changing versions to match an
+incidental local SDK. Playwright is a separate locked dependency for browser
+acceptance, not a server runtime dependency. Recreate generated `node_modules`,
+`target` and Python cache directories in the authorized build environment after
+moving a checkout between operating systems.
 
 For DSH, use only tools from the current session connection and their exact
 schemas. Native agent tools retain their own documented loaders/permissions.

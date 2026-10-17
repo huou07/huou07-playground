@@ -1,67 +1,59 @@
-# huou07 playground
+# Huou07 Playground
 
-A private dashboard for one Debian user. The dashboard remains a small Python service; coding tools and app services use the owner account `huou07` and its existing home. WireGuard is the primary remote path, with SSH tunnels kept for recovery.
+Huou07 Playground is a Linux dashboard for monitoring a host, managing coding
+workers, and handling owner files. The v0.3.7 production source is implemented in
+Rust with a browser interface in HTML, CSS, and JavaScript. The older Python
+dashboard remains as a reference and compatibility tool.
 
-## Product direction (2026-10-15)
+## What is included
 
-H07P is being reorganized for a Rust backend, owner-controlled worker isolation,
-private NAS and integrated Storage browser. These features are planned, not yet
-implemented. Preserve the existing design. Start at [docs/README.md](docs/README.md)
-and [AGENTS.md](AGENTS.md); implementation handoff is
-[docs/prompts/IMPLEMENT-H07P.md](docs/prompts/IMPLEMENT-H07P.md).
+- Host telemetry, service and application status, and approved app integrations.
+- Owner login, worker permissions, policy history, approvals, and Linux ACL
+  enforcement.
+- Managed worker launch and isolation controls.
+- Private NAS and host Storage operations with bounded previews and transfers.
+- Optional credential monitoring and reviewed cleanup tools.
+- Debian package installation, update, rollback, repair, and data-retaining
+  removal.
 
-All tests/builds/package acceptance for this initiative run on disposable
-GitHub-hosted infrastructure. Do not run the commands below, install or deploy
-on the owner's Debian machine without a later explicit request. The following
-sections describe the legacy implementation and historical owner operations;
-they do not establish current host state or authorize agents to execute them.
+See [current implementation coverage](docs/IMPLEMENTATION.md), the
+[architecture](docs/ARCHITECTURE.md), and the
+[security boundaries and limitations](docs/SECURITY.md).
 
-## What runs where
+## Source and production provenance
 
-| App | User service | Data/config | Private loopback port |
-| --- | --- | --- | ---: |
-| Dashboard | Existing system unit, unchanged | `/var/lib/huou07-playground` | 8765 |
-| DeepSeek Harness | `dsh.service` | `~/.dsh` | 3080 |
-| OpenCode Web and CLI | `opencode-web.service` plus existing CLI | Existing `~/.opencode`; Web password in `~/.config/huou07-playground` | 4096 |
-| LiteLLM and PostgreSQL | Rootless Podman Quadlets | `~/.config/litellm`, Podman volume | 4000 |
-| OmniRoute and Redis | Rootless Podman Quadlets | `~/.config/omniroute`, rootless Podman volumes | 20128, 20129, 20132 |
+The owner identifies the running production application as v0.3.7. On 2026-10-17,
+read-only inspection found the active release label `0.3.7-acl-inherit-fix`; the
+dashboard service was running and `/api/health` returned `{"ok":true}`. That API
+does not report a version. The deployed binary SHA-256 and source-tree comparison
+are recorded in the [sanitized provenance map](docs/evidence/production-v0.3.7-source-provenance.md).
 
-The dashboard already has application cards for these private endpoints and relays them through its WireGuard listener. The app services stay on loopback. Port definitions are in [`deploy/private-services.json`](deploy/private-services.json).
+The public `main` branch had not received the production implementation. The
+first-party source was on the existing `codex/h07p-product` branch; this sync
+preserves the existing repository history and documents the verified source
+relationship. Production configuration, credentials, private files, and external
+applications are not part of this repository.
 
-## Clean reinstall
+## Build and check
 
-Prepare the pinned applications while legacy services are still running, then stop only the five old application units and activate the new user services. Legacy accounts, files, databases, and credentials remain untouched until browser acceptance. The dashboard, WireGuard, SSH, Cockpit, rootful Docker, AN3, LAN Arcade, AdGuard Home, and unrelated data stay outside scope. See [`docs/CLEAN-REINSTALL.md`](docs/CLEAN-REINSTALL.md) for the exact sequence and rollback.
+The Rust workspace pins its toolchain and dependencies. From a clean Linux
+checkout, use the commands documented in [validation](docs/VALIDATION.md) and
+the [package guide](deploy/package/README.md). The hosted CI workflow is the
+authoritative source-check lane. Do not treat a production health check as a
+build or test result.
 
-Readiness installs pinned software, validates ACP initialization and Quadlet generation, and pre-pulls images while existing services are still active. It also verifies fresh PostgreSQL/LiteLLM and Redis/OmniRoute instances on temporary ports with temporary volumes. Activation checks final ports after the owner stops the old units and then verifies the application health endpoints. A failed activation leaves all old data and unit files intact; the documented `deactivate` action stops and holds the new definitions before the owner restores the old units.
+## Configuration and operations
 
-The installer pins DSH `0.2.0-rc.2`, DSH ACP adapter `0.2.0-rc.2.9`, Codex ACP `2.2.2`, LiteLLM `v1.104.2`, PostgreSQL `16`, OmniRoute `3.8.51`, and Redis `8.6.5-alpine`. It uses the existing Node 24, OpenCode CLI, Codex CLI, and rootless Podman. It does not perform model inference or add provider credentials.
+The package supplies non-secret defaults and reads owner-specific settings from
+the system configuration directory. Supply credentials through owner-controlled
+files with restricted permissions; never commit actual values. Install and update
+the versioned Debian package using the [package guide](deploy/package/README.md),
+which also documents rollback and retained-data behavior.
 
-## Owner setup
+Playground integrates with externally installed harnesses and web applications.
+Those applications, their databases, provider credentials, and their runtime
+configuration remain separately managed dependencies.
 
-- DSH: open its dashboard card and use **Plugins → ACP adapter**. Add Codex from the adapter's agent catalog (`codex-acp`) and add OpenCode as a custom ACP command: `/home/huou07/.opencode/bin/opencode` with argument `acp`. The native Codex and OpenCode commands own their authentication and approvals. ACP initialization is not proof of authenticated inference.
-- OpenCode Web: sign in with username `opencode`; the generated password is in `~/.config/huou07-playground/opencode-web.env`. The web service runs the existing CLI wrapper without `--pure`, so it uses the same OpenCode configuration and provider state as the owner CLI. The wrapper's existing state under `~/.opencode` is preserved.
-- LiteLLM: open its card and sign in as `admin` with `LITELLM_MASTER_KEY` in `~/.config/litellm/litellm.env`. Add provider credentials and models yourself. The database and encryption salt are fresh; keep the salt with the database.
-- OmniRoute: complete its dashboard login/setup through its card. The generated initial password is in `~/.config/omniroute/omniroute.env`. Configure providers yourself. Its API requires a key and the service stays loopback-only.
-- Codex CLI: the existing ChatGPT login is preserved. If the native CLI reports signed out, complete its normal owner login.
+## License
 
-Keep the SSH tunnel available until the WireGuard dashboard and app links have been checked from the client. The existing private app URLs and external WireGuard UDP 3478 configuration are unchanged.
-
-## Deterministic checks
-
-```sh
-make check
-```
-
-This runs Python regression tests, shell syntax checks, and browser-free app configuration checks. It does not invoke any AI model. The Dell readiness and post-cutover checks also avoid model requests.
-
-## Develop the dashboard locally
-
-Requires Python 3.10+ and no third-party Python packages:
-
-```sh
-make run
-```
-
-Open `http://127.0.0.1:8765`. Browser acceptance tests use a temporary local registry and do not touch the Dell.
-
-The project is GPL-3.0. App credentials, local dashboards, host inventories and generated secrets must not be committed.
+GPL-3.0. See [LICENSE](LICENSE) and the retained third-party asset notices.

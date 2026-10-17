@@ -1,0 +1,39 @@
+#!/bin/sh
+# postrm must work after non-essential Python has been removed.
+set -eu
+root=${DPKG_ROOT:-}
+[ "$root" != / ] || root=
+live=false
+if [ -z "$root" ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then live=true; fi
+state="$root/var/lib/huou07-package"
+case "${1:-}" in
+    abort-install|abort-upgrade)
+        if [ -f "$state/pending.json" ] && command -v python3 >/dev/null 2>&1 && [ -f "$root/usr/lib/huou07-playground/lifecycle.py" ]; then
+            exec python3 "$root/usr/lib/huou07-playground/lifecycle.py" rollback
+        fi
+        ;;
+    remove|purge)
+        if [ -f "$state/adoption.json" ] && [ ! -e "$state/workers-restored" ]; then
+            name=$(sed -n 's/.*"backup": *"\([0-9][0-9]*\)".*/\1/p' "$state/adoption.json")
+            case "$name" in ''|*[!0-9]*) echo 'Invalid worker recovery snapshot.' >&2; exit 1;; esac
+            backup="$root/var/backups/huou07-playground/$name"
+            for unit in h07p-dsh.service h07p-opencode.service; do
+                rm -f "$root/etc/systemd/system/$unit"
+                if [ -f "$backup/$unit" ]; then cp -p "$backup/$unit" "$root/etc/systemd/system/$unit"; fi
+            done
+            rm -f "$root/usr/local/sbin/h07p-harness"
+            if [ -f "$backup/h07p-harness" ]; then cp -p "$backup/h07p-harness" "$root/usr/local/sbin/h07p-harness"; fi
+            if "$live"; then
+                systemctl daemon-reload
+                for unit in h07p-dsh.service h07p-opencode.service; do
+                    if [ -f "$backup/enabled-units" ] && grep -Fxq "$unit" "$backup/enabled-units"; then systemctl enable "$unit"; fi
+                    if [ -f "$backup/active-units" ] && grep -Fxq "$unit" "$backup/active-units"; then systemctl start "$unit"; fi
+                done
+            fi
+            : > "$state/workers-restored"
+        fi
+        if [ -L "$root/opt/huou07-playground/current" ]; then rm -f "$root/opt/huou07-playground/current"; fi
+        if "$live"; then systemctl daemon-reload; fi
+        ;;
+esac
+# NAS, apps, owner credentials, policies and recovery snapshots are retained.

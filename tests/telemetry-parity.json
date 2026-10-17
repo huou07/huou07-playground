@@ -1,0 +1,56 @@
+{
+  "swaps_text": "Filename Type Size Used Priority\n/swap file 100 10 -2\n/dev/zram0 partition 1024 4 100\n",
+  "swap": {
+    "devices": [
+      {
+        "name": "/swap",
+        "total": 102400,
+        "used": 10240,
+        "kind": "file"
+      }
+    ],
+    "used": 14336,
+    "total": 1150976,
+    "percent": 1,
+    "disk_used": 10240,
+    "disk_total": 102400
+  },
+  "zram": {
+    "devices": [
+      {
+        "name": "zram0",
+        "total": 1048576,
+        "used": 4096,
+        "compressed": 1024,
+        "physical_used": 2048,
+        "swap_used": 4096
+      }
+    ],
+    "used": 4096,
+    "total": 1048576,
+    "compressed": 1024,
+    "physical_used": 2048,
+    "swap_used": 4096,
+    "swap_total": 1048576
+  },
+  "app_input": {
+    "apps": [
+      {
+        "name": " Example ",
+        "url": "https://example.org",
+        "health_url": "http://127.0.0.1:8888/status"
+      }
+    ]
+  },
+  "apps": [
+    {
+      "name": "Example",
+      "url": "https://example.org",
+      "description": "",
+      "category": "Application",
+      "health_url": "http://127.0.0.1:8888/status",
+      "health_method": "GET",
+      "management_url": null
+    }
+  ]
+}

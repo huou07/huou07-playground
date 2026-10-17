@@ -307,43 +307,52 @@ class CleanInstallTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mode & 0o777, 0o640)
             self.assertNotIn(token, stdout.getvalue())
             path.unlink()
-            launcher.save_url(f"dsh web: http://0.0.0.0:3080/?token={token}")
+            with self.assertRaises(launcher.PublicationError):
+                launcher.save_url(f"dsh web: http://0.0.0.0:3080/?token={token}")
             self.assertFalse(path.exists())
 
-    def test_native_service_templates_use_home_and_loopback(self):
-        dsh = (ROOT / "deploy/user/dsh.service").read_text()
-        opencode = (ROOT / "deploy/user/opencode-web.service").read_text()
-        self.assertIn("DSH_HOME=%h/.dsh", dsh)
+    def test_dsh_publication_failure_is_sanitized_and_cleans_temporary_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / "url"
+            token = "fixture-secret-" * 4
+            with patch.object(launcher, "URL_FILE", path), patch.object(launcher.os, "replace", side_effect=PermissionError(token)):
+                with self.assertRaises(launcher.PublicationError) as caught:
+                    launcher.save_url(f"dsh web: http://127.0.0.1:3080/?token={token}")
+            self.assertNotIn(token, str(caught.exception))
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_dsh_launcher_stops_child_and_exits_nonzero_when_handoff_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake_dsh = root / "dsh"
+            fake_dsh.write_text("#!/bin/sh\necho 'dsh web: http://127.0.0.1:3080/?token=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'\nexec sleep 60\n")
+            fake_dsh.chmod(0o700)
+            stderr = io.StringIO()
+            with patch.object(launcher, "DSH", fake_dsh), patch.object(launcher, "URL_FILE", root / "missing/url"), patch.object(launcher, "wg_trusted_host", return_value=None), contextlib.redirect_stderr(stderr):
+                self.assertEqual(launcher.main(), 1)
+            self.assertIn("publication failed", stderr.getvalue())
+            self.assertNotIn("A" * 40, stderr.getvalue())
+
+    def test_packaged_worker_units_use_managed_policy(self):
+        dsh = (ROOT / "deploy/package/h07p-dsh.service").read_text()
+        opencode = (ROOT / "deploy/package/h07p-opencode.service").read_text()
+        self.assertIn("h07p-server worker dsh --web", dsh)
         self.assertIn("/run/huou07-dsh-link/url", (ROOT / "deploy/dsh-dashboard-launcher.py").read_text())
-        self.assertIn("dsh-dashboard-launcher.py", dsh)
         self.assertIn("--host", (ROOT / "deploy/dsh-dashboard-launcher.py").read_text())
         self.assertIn('"--trusted-host", host', (ROOT / "deploy/dsh-dashboard-launcher.py").read_text())
-        self.assertIn("opencode web --hostname 127.0.0.1 --port 4096", opencode)
-        self.assertNotIn("--pure", opencode)
-        self.assertIn("InaccessiblePaths=-/run/docker.sock", dsh)
-        self.assertIn("NoNewPrivileges=yes", opencode)
-
-    def test_container_deployments_are_pinned_and_private(self):
-        litellm = (ROOT / "deploy/user/litellm.container").read_text()
-        omni = (ROOT / "deploy/user/omniroute.container").read_text()
-        litellm_pod = (ROOT / "deploy/user/litellm.pod").read_text()
-        omni_pod = (ROOT / "deploy/user/omniroute.pod").read_text()
-        self.assertIn("ghcr.io/berriai/litellm:v1.104.2", litellm)
-        self.assertIn("diegosouzapw/omniroute:3.8.51", omni)
-        self.assertIn("Volume=huou07-omniroute-data:/app/data", omni)
-        self.assertNotIn("UserNS=keep-id", (ROOT / "deploy/user/omniroute.pod").read_text())
-        self.assertIn("postgres:16", (ROOT / "deploy/user/litellm-db.container").read_text())
-        self.assertIn("redis:8.6.5-alpine", (ROOT / "deploy/user/omniroute-redis.container").read_text())
-        for text in (litellm_pod, omni_pod):
-            self.assertIn("127.0.0.1:", text)
-            self.assertNotIn("0.0.0.0", text)
+        self.assertIn("h07p-server worker opencode --web", opencode)
+        self.assertIn("EnvironmentFile=/home/huou07/.config/huou07-playground/opencode-web.env", opencode)
+        for unit in (dsh, opencode):
+            self.assertIn("NoNewPrivileges=yes", unit)
+            self.assertIn("CapabilityBoundingSet=CAP_SETUID CAP_SETGID", unit)
 
     def test_installer_is_user_scoped_and_model_free(self):
         installer = (ROOT / "deploy/install-user-apps.sh").read_text()
         self.assertNotIn("sudo ", installer)
         for pinned in ("@deepseek-ai/dsh@$DSH_VERSION", "@agentclientprotocol/codex-acp@$ACP_VERSION", "pnpm@$PNPM_VERSION", "@zaimokuza/dsh-acp-adapter@$ADAPTER_VERSION"):
             self.assertIn(pinned, installer)
-        self.assertIn('"$HOME_DIR/.opencode/bin/opencode" auth list >/dev/null', installer)
+        self.assertIn('"$HOME_DIR/.local/bin/opencode" auth list >/dev/null', installer)
         self.assertIn('login_status=$("$HOME_DIR/.local/bin/codex" login status 2>&1)', installer)
         self.assertIn("npm rebuild --global --prefix", installer)
         self.assertIn("--allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs", installer)

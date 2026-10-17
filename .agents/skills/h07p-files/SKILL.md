@@ -10,8 +10,9 @@ Read [product](../../../docs/PRODUCT.md), [UX](../../../docs/UX.md) and
 
 ## Procedure
 
-1. Identify NAS versus Storage adapter, owner identity, destination scope and
-   concrete journey. Establish source/tree; use fixture files with known hashes.
+1. Identify NAS versus Storage adapter, owner/service identity, destination scope
+   and concrete journey. Do not mistake the existing Cockpit availability route
+   for a NAS listing. Use fixture files with known hashes.
 2. Reuse the current tokens, sidebar and compact panels. Specify loading/empty/
    error/cancel/recovery, keyboard focus and desktop/360px behavior.
 3. Authorize before lookup/preview. Resolve paths safely using directory handles.

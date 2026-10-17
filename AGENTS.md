@@ -1,7 +1,8 @@
 # H07P navigation
 
-huou07-playground is a Linux dashboard evolving toward a Rust backend,
-owner-controlled agent isolation, private NAS and host storage management.
+huou07-playground is a Linux dashboard with a Rust backend, owner-controlled
+worker isolation, private NAS and host Storage management. See the implementation
+map and production provenance record for verified source coverage.
 
 Choose the references needed for the task; this index is not a preload list.
 
@@ -11,10 +12,11 @@ Choose the references needed for the task; this index is not a preload list.
 | Tool or command selection | [Tools](docs/TOOLS.md) — inspection, CI gates, side effects and availability |
 | Choose a skill | [Skill routing](skills.md) — shared and project workflows by task |
 | Product intent and acceptance | [Product](docs/PRODUCT.md) — user journeys, supported platforms and outcomes |
+| Current implementation and source locations | [Implementation map](docs/IMPLEMENTATION.md) — existing routes, helpers and verification gaps |
 | Backend, migration or caching | [Architecture](docs/ARCHITECTURE.md) — Rust boundaries, parity and optional Redis |
 | Permissions, approvals or isolation | [Security](docs/SECURITY.md) — rule semantics and actual OS enforcement |
 | User-visible flow or design | [UX](docs/UX.md) — existing design, interaction states and file/security flows |
-| Tests, performance, packaging or release | [Validation](docs/VALIDATION.md) — hosted CI and evidence requirements |
+| Tests, performance, packaging or release | [Validation](docs/VALIDATION.md) — evidence classes, browser lanes, disposable OS lab and hosted acceptance |
 | Current task or next product slice | [Roadmap](docs/ROADMAP.md) — single tracker with source/run evidence |
 | Reuse a dependency or upstream source | [Reuse](docs/REUSE.md) — candidates, provenance and licensing |
 | Baseline source findings | [Source audit](docs/AUDIT-2026-10-15.md) — dated inspection and its limitations |

@@ -1,5 +1,24 @@
 # Security and permission contract
 
+The v0.3.7 implementation uses owner-authenticated APIs, typed helper IPC,
+Linux ACL/DAC policy, restricted managed-worker launch, scoped approvals, and
+separate owner file operations. See the [implementation map](IMPLEMENTATION.md)
+for source paths. This document describes the security behavior and its limits;
+it does not authorize production changes.
+
+An owner can choose canonical absolute workspaces and targets, concrete file
+operations, recursive scope, and optional expiry. Explicit Blocks win over
+overlapping Allows. Private/control-plane paths are protected from broad Allows.
+An exception for a private file must name one existing regular, unaliased file,
+apply to one selected worker, and pass the impact acknowledgement followed by a
+second Apply. Structural ACL failures fail closed.
+
+Sensitive-file suggestions are bounded and return paths/reasons, not matched
+contents. Detection is opt-in and incomplete by design; it does not guarantee
+that every credential or sensitive file will be found. See
+[harness worker behavior](../deploy/harness-workers/README.md) and
+[validation limits](VALIDATION.md).
+
 ## Threat model and immutable boundary
 
 Workers execute arbitrary commands and may call HTTP APIs, follow symlinks,
@@ -38,11 +57,23 @@ delete/rename: never claim those rights are independently isolated using chmod
 alone. If a backend cannot enforce a selected combination, reject it or require
 the broker; the UI explains the unsupported combination.
 
+Execute means OS executable access; denying execute cannot stop an interpreter
+from evaluating a readable script. Do not advertise prevention of arbitrary code
+execution for a coding worker. Explain required read/runtime dependencies and
+check whether direct access or a mediated operation can enforce the selected
+rights. Unsupported granular rights must never be silently widened.
+
 Evaluate immutable boundaries first, then any applicable block (deny wins),
 then ask, then allow, then preset default. Overlapping allow cannot silently
 override private descendants. To change a block, the owner edits/removes that
 rule with an impact preview. Expiry/revision changes invalidate approvals.
 A more permissive OS permission never overrides a compiled block.
+
+Applying a template supplies editable defaults; custom rules remain explicit.
+Show merge versus reset before changing templates. Neither template nor custom
+Allow may cross the immutable administration/NAS boundary. A NAS Block rule is
+an owner-visible dogfood operation with actual enforcement evidence; removing
+that discretionary rule cannot grant worker NAS access, including under none.
 
 ## Presets
 
@@ -91,12 +122,25 @@ a new route into a protected object. Close inherited handles before exec.
 
 NAS has dedicated service ownership and non-worker-searchable parents. Its bytes,
 thumbnails, temporary uploads, backups and scan output share the private boundary.
-No broad ACL mutation on arbitrary user files: scope changes to managed resources.
-Changes to existing host ownership/units are owner operations at installation.
+An authenticated owner may grant a selected worker access to any canonical
+absolute host target. Apply records the exact target and worker, snapshots ACLs,
+keeps immutable control-plane/NAS boundaries, preserves default private denials,
+and applies explicit Blocks last. Recursive Allow skips known shared runtime
+trees' write access and sensitive paths; those paths need a separate reviewed
+exception where supported. GUI worker reset restores the saved pre-worker ACL
+baseline without deleting files, retains a root-private rollback snapshot, and
+keeps services stopped until Repair reapplies peer-store protection.
+Only recursive rules add default ACL entries to directories; nonrecursive rules
+change access on the selected directory without adding or changing its defaults.
 
 Policy updates use expected revision to prevent lost edits. Validate compiled
 enforcement before activation; report Desired / Applying / Enforced / Failed.
 Revoking access requires terminating affected managed process trees and handles.
+Revocation cannot erase bytes a worker already read or copies it made while access
+was permitted. State that limit and deny future access; do not promise retroactive
+confidentiality. Keep NAS private before any worker launch so this limit is not
+used to excuse a NAS leak. Same-UID workers require process/control-socket isolation;
+workspace or cgroup labels alone do not prevent another process accessing a handle.
 On failure, retain known protection or stop affected workers, report the applied
 revision and offer an owner rollback; never silently drop to none.
 
@@ -130,3 +174,12 @@ includes NAS paths, bytes, thumbnails, scan report or owner credentials.
 
 See [VALIDATION.md](VALIDATION.md) for actual OS adversarial tests. Passing unit
 tests of rule evaluation is necessary but cannot establish isolation.
+
+### Worker-owned discretionary Block targets
+
+ACL denial cannot reliably protect an object or enclosing directory owned by the
+worker: its owner can change permissions or replace directory entries. Rule review
+rejects Block targets with a selected worker owning the target, a covered descendant
+or an ancestor. It does not silently claim enforcement or change native credential
+ownership. Move protected data into an owner-controlled directory before retrying.
+Own-harness native authentication keeps its existing behavior.

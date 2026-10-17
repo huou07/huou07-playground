@@ -1,102 +1,58 @@
-# Target architecture
+# Production architecture
 
-## Current and chosen direction
+Huou07 Playground v0.3.7 uses one Rust server and a static browser UI. Rust
+modules own HTTP/API handling, telemetry, helper IPC, worker policy, file access,
+and app integrations. Static assets are under `web/static/`. Python sources and
+tests remain as compatibility/reference tooling; they are not the active
+dashboard backend.
 
-The inspected baseline is Python stdlib HTTPServer plus static HTML/CSS/JS.
-Rust has not yet been implemented. Preserve static assets and migrate backend
-behavior in slices with parity fixtures. Existing third-party apps remain external
-integrations, not rewritten services.
+## Runtime boundaries
 
-Use Rust with Tokio, Axum, Tower/tower-http, Serde and tracing as the initial
-backend candidates. Choose supported versions and pin Cargo.lock when implemented.
-Use SQLite for durable policy revisions, approvals, redacted audit and file job
-metadata; choose one maintained Rust binding then. Files remain ordinary filesystem
-objects. Never put NAS bytes or credentials in a database/cache. Do not introduce
-PostgreSQL, microservices or a queue without a measured requirement.
-
-## Process boundaries
-
-| Component | Identity and responsibility |
+| Component | Responsibility and boundary |
 | --- | --- |
-| Static UI / dashboard API | Unprivileged dashboard account; telemetry and owner-authenticated API orchestration |
-| Policy administrator | Owner-authenticated control service; authoritative policy and approvals, outside worker-writable trees |
-| Sandbox helper | Minimal typed operations to start/stop managed worker cgroups and apply compiled policy; privileged only where unavoidable |
-| NAS / host file adapter | Owner/data service identity; no worker access to its sockets, credentials or content |
-| Worker launcher / agent | Restricted agents-worker identity; workspace access, scoped broker requests, no administrative capability |
+| Dashboard server | Serves the UI and APIs as an unprivileged system service; authenticates owner requests and bounds telemetry/file work. |
+| Typed helper | Performs narrowly typed privileged operations after checking the local peer and request; it does not accept shell commands from HTTP. |
+| Managed worker launcher | Drops to the selected worker identity, clears supplementary groups and inherited descriptors, sets no-new-privileges, and applies supported OS restrictions. |
+| Broker | Handles explicit, scoped worker file requests and single-use owner approvals; it is separate from direct filesystem permissions. |
+| File service | Performs owner-authorized NAS/Storage operations with descriptor-relative paths, bounded streams, and atomic replacement. |
+| Browser UI | Presents owner sessions, policy controls, approvals, detection, files and monitoring; UI controls do not replace OS enforcement. |
 
-These are trust boundaries, not a requirement for one daemon per table row.
-Start with one unprivileged Rust application and a minimal separately protected
-helper where OS privilege demands it; NAS must not share the worker UID.
-Authenticate owner sessions using an established maintained implementation.
-A VPN/loopback listener and an Origin header are not owner authentication.
-Keep owner-only API state and session material out of telemetry/worker endpoints.
-Authorize every request; deny before metadata or preview reads. Helper IPC checks
-kernel peer credentials and a narrow authenticated protocol; never accept command
-strings, arbitrary systemd unit text or shell fragments from a request.
+The helper, policy data, installed binaries, system units, owner sessions, and
+NAS storage are protected from worker modification. Worker policies use Linux
+DAC/ACLs and process restrictions; Landlock is used where available and required
+by the selected mode. Unsupported guarantees must be reported instead of
+silently widened. The exact rule model and limitations are in
+[SECURITY](SECURITY.md).
 
-Worker binaries, launcher, policy DB, unit configuration, helper and all writable
-ancestor paths must be outside worker control. A worker's edited checkout must
-never be used as the privileged installed executable. Prevent connections to owner
-APIs by both authentication and namespace/socket exposure controls.
+## Data and external integrations
 
-## Suggested Rust workspace (create when implemented)
+Sessions and policy/audit metadata are stored locally with restrictive access.
+NAS bytes remain ordinary filesystem objects; no credentials or file contents
+are placed in a telemetry cache. Uploads stream to a temporary object and
+finalize atomically. Transfers and previews have explicit bounds.
 
-- crates/policy: pure typed rules, operation mapping, conflict decisions, revision.
-- crates/platform-linux: capability probes and enforcement compiler/adapters.
-- crates/server: API, owner sessions, telemetry, file job orchestration.
-- crates/helper: narrow privileged IPC, only if integration proves it necessary.
-- web/static: preserved UI; split readable modules by feature as each is touched.
-- tests/fixtures and tests/integration: synthetic data and OS boundary scenarios.
+Playground can integrate with external harnesses, Cockpit, VPN services, and
+selected web applications. Those services, their databases, provider accounts,
+and native authentication stores are not Playground source and remain separately
+managed. Relays preserve an application's existing authentication behavior;
+Playground does not invent credentials for an app without a supported login.
 
-Avoid empty crates and speculative traits. Add a boundary when the first real
-caller needs it. Keep the policy evaluator independent of HTTP and privileged code.
-Use typed errors for denied, approval-required, unavailable and unsupported;
-API errors must not reveal a sensitive filename or value to unauthorized callers.
+## Configuration and lifecycle
 
-## OS enforcement and change application
+The Debian package provides generic defaults and reads owner configuration from
+the system configuration directory. Secret values must be supplied in
+owner-controlled files with restricted permissions. Package scripts preserve
+owner data and supported existing service state, save rollback snapshots, and
+provide update, repair, rollback, and data-retaining removal. See the
+[package guide](../deploy/package/README.md) for supported operations.
 
-Managed worker launches compile policy into namespaces/mount exposure, DAC where
-appropriate, systemd restrictions, no_new_privs and optional Landlock.
-Runtime libraries, toolchains and designated workspace are explicitly mapped;
-system services, sockets, host homes and NAS are absent unless permitted.
-Probe actual ABI and namespace availability; fail launch if required guarantees
-cannot be enforced. Landlock adds restrictions and cannot itself relax a running
-sandbox; systemd path protection alone is not a complete read/execute policy.
+## Build and performance boundaries
 
-A desired revision is persisted, validated, then applied to the managed process
-tree. Never display Enforced until all affected processes use that revision.
-For revocation, stop the complete cgroup, close broker handles and recreate it.
-A restart requirement or failed application is visible and recoverable; an old
-running process is not protected merely because the new DB revision exists.
-Existing unmanaged workers require owner migration, not automatic host changes.
+The Rust workspace and lockfile are pinned. Hosted CI runs formatting, Clippy,
+unit/source checks, release build, HTTP smoke, browser lanes, and package gates.
+The existing cache is bounded and process-local; no external cache is required.
+Performance observations must use the same workload and state their coverage.
+CPU time or a short host sample does not establish electricity savings.
 
-## Caching, latency and energy
-
-First use bounded in-process TTL/single-flight caches for non-sensitive telemetry
-and app health, with timestamps and stale/error states. Collect on demand or with
-low-frequency shared collectors; request count must not multiply sampling work.
-Use streaming transfers, pagination and bounded blocking work off the async executor.
-UI polling is scoped to visible views, stops when hidden, avoids overlap and
-backs off on failures. Preserve configurable refresh intervals.
-
-Redis is optional. Do not reuse another application's Redis or assume its presence
-makes it safe. Add it only if multiple processes need shared non-sensitive cached
-data and CI comparison shows lower p95 latency or resource use after including
-Redis memory, CPU, wakeups and writes. Keep a working no-Redis path, bounded TTL,
-private connectivity and explicit license/version choice. Policy decisions and
-revocations always consult authoritative current state; no stale allow cache.
-
-No CPU governor, swap, GPU, filesystem or power-management host changes are part
-of optimization. Measure product idle/open/transfer cost before changing architecture.
-CPU package energy is not whole-machine electricity; CI cannot establish target-host
-watts. Hardware energy acceptance awaits owner-authorized measurement.
-
-## Migration and rollback
-
-Port health/static routes and safe read APIs first, then sessions/policy, OS
-enforcement, NAS/Storage and remaining parity. Preserve old behavior fixtures;
-security-sensitive routes may intentionally change only with a documented contract.
-Keep the Python reference executable in CI until replacement parity passes.
-No dual production listener or automated switch on the owner's host.
-Use schema versions, atomic migrations with backup/restore and stable .deb data paths.
-Only delete legacy source once its replacement has evidence and rollback is recorded.
+See the [implementation map](IMPLEMENTATION.md) for component paths and
+[validation contract](VALIDATION.md) for exact evidence classes.

@@ -7,9 +7,12 @@ __pycache__/
 .DS_Store
 assets/turtle-local.png
 ChatGPT Image Oct 9, 2026, 12_39_03 AM.png
+.codegraph/
 .playwright-cli/
 node_modules/
 playwright-report/
 test-results/
+target/
+/dist/
 
 web/static/branding.png

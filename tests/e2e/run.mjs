@@ -62,11 +62,16 @@ try {
     ...process.env,
     HUOU07_E2E_APP_PORT: String(appPort),
   });
-  const dashboard = start(process.env.PYTHON || 'python3', [join(root, 'web/app.py')], {
+  const rust = process.env.HUOU07_E2E_BACKEND === 'rust';
+  const command = rust ? join(root, 'target/debug/h07p-server') : (process.env.PYTHON || 'python3');
+  const args = rust ? [] : [join(root, 'web/app.py')];
+  const dashboard = start(command, args, {
     ...process.env,
     HOST: '127.0.0.1',
     PORT: String(dashboardPort),
     APPS_FILE: registry,
+    H07P_STATE_DIR: join(temp, 'owner-state'),
+    H07P_HELPER_SOCKET: join(temp, 'fixture-no-helper.sock'),
   });
   await Promise.all([
     waitFor(appUrl, appServer, 'Acceptance application'),

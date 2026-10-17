@@ -5,13 +5,16 @@ description: Migrate H07P backend behavior to Rust, diagnose resource costs, and
 
 # H07P efficiency and CI
 
-Read [architecture](../../../docs/ARCHITECTURE.md),
+Read [implementation](../../../docs/IMPLEMENTATION.md),
+[architecture](../../../docs/ARCHITECTURE.md),
 [validation](../../../docs/VALIDATION.md) and [roadmap](../../../docs/ROADMAP.md).
 
 ## Procedure
 
-1. Establish exact source and one user-observable slice. Preserve design assets
-   and Python reference until parity evidence exists. Do not scaffold unused crates.
+1. Select the incomplete migration boundary from the tracker and current source map.
+   Preserve design assets/Python reference. Reuse the existing health/static crate;
+   do not recreate completed scaffolding. Compare fixture inputs, sampling state,
+   null/unavailable fields, units and declared tolerances, not just JSON keys.
 2. Use maintained Rust libraries with pinned Cargo.lock/features and reviewed
    licenses. Build/test only on disposable GitHub-hosted machines.
 3. Compare the same fixtures, workload and sample duration. Capture latency
@@ -19,7 +22,9 @@ Read [architecture](../../../docs/ARCHITECTURE.md),
    Include helper/collector/Redis cost. Historical samples are not a fresh baseline.
 4. Fix measured bottlenecks with bounded concurrency, streaming, shared collection,
    visibility-aware polling and in-process cache before external Redis.
-5. Add meaningful parity/boundary regressions and required hosted gates. OS/package
+5. Exercise actual Rust HTTP responses in the preserved UI; the current Python
+   browser runner and intercepted APIs cannot prove Rust parity. Add meaningful
+   parity/boundary regressions and required hosted gates. OS/package
    checks use disposable Debian VM; capability skips cannot count as acceptance.
 6. Review action pins, token permissions, untrusted PR inputs and artifact redaction.
    A release needs exact passed gates and honest notes, not a count of completed tasks.
@@ -28,5 +33,5 @@ Read [architecture](../../../docs/ARCHITECTURE.md),
 
 Report changed product behavior, comparable measurements and variance, CI revision/
 run, license provenance and remaining acceptance gaps. No invented watts saved.
-If two speculative repairs fail, state a falsifiable hypothesis and discriminating
-check before continuing. Never run installers, tests or power tuning on the owner host.
+Use shared verify-debug for failing-check repair rather than duplicating its loop.
+Never run installers, tests or power tuning on the owner host.
