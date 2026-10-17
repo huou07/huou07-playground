@@ -216,43 +216,7 @@ fn readonly_roots() -> &'static [PathBuf] {
         .as_slice()
 }
 fn sensitive_name(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    [
-        ".netrc",
-        ".npmrc",
-        ".pypirc",
-        ".git-credentials",
-        ".bash_history",
-        ".zsh_history",
-        ".lesshst",
-        "auth.json",
-        ".credentials.yaml",
-        "credentials.json",
-        "credentials.yaml",
-        "credentials.yml",
-        "credentials",
-        "credentials.toml",
-        "known_hosts",
-        "passwd",
-        "shadow",
-        "gshadow",
-        "sudoers",
-        ".s3cfg",
-        ".envrc",
-        ".gitcookies",
-        "id_rsa",
-        "id_ed25519",
-        "id_ecdsa",
-        "authorized_keys",
-    ]
-    .contains(&name.as_str())
-        || [".pem", ".key", ".p12", ".pfx"]
-            .iter()
-            .any(|suffix| name.ends_with(suffix))
-        || ((name == ".env" || name.starts_with(".env.") || name.ends_with(".env"))
-            && !["example", "sample", "template"]
-                .iter()
-                .any(|part| name.contains(part)))
+    crate::sensitive::is_protected_name(name)
 }
 pub(crate) fn is_private_path(path: &Path) -> bool {
     let github_hosts = path.file_name().is_some_and(|name| name == "hosts.yml")
