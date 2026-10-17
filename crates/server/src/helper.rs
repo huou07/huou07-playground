@@ -734,6 +734,32 @@ fn acl_spec(
     directories: bool,
     recursive: bool,
 ) -> Result<String> {
+    let worker_uids = workers
+        .iter()
+        .map(|worker| crate::user_ids(worker).map(|ids| ids.0))
+        .collect::<Result<Vec<_>>>()?;
+    let owner_uid = if action == "block" {
+        None
+    } else {
+        Some(crate::user_ids("huou07")?.0)
+    };
+    acl_spec_for_uids(
+        &worker_uids,
+        owner_uid,
+        rule,
+        action,
+        directories,
+        recursive,
+    )
+}
+fn acl_spec_for_uids(
+    worker_uids: &[u32],
+    owner_uid: Option<u32>,
+    rule: &Value,
+    action: &str,
+    directories: bool,
+    recursive: bool,
+) -> Result<String> {
     let operations = rule["operations"].as_array().ok_or("Missing operations")?;
     let mut entries = Vec::new();
     let access = if action == "block" {
@@ -760,15 +786,14 @@ fn acl_spec(
             }
         )
     };
-    for worker in workers {
-        let (uid, _) = crate::user_ids(worker)?;
+    for uid in worker_uids {
         entries.push(format!("u:{uid}:{access}"));
         if directories && recursive {
             entries.push(format!("d:u:{uid}:{access}"));
         }
     }
     if action != "block" {
-        let (owner_uid, _) = crate::user_ids("huou07")?;
+        let owner_uid = owner_uid.ok_or("Missing owner")?;
         entries.push(format!("u:{owner_uid}:{access}"));
         if directories && recursive {
             entries.push(format!("d:u:{owner_uid}:{access}"));
@@ -1694,31 +1719,30 @@ mod policy_tests {
     fn allow_acls_share_with_primary_owner_and_blocks_do_not_change_owner_acl() {
         let rule =
             serde_json::json!({"operations":["list","read","write","create","delete","execute"]});
-        let owner_uid = crate::user_ids("huou07").unwrap().0;
-        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
-        let allow = super::acl_spec(&["codex-worker"], &rule, "allow", true, true).unwrap();
-        assert!(allow.contains(&format!("u:{worker_uid}:rwx")));
-        assert!(allow.contains(&format!("d:u:{worker_uid}:rwx")));
-        assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
-        assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
+        let allow =
+            super::acl_spec_for_uids(&[2001], Some(1000), &rule, "allow", true, true).unwrap();
+        assert!(allow.contains("u:2001:rwx"));
+        assert!(allow.contains("d:u:2001:rwx"));
+        assert!(allow.contains("u:1000:rwx"));
+        assert!(allow.contains("d:u:1000:rwx"));
 
-        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, true).unwrap();
-        assert!(block.contains(&format!("u:{worker_uid}:---")));
-        assert!(block.contains(&format!("d:u:{worker_uid}:---")));
-        assert!(!block.contains(&format!("u:{owner_uid}:")));
-        assert!(!block.contains(&format!("d:u:{owner_uid}:")));
+        let block = super::acl_spec_for_uids(&[2001], None, &rule, "block", true, true).unwrap();
+        assert!(block.contains("u:2001:---"));
+        assert!(block.contains("d:u:2001:---"));
+        assert!(!block.contains("u:1000:"));
+        assert!(!block.contains("d:u:1000:"));
     }
 
     #[test]
     fn nonrecursive_directory_acl_does_not_change_default_permissions() {
         let rule = serde_json::json!({"operations":["write","create","delete","execute"]});
-        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
-        let acl = super::acl_spec(&["codex-worker"], &rule, "allow", true, false).unwrap();
-        assert!(acl.contains(&format!("u:{worker_uid}:-wx")));
+        let acl =
+            super::acl_spec_for_uids(&[2001], Some(1000), &rule, "allow", true, false).unwrap();
+        assert!(acl.contains("u:2001:-wx"));
         assert!(!acl.contains("d:u:"));
 
-        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, false).unwrap();
-        assert!(block.contains(&format!("u:{worker_uid}:---")));
+        let block = super::acl_spec_for_uids(&[2001], None, &rule, "block", true, false).unwrap();
+        assert!(block.contains("u:2001:---"));
         assert!(!block.contains("d:u:"));
     }
 
