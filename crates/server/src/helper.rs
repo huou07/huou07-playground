@@ -739,7 +739,14 @@ fn acl_spec(
         .map(|worker| crate::user_ids(worker).map(|(uid, _)| uid))
         .collect::<Result<Vec<_>>>()?;
     let owner_uid = crate::user_ids("huou07")?.0;
-    acl_spec_for_uids(&worker_uids, owner_uid, rule, action, directories, recursive)
+    acl_spec_for_uids(
+        &worker_uids,
+        owner_uid,
+        rule,
+        action,
+        directories,
+        recursive,
+    )
 }
 
 fn acl_spec_for_uids(
@@ -1711,16 +1718,14 @@ mod policy_tests {
         let owner_uid = 1000;
         let worker_uid = 1001;
         let allow =
-            super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "allow", true, true)
-                .unwrap();
+            super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "allow", true, true).unwrap();
         assert!(allow.contains(&format!("u:{worker_uid}:rwx")));
         assert!(allow.contains(&format!("d:u:{worker_uid}:rwx")));
         assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
         assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
 
         let block =
-            super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "block", true, true)
-                .unwrap();
+            super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "block", true, true).unwrap();
         assert!(block.contains(&format!("u:{worker_uid}:---")));
         assert!(block.contains(&format!("d:u:{worker_uid}:---")));
         assert!(!block.contains(&format!("u:{owner_uid}:")));
