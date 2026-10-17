@@ -588,11 +588,9 @@ fn snapshot(target: &str, recursive: bool) -> Result<PathBuf> {
             let _ = fs::remove_file(&temporary);
             return Err("Could not snapshot original ACL".into());
         }
-        if !batch.is_empty() {
-            if snapshot_acl_batch(&file, &mut batch).is_err() {
-                let _ = fs::remove_file(&temporary);
-                return Err("Could not snapshot original ACL".into());
-            }
+        if !batch.is_empty() && snapshot_acl_batch(&file, &mut batch).is_err() {
+            let _ = fs::remove_file(&temporary);
+            return Err("Could not snapshot original ACL".into());
         }
         fs::File::open(&temporary)
             .and_then(|f| f.sync_all())
@@ -894,9 +892,9 @@ fn apply_scope(
 fn enforce(policy: &Value) -> Result<()> {
     let rules = policy["rules"].as_array().ok_or("Invalid stored rules")?;
     let active = |rule: &&Value| {
-        !rule["expires_at"]
+        rule["expires_at"]
             .as_u64()
-            .is_some_and(|t| t <= crate::now())
+            .is_none_or(|t| t > crate::now())
     };
     // Grants skip known credential/private targets; default and explicit blocks
     // are then applied after every grant, so a parent Allow cannot reopen them.
@@ -951,12 +949,12 @@ fn enforce(policy: &Value) -> Result<()> {
         if !root.exists() {
             continue;
         }
-        let denied = private_workers(&root);
+        let denied = private_workers(root);
         if denied.is_empty() {
             continue;
         }
         let rule = deny_rule();
-        apply_scope(&root, true, &denied, &rule, "block", false)?;
+        apply_scope(root, true, &denied, &rule, "block", false)?;
     }
     // An explicit sensitive-path exception is applied after defaults, but never
     // after an owner Block rule. Ancestor search rights expose no directory listing.
@@ -1031,77 +1029,6 @@ fn enforce(policy: &Value) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod policy_tests {
-    use super::{
-        private_exception_ancestors, should_flush_acl_batch, ACL_PATH_BATCH_MAX_BYTES,
-        ACL_PATH_BATCH_MAX_COUNT,
-    };
-    use std::path::Path;
-
-    #[test]
-    fn exact_private_exception_gets_search_rights_on_every_parent() {
-        let ancestors = private_exception_ancestors(Path::new("/home/huou07/.config/gh/hosts.yml"));
-        assert_eq!(ancestors.first().unwrap(), Path::new("/"));
-        assert!(ancestors.contains(&Path::new("/home/huou07/.config").to_path_buf()));
-        assert!(ancestors.contains(&Path::new("/home/huou07/.config/gh").to_path_buf()));
-        assert_eq!(
-            ancestors.last().unwrap(),
-            Path::new("/home/huou07/.config/gh")
-        );
-    }
-
-    #[test]
-    fn acl_command_batches_are_bounded_by_count_and_argument_bytes() {
-        assert!(!should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT - 1, 1));
-        assert!(should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT, 1));
-        assert!(!should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES - 1));
-        assert!(should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES));
-    }
-
-    #[test]
-    fn allow_acls_share_with_primary_owner_and_blocks_do_not_change_owner_acl() {
-        let rule =
-            serde_json::json!({"operations":["list","read","write","create","delete","execute"]});
-        let owner_uid = crate::user_ids("huou07").unwrap().0;
-        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
-        let allow = super::acl_spec(&["codex-worker"], &rule, "allow", true, true).unwrap();
-        assert!(allow.contains(&format!("u:{worker_uid}:rwx")));
-        assert!(allow.contains(&format!("d:u:{worker_uid}:rwx")));
-        assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
-        assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
-
-        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, true).unwrap();
-        assert!(block.contains(&format!("u:{worker_uid}:---")));
-        assert!(block.contains(&format!("d:u:{worker_uid}:---")));
-        assert!(!block.contains(&format!("u:{owner_uid}:")));
-        assert!(!block.contains(&format!("d:u:{owner_uid}:")));
-    }
-
-    #[test]
-    fn nonrecursive_directory_acl_does_not_change_default_permissions() {
-        let rule = serde_json::json!({"operations":["write","create","delete","execute"]});
-        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
-        let acl = super::acl_spec(&["codex-worker"], &rule, "allow", true, false).unwrap();
-        assert!(acl.contains(&format!("u:{worker_uid}:-wx")));
-        assert!(!acl.contains("d:u:"));
-
-        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, false).unwrap();
-        assert!(block.contains(&format!("u:{worker_uid}:---")));
-        assert!(!block.contains("d:u:"));
-    }
-
-    #[test]
-    fn acl_restore_only_ignores_missing_paths() {
-        assert!(super::restore_failed_only_on_missing_paths(
-            "setfacl: /home/huou07/removed-file: No such file or directory\n"
-        ));
-        assert!(!super::restore_failed_only_on_missing_paths(
-            "setfacl: /home/huou07/file: Operation not supported\n"
-        ));
-        assert!(!super::restore_failed_only_on_missing_paths(""));
-    }
-}
 fn status() -> Result<Value> {
     let mut p = load()?;
     let c = db()?;
@@ -1737,4 +1664,76 @@ pub(crate) fn maintain_workers(v: &Value) -> Result<Value> {
     )?;
     start(&active)?;
     Ok(json!({"revision":revision,"enforced_revision":revision,"data_retained":true}))
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::{
+        private_exception_ancestors, should_flush_acl_batch, ACL_PATH_BATCH_MAX_BYTES,
+        ACL_PATH_BATCH_MAX_COUNT,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn exact_private_exception_gets_search_rights_on_every_parent() {
+        let ancestors = private_exception_ancestors(Path::new("/home/huou07/.config/gh/hosts.yml"));
+        assert_eq!(ancestors.first().unwrap(), Path::new("/"));
+        assert!(ancestors.contains(&Path::new("/home/huou07/.config").to_path_buf()));
+        assert!(ancestors.contains(&Path::new("/home/huou07/.config/gh").to_path_buf()));
+        assert_eq!(
+            ancestors.last().unwrap(),
+            Path::new("/home/huou07/.config/gh")
+        );
+    }
+
+    #[test]
+    fn acl_command_batches_are_bounded_by_count_and_argument_bytes() {
+        assert!(!should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT - 1, 1));
+        assert!(should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT, 1));
+        assert!(!should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES - 1));
+        assert!(should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES));
+    }
+
+    #[test]
+    fn allow_acls_share_with_primary_owner_and_blocks_do_not_change_owner_acl() {
+        let rule =
+            serde_json::json!({"operations":["list","read","write","create","delete","execute"]});
+        let owner_uid = crate::user_ids("huou07").unwrap().0;
+        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
+        let allow = super::acl_spec(&["codex-worker"], &rule, "allow", true, true).unwrap();
+        assert!(allow.contains(&format!("u:{worker_uid}:rwx")));
+        assert!(allow.contains(&format!("d:u:{worker_uid}:rwx")));
+        assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
+        assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
+
+        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, true).unwrap();
+        assert!(block.contains(&format!("u:{worker_uid}:---")));
+        assert!(block.contains(&format!("d:u:{worker_uid}:---")));
+        assert!(!block.contains(&format!("u:{owner_uid}:")));
+        assert!(!block.contains(&format!("d:u:{owner_uid}:")));
+    }
+
+    #[test]
+    fn nonrecursive_directory_acl_does_not_change_default_permissions() {
+        let rule = serde_json::json!({"operations":["write","create","delete","execute"]});
+        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
+        let acl = super::acl_spec(&["codex-worker"], &rule, "allow", true, false).unwrap();
+        assert!(acl.contains(&format!("u:{worker_uid}:-wx")));
+        assert!(!acl.contains("d:u:"));
+
+        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, false).unwrap();
+        assert!(block.contains(&format!("u:{worker_uid}:---")));
+        assert!(!block.contains("d:u:"));
+    }
+
+    #[test]
+    fn acl_restore_only_ignores_missing_paths() {
+        assert!(super::restore_failed_only_on_missing_paths(
+            "setfacl: /home/huou07/removed-file: No such file or directory\n"
+        ));
+        assert!(!super::restore_failed_only_on_missing_paths(
+            "setfacl: /home/huou07/file: Operation not supported\n"
+        ));
+        assert!(!super::restore_failed_only_on_missing_paths(""));
+    }
 }
