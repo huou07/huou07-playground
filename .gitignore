@@ -16,3 +16,7 @@ target/
 /dist/
 
 web/static/branding.png
+
+# Local disposable lab: qcow2 base image and overlay are multi-GB build state,
+# never published. Created by the 2026-10-17 VM plan.
+.h07p-dev/
