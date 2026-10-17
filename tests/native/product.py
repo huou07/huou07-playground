@@ -36,8 +36,15 @@ def main():
     service = pwd.getpwnam("huou07-playground")
     account = "h07p-test-" + secrets.token_hex(3)
     unit = account + ".service"
-    workspace = Path(tempfile.mkdtemp(prefix=".h07p-test-", dir="/home/huou07/Projects"))
+    # The workspace lives inside the fixture root so the fixture never depends on
+    # host default ACLs or on a traversable owner home: /var/tmp and the fixture
+    # root are world-traversable and both directories get explicit modes below.
+    workspace = root / "workspace"
+    workspace.mkdir(mode=0o755)
     os.chown(workspace, owner.pw_uid, owner.pw_gid)
+    # Drop any inherited extended/default entries so the pre-policy state is the
+    # plain mode bits this fixture asserts, on any host.
+    run("setfacl", "-b", "-k", "--", str(workspace))
     os.chmod(workspace, 0o755)
     processes = []
     created_account = False
@@ -246,7 +253,18 @@ def main():
         target = workspace / "ordinary.txt"
         target.write_text("synthetic ordinary content")
         os.chown(target, owner.pw_uid, owner.pw_gid)
+        run("setfacl", "-b", "--", str(target))
         os.chmod(target, 0o644)
+        # Baseline: the plain mode must already allow every worker to read, so a
+        # later "denied" result cannot pass for the wrong reason (a host ACL or a
+        # non-traversable ancestor would deny both the block and the rollback).
+        for name in ("dsh-worker", "codex-worker", "opencode-worker"):
+            baseline = subprocess.run(["runuser", "-u", name, "--", "cat", str(target)],
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            check(baseline.returncode == 0 and baseline.stdout == b"synthetic ordinary content",
+                  name + " baseline read access missing: "
+                  + baseline.stderr.decode(errors="replace").strip() + " | "
+                  + run("getfacl", "-p", "--", str(target)).stdout.decode())
         initial_revision = value("/api/control/status")[1]["revision"]
         draft = dict(expected_revision=initial_revision, preset="none", workspace=str(workspace), rules=[dict(
             worker="*", target=str(target), action="block", recursive=False,
@@ -279,8 +297,13 @@ def main():
         check(request("/api/control/apply", draft)[0] == 409, "stale revision rejected")
         check(request("/api/control/rollback", dict(expected_revision=initial_revision + 1, revision=initial_revision))[0] == 200, "rollback applied")
         for name in ("dsh-worker", "codex-worker", "opencode-worker"):
-            check(run("runuser", "-u", name, "--", "cat", str(target)).stdout == b"synthetic ordinary content",
-                  name + " positive access restored")
+            restored = subprocess.run(["runuser", "-u", name, "--", "cat", str(target)],
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            acl = run("getfacl", "-p", "--", str(target)).stdout.decode()
+            check(restored.returncode == 0 and restored.stdout == b"synthetic ordinary content",
+                  name + " positive access not restored: "
+                  + restored.stderr.decode(errors="replace").strip() + " | " + acl)
+            check("user:" + name not in acl, name + " named ACL entry still present after rollback")
         def broker(worker, message):
             code = "import socket,json,sys;s=socket.socket(socket.AF_UNIX);s.connect(sys.argv[1]);s.sendall((sys.argv[2]+'\\n').encode());print(s.makefile().readline())"
             return json.loads(run("runuser", "-u", worker, "--", "python3", "-c", code,
