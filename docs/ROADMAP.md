@@ -15,10 +15,11 @@ This file is the only current task tracker. Product behavior is in
   `{"ok":true}`. The endpoint has no version field.
 - Active executable SHA-256:
   `90626d3d4ee21d02f36bd2ed58fa61c10e4cce769931094e338894c96b901d3a`.
-- Production source base: `e6c0103881e7a2af180a6bb819691d871491d49a`, plus
-  `crates/server/src/helper.rs` blob
-  `387dd51bf23a794c52c6bb876053ed2f39e42623`. The helper blob matches commit
-  `9512ccb4e35ff77fa703d63774e29c3f99029476` exactly.
+- Production source base: `e6c0103881e7a2af180a6bb819691d871491d49a`, plus the
+  helper working-tree blob recorded in the provenance document, which matched
+  commit `9512ccb4e35ff77fa703d63774e29c3f99029476`. The publication branch
+  adds disclosed behavior-equivalent Clippy/testability edits to `helper.rs`;
+  it is not a byte-for-byte copy of the deployed helper.
 - Production services, databases, ACLs, authentication, credentials, and user
   data were not changed or accessed beyond the listed read-only metadata and
   health request.
@@ -33,7 +34,12 @@ This file is the only current task tracker. Product behavior is in
   not been merged into the default branch.
 - Dedicated branch: `sync/production-v0.3.7`, based on the latest `main` history
   and recovered source revision `9512ccb`.
-- PR URL, exact-SHA CI, merge SHA, and tag status: pending.
+- PR: https://github.com/huou07/huou07-playground/pull/1
+- Exact-commit hosted CI passed on branch commit
+  `ca81c830960b10d76f61c8343a8f04962c80b5b6` (framework, Rust/Python browser
+  acceptance, Rust formatting/lints/tests/build/HTTP smoke, and Python/shell
+  checks). The PR event checks for this commit are still finishing.
+- Merge SHA and tag status: pending PR checks and merge.
 
 ### Recovered first-party components
 
@@ -57,8 +63,8 @@ itself proof that every production journey was verified.
   historical host-specific operational records in the candidate history. These
   are excluded from the synchronized working tree; existing public history is
   preserved and not rewritten.
-- Tree/history review, license review, exact-commit hosted CI, and clean-checkout
-  reproducibility checks remain required before merge/tag.
+- Candidate/history and license review completed; hosted CI passed on the branch
+  commit above. Merge review and an exact release/tag audit remain outstanding.
 - No build, installer, test, service restart, or policy change was run on
   production.
 
@@ -67,8 +73,10 @@ itself proof that every production journey was verified.
 The running health route does not identify its version. A byte-for-byte rebuild
 comparison was not possible within this read-only production inspection. The
 source/release relationship is supported by the production checkout revision,
-the exact helper blob match, active release label, executable path and recorded
-binary hash. Authenticated UI journeys were not rerun for this synchronization.
+the recovered helper blob match at intake, deployed static/configuration file
+matches, active release label, executable path and recorded binary hash. The
+publication branch's disclosed helper maintenance edits were not deployed.
+Authenticated UI journeys were not rerun for this synchronization.
 
 Same-UID native application stores are not isolated from their owner; detection
 is bounded and incomplete by design; package lifecycle fixtures do not equal a

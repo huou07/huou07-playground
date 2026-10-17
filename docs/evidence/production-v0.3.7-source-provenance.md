@@ -29,6 +29,14 @@ default-ACL handling for non-recursive versus recursive rules. The production
 working-tree diff also contained documentation changes, which are not part of
 the executable source comparison.
 
+The publication branch retains that recovered source with a small CI-driven
+maintenance patch in `helper.rs`: Clippy-equivalent condition/borrow cleanups,
+test placement, and extracting ACL string rendering over numeric UID fixtures
+so hosted tests do not require production account names. Runtime account lookup
+remains in the production wrapper. The ACL strings and intended policy behavior
+are unchanged; the published helper is therefore not a byte-for-byte copy of
+the deployed source blob. No production binary was rebuilt or replaced.
+
 The release directory contains the compiled server and deployment assets, not a
 Git checkout. All 12 deployed static UI files matched the files in commit `9512ccb`
 by SHA-256. Deployed `gpu.py`, `power.py`, `wg_status.py`, and
