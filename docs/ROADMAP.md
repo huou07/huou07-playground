@@ -25,15 +25,25 @@ roots, and a GUI ACL reset that uses the existing root-owned snapshot while
 preserving bytes. They also address shared runtime read-only ACLs, the DSH Git
 config scrubber issue and traversal for exact private-file exceptions.
 
-Package metadata remains 0.3.7; the active real-Debian release is
+At the start of this delivery, the active real-Debian release was
 `/opt/huou07-playground/releases/0.3.7-acl-inherit-fix/bin/h07p-server`, SHA-256
 `90626d3d4ee21d02f36bd2ed58fa61c10e4cce769931094e338894c96b901d3a`. Both
-Playground and helper services are active and `/api/health` returns `{"ok":true}`.
-This is a directly deployed Rust hotfix build; no new `.deb` was produced. The
-real-host workspace passed 46 Rust tests, a locked offline release build and
-`cargo fmt --all -- --check` with Rust 1.98.0. The fix only adds default ACLs for
-recursive directory rules; nonrecursive directory rules leave existing defaults
-alone. A fresh package audit was not run because `cargo-audit` is absent on Debian.
+Playground and helper services were active and `/api/health` returned
+`{"ok":true}`. That direct Rust hotfix build passed 46 host Rust tests, locked
+offline release build and `cargo fmt --all -- --check` with Rust 1.98.0. The ACL
+fix only adds default entries for recursive directory rules; nonrecursive rules
+leave existing defaults alone.
+
+H07P **0.3.8** is now published from tag [`v0.3.8`](https://github.com/huou07/huou07-playground/releases/tag/v0.3.8),
+source `78ecb43b8126e67861fa56bf633551a318c5f1c6`. Exact-tag GitHub Actions
+[release run 38999148525](https://github.com/huou07/huou07-playground/actions/runs/38999148525)
+passed framework/legacy gates, pinned Rust format/Clippy/tests/release/HTTP smoke,
+both 34-test browser lanes, fresh dependency audit, package lifecycle tests,
+Lintian and two identical package builds on Ubuntu 24.04. The public amd64 `.deb`
+SHA-256 is `bfc2bb4068c09050e21c98752f7be4257639596ea397bfdf597364aab767fbd7`;
+the downloaded release checksum was verified. The workflow's lifecycle fixture
+uses an isolated synthetic dpkg root, not a full Debian systemd VM install. The
+0.3.8 package has not been deployed to the real Debian host.
 
 GUI ACL reset, harness detection, worker repair and the first policy reapply were
 done through Playground at **Desired revision 17 · Enforced revision 17**. The
@@ -52,9 +62,8 @@ paths when restoring old ACL snapshots and fails closed on other errors.
 
 The user-authorized GitHub credential scan found the exact GitHub auth files;
 the selected `dsh-worker` exception was set through the GUI, and its push check
-succeeded without exposing credential contents. Earlier H07P changes are pushed
-to `codex/h07p-product` at `e6c01038`; the focused recursive-ACL correction is in
-the current working diff. Rustup/Flutter/Playwright/public package and browser
+succeeded without exposing credential contents. H07P changes are committed and
+pushed to `codex/h07p-product` through `78ecb43`; Rustup/Flutter/Playwright/public package and browser
 runtime assets were recovered from retained owner sources. The real OR preflight
 then passed under `codex-worker`: Linux debug app built, the editor journey passed
 in 79.1s, and minimum available RAM was 6,014,963,712 bytes. Its runner temporarily
