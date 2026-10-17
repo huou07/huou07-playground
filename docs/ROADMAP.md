@@ -5,6 +5,69 @@ ARCHITECTURE, source coverage in IMPLEMENTATION and dated evidence below.
 Vocabulary: planned, in progress, implemented, CI-verified, owner-accepted, blocked.
 A check or source artifact never implies owner acceptance.
 
+## Quality-system reconciliation and documentation gate — implemented, 2026-10-17
+
+Source: branch `codex/h07p-product`, parent `c0ce1bf91d1f6626cc13cfefa457024c9e19c8ca` (this record is committed with
+the work). Gate result: `bash tools/acceptance.sh --full` -> `PROJECT_ACCEPTANCE=PASS`
+(`make check` 131 tests, `cargo fmt --check`, `cargo clippy --workspace
+--all-targets -D warnings`, workspace tests, release build).
+
+Done in this task, with evidence:
+
+1. **Reconciled with `origin/codex/h07p-product`.** The checkout was nine commits
+   behind with two local reorganization commits and eight uncommitted files. The
+   merge is conflict-free (local and upstream changes touch disjoint paths). The
+   uncommitted edits were resolved per file: `helper.rs` and `ROADMAP.md` were
+   strictly superseded; `IMPLEMENTATION.md`, `SECURITY.md`,
+   `IMPLEMENT-H07P.md` and the credential-guard spec were **byte-identical** to
+   upstream (verified by sha256 before discarding); `.gitignore` was kept;
+   `deploy/package/dashboard.env` is owner-only and untouched. Applied with
+   plumbing because this uid cannot unlink huou07-owned files in the sticky
+   `deploy/package` directory; those three files were written in place and
+   content-verified. The tree now passes the Clippy gate that previously failed
+   at five sites in `helper.rs`.
+2. **Authority chain visible.** Every `docs/**/*.md` is indexed in
+   `docs/README.md` with a `Current`/`Historical` marker, and
+   `tools/check-framework.py` fails on an unindexed document or an unmarked entry
+   (verified with negative controls). `docs/prompts/UPGRADE-H07P.md` is committed
+   and marked Historical.
+3. **Contradictions collapsed.** `IMPLEMENTATION.md` no longer carries tables
+   claiming Permissions/Auto Detect/NAS are absent; `SECURITY.md` now names the
+   two mutually exclusive arrangements (ordinary-user vs managed worker) up front
+   and states which one it describes; `ORDINARY-USER-REINSTALL.md` is Historical
+   with a do-not-rerun banner.
+4. **Real gates automatic.** New CI jobs `package-lifecycle` (release audit,
+   `tests/package` unit tests, `tests/package-lifecycle.sh` install/upgrade/
+   rollback/remove/purge, two compared `build-deb.sh` builds, Lintian),
+   `native-isolation` (`product.py`, `broker.py`, `guard.py`, `files.py` as root
+   with synthetic identities) and `secret-scan` (pinned Gitleaks 8.30.1, checksum
+   verified, change-set scoped, redacted). `tests/native/workers.py` is excluded
+   with its two failure modes recorded; whole-tree secret scanning is not used
+   because it reports 229 findings dominated by the local lab cache.
+5. **Test reachability.** `tests/package` is importable, so `make check` now runs
+   131 tests instead of 113. The Rust browser lane was measured against
+   `dashboard.spec.mjs`: 34 passed, 1 failed at `#sidebar [data-route="system"]`,
+   so that lane is not claimed and `VALIDATION.md` states Rust dashboard journeys
+   are UNVERIFIED.
+6. **Lies deleted.** `.delivery/{ledger,gui-ledger}.json` (tracked, embedding
+   `/Users/meomeo`) are removed; `docs/SKILLS.md`, `docs/STATUS.md` and
+   `docs/PERFORMANCE.md` moved to `docs/history/` with banners.
+
+Not done, with the next action named:
+
+- **Tracker split (prompt item 6).** `ROADMAP.md` still mixes the 2026-10-15/16/17
+  eras and OR/VCE/Flutter work; the dated and cross-project sections have not yet
+  moved to `docs/evidence/`. This section is prepended so current state is read
+  first, but the split itself is outstanding.
+- **One version source and tracing (prompt item 7).** `Cargo.toml` is still 0.1.0
+  while the package is 0.3.x, and no `tracing` crate is wired, so a deployed
+  failure still cannot be diagnosed from structured evidence.
+- **Hosted CI execution.** The three new jobs parse as YAML and their command
+  sequences were rehearsed locally or executed in the disposable guest, but no
+  hosted runner has executed them yet; hosted coverage is UNVERIFIED.
+- **Runtime note.** `dpkg -l huou07-playground` reports 0.3.9 on this host; the
+  2026-10-17 section below still narrates the 0.3.7 hotfix era and awaits item 6.
+
 ## System-wide permissions, worker tool recovery and live Debian acceptance — in progress, 2026-10-17
 
 The owner authorizes this task to restore/update the missing project tools/docs,
