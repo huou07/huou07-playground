@@ -76,6 +76,19 @@ itself proof that every production journey was verified.
 - No build, installer, test, service restart, or policy change was run on
   production.
 
+## OpenCode native proxy auth challenge — in progress
+
+- Chrome Playwright CLI reproduced the blank OpenCode page through the native
+  relay while the backend UI itself responded normally. The unauthenticated
+  backend challenge includes a same-origin CORS header; the H07P-generated
+  challenge did not, so Chrome could not complete the module-script auth retry.
+- `native_proxy.rs` now adds that header only for an exact same-origin request
+  on a loopback/private/local host authority. A focused regression covers
+  allowed origins, untrusted hosts, duplicate headers and the 401 response.
+- The production executable remains unchanged pending hosted CI and the
+  owner-approved package rollout. DSH and OpenCode workers were observed active;
+  this source change is not yet production acceptance evidence.
+
 ## Known limits
 
 The running health route does not identify its version. A byte-for-byte rebuild
