@@ -891,11 +891,7 @@ fn apply_scope(
 }
 fn enforce(policy: &Value) -> Result<()> {
     let rules = policy["rules"].as_array().ok_or("Invalid stored rules")?;
-    let active = |rule: &&Value| {
-        rule["expires_at"]
-            .as_u64()
-            .is_none_or(|t| t > crate::now())
-    };
+    let active = |rule: &&Value| rule["expires_at"].as_u64().is_none_or(|t| t > crate::now());
     // Grants skip known credential/private targets; default and explicit blocks
     // are then applied after every grant, so a parent Allow cannot reopen them.
     for rule in rules
