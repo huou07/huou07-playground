@@ -1,7 +1,10 @@
 # H07P skill routing
 
 Choose the smallest matching procedure; a catalog does not preload skills.
-Canonical shared catalog: [system skills](/srv/agent-workbench/skills.md).
+Canonical shared catalog: the AEH control workspace's preserved catalog at
+`~/AEH/docs/writing-agents-md/shared-skills-catalog.md`, with bodies in
+`~/AEH/skills/` (host reference only; not a portable CI dependency and not
+proof of session discovery).
 Shared bodies remain system-owned; project bodies remain in this repository.
 System links are optional host references, not portable CI dependencies.
 

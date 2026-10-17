@@ -3,8 +3,10 @@
 ## Current and chosen direction
 
 The legacy reference is Python stdlib HTTPServer plus static HTML/CSS/JS.
-A minimal Rust workspace already serves static assets and /api/health on loopback;
-other APIs and OS collectors remain Python. See [IMPLEMENTATION.md](IMPLEMENTATION.md)
+The Rust workspace now serves static assets and the dashboard route groups
+(health, owner session, control, setup, filesystem, telemetry) on loopback; the
+preserved Python reference remains for parity checks and as the source of
+behaviour to compare against. See [IMPLEMENTATION.md](IMPLEMENTATION.md)
 for source coverage and [ROADMAP.md](ROADMAP.md) for dated CI evidence.
 The boundaries below are target architecture, not implemented isolation.
 Preserve static assets and migrate behavior in slices with parity fixtures.

@@ -45,9 +45,12 @@ After moving a checkout between operating systems, retain source and lockfiles
 but recreate generated `node_modules`, `target` and Python cache directories
 in the authorized build environment. Do not copy macOS binaries into Linux
 tool paths. No dependency upgrade is justified solely by a missing local SDK.
-The Rust server currently implements health/static routes only; absent dashboard
-APIs are migration work, as recorded in [IMPLEMENTATION.md](IMPLEMENTATION.md),
-not evidence that a Debian package is missing.
+The Rust server is no longer health/static only: `crates/server/src/api.rs` and
+`telemetry.rs` register the health, owner-session, control, setup, filesystem and
+telemetry route groups (metrics, processes, services, cockpit, files, vpn), with
+broker, guard, sandbox, scan and helper modules alongside them. Parity work that
+remains is recorded in [IMPLEMENTATION.md](IMPLEMENTATION.md), and it is not
+evidence that a Debian package is missing.
 
 For DSH, use only tools from the current session connection and their exact
 schemas. Native agent tools retain their own documented loaders/permissions.
