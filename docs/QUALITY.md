@@ -3,9 +3,12 @@
 Authority: this is H07P's definition of "good" for the product. It does not
 replace [AGENTS.md](../AGENTS.md), [WORKING.md](WORKING.md), [SECURITY.md](SECURITY.md)
 or the project's gates; where they disagree, the source, the exact-SHA CI runs and
-observed host behaviour decide.
+observed host behaviour decide. For the live Debian lane, the owner authorization
+in [PRODUCT.md](PRODUCT.md), [WORKING.md](WORKING.md) and [VALIDATION.md](VALIDATION.md)
+supersedes the historical no-live-host defaults in `README.md`, `TOOLS.md` and the
+project skills; those defaults hold again when that authorization ends.
 
-Last reviewed: 2026-10-17.
+Last reviewed: 2026-10-18.
 
 ## Supported targets
 
@@ -26,8 +29,8 @@ is unresolved), a published package repository, or cross-platform support.
 |---|---|---|---|---|
 | Correctness | admission gate passes | `bash tools/acceptance.sh` | acceptance | see recorded result |
 | Correctness (source) | Python reference, deploy scripts and tests | `make check` | verify | see recorded result |
-| Security | Landlock worker isolation, typed helper IPC, gitleaks with redaction, RustSec audit fails closed | `tools/security-audit.py`, `tools/release-audit.py`, `scan.rs` | manual + publication flow | real probes exist but are not in CI |
-| Performance | resource cost of the Rust server and the guest baseline | `tools/measure-product.py`, native RSS/latency checks | manual | measured, no enforced budget |
+| Security | Landlock worker isolation, typed helper IPC, gitleaks with redaction, RustSec audit fails closed | `tools/security-audit.py`, `tools/release-audit.py`, `scan.rs` | CI jobs `security-audit`, `secret-scan` and `package-lifecycle`; owner-host audit stays manual | the audit tool now executes in CI against synthetic identities; real Debian findings remain owner-host evidence |
+| Performance | resource cost of the Rust server and the guest baseline | `tools/check-performance-budget.py` over `tools/measure-product.py` | acceptance (`tools/acceptance.sh` performance lane) | bounded budget enforced on the named machine class; see Performance budget |
 | Reliability | service health, restart, rollback of a package install | lifecycle scripts + systemd | lab/manual | partial |
 | Accessibility / UX | roles, focus paths and screenshots in the browser matrix | `tests/e2e/ux.spec.mjs` | CI browser lane | verified for covered journeys; no pixel assertions |
 | Compatibility | Debian package on the supported release | hosted workflow | `release.yml` | hosted authority |
@@ -36,34 +39,77 @@ is unresolved), a published package repository, or cross-platform support.
 
 ## Known gaps, in priority order
 
-1. This checkout is behind `origin/codex/h07p-product`; the release workflow and
-   the 0.3.8 evidence exist only on the remote, and the local uncommitted edits
-   overlap that work without being identical. Reconcile before any new work.
-   Measured 2026-10-17: `cargo clippy --workspace --all-targets -- -D warnings`
-   fails on the uncommitted `crates/server/src/helper.rs` (collapsible `if` at
-   line 591, simplifiable boolean at 897, needless references at 954/959, items
-   after a test module at 1035), while `cargo test --workspace` passes. The tree
-   therefore does not pass its own CI lint gate as it stands.
-2. `docs/prompts/UPGRADE-H07P.md` is untracked and 11 documents are missing from
-   `docs/README.md`; the tracker mixes several eras and other projects' work.
-3. The `.delivery/*.json` ledgers (tracked) embed a private macOS path, and the
-   crate version (0.1.0) has no link to the package version (0.3.x).
-4. `tests/native/*`, `tests/package-*.sh`, `tools/release-audit.py` and
-   `tools/build-deb.sh` are now wired to CI jobs (`native-isolation`,
-   `package-lifecycle`) plus a change-set secret scan. Two limits remain explicit:
-   `tests/native/workers.py` is deliberately **not** in CI because it cannot pass
-   as written (it applies a Block naming `dsh-worker` before creating that account,
-   and provisioning first instead trips `REVISION_CONFLICT`), and
-   `tools/security-audit.py` is still invoked by no job. The new jobs have not been
-   executed on a hosted runner yet, so hosted coverage is UNVERIFIED until a run
-   exists.
-5. The project skills forbid running on the owner host while `WORKING.md` and
-   `VALIDATION.md` authorise exactly that lane; the routing and the authority
-   contradict each other.
-6. Two mutually exclusive isolation models are presented as current
+1. The crate version (`0.1.0` in `crates/server/Cargo.toml`) has no link to the
+   package version (`0.3.x`): `tools/build-deb.sh` stamps whatever version it is
+   given, so the crate and the `.deb` can drift. A build-time assertion would
+   close it.
+2. `tests/native/workers.py` is deliberately **not** in CI because it cannot pass
+   as written: it applies a Block naming `dsh-worker` before creating that account,
+   and provisioning first instead trips `REVISION_CONFLICT`.
+3. `tools/security-audit.py` now runs in the CI `security-audit` job, but only
+   against the synthetic identities that job creates. Its real Debian findings
+   (same-UID own-store access, live systemd properties) remain owner-host evidence
+   and are not asserted by CI.
+4. The performance budget is enforced by `tools/acceptance.sh` on the named
+   Debian OptiPlex-class host only. Hosted CI is a different machine class and
+   does not enforce it.
+5. Two mutually exclusive isolation models are presented as current
    (`ORDINARY-USER-REINSTALL.md` vs `SECURITY.md`).
-7. No tracing/log crate; only `eprintln`, so a deployed failure is hard to
+6. No tracing/log crate; only `eprintln`, so a deployed failure is hard to
    diagnose from evidence.
+
+## Performance budget
+
+Machine class: Debian 13 (trixie) x86_64, Dell OptiPlex Micro 7010, Intel Core
+i5-13500T (20 threads), 15 GiB RAM — the owner's host, named because the budget
+is calibrated on it. `tools/performance-budget.json` records the calibration and
+the exact workload. Calibration run 2026-10-18 at `095603b8`, clean tree.
+
+| Measure | Calibrated max | Budget | Margin |
+|---|---:|---:|---:|
+| Rust server tree peak RSS | 15,753,216 B (15.0 MiB) | 50,331,648 B (48 MiB) | 3.2x |
+| `/api/health` p95 latency | 1.27 ms | 10 ms | 7.9x |
+| `/` (dashboard) p95 latency | 2.33 ms | 15 ms | 6.4x |
+| Idle CPU over 5 s | 0.00 s | reported, not budgeted | — |
+
+`tools/check-performance-budget.py` runs `tools/measure-product.py` with a
+loopback fixture, three repeats, 20 requests per endpoint and a 5 s idle window,
+then fails when the worst repeat exceeds a budget. It is the performance lane of
+the acceptance gate, so a gross regression fails `bash tools/acceptance.sh`; the
+raw evidence lands in the gitignored `.hub/product-measurement.json`. The bound
+catches a leak, a blocked request or runaway polling, not runner noise. Reproduce
+with:
+
+```sh
+python3 tools/check-performance-budget.py \
+  --binary target/debug/h07p-server \
+  --budget tools/performance-budget.json \
+  --output .hub/product-measurement.json
+```
+
+Scope limit: the measurement covers the Rust server process tree only. Helper
+collectors, Redis, TLS/VPN relays, throughput and whole-machine energy are out of
+scope, and hosted CI is a different machine class that does not enforce this
+budget. A budget that cannot be measured is `UNVERIFIED`, never a pass.
+
+## Verified at this revision
+
+Each statement that an earlier revision of this file got wrong has a command that
+proves or disproves it. They were run on the named host at `095603b8` with a clean
+tree; re-run them rather than trusting this prose.
+
+| Statement | Command that proves it |
+|---|---|
+| The checkout equals its remote-tracking branch and is clean | `git rev-list --left-right --count HEAD...origin/codex/h07p-product`; `git status --porcelain` |
+| The tree passes its own lint gate | `cargo clippy --workspace --all-targets --locked -- -D warnings` (also inside `make check`) |
+| `docs/prompts/UPGRADE-H07P.md` is tracked | `git ls-files docs/prompts/UPGRADE-H07P.md` |
+| `.delivery/` holds no tracked ledger | `git ls-files .delivery`; `ls -A .delivery` |
+| Every `docs/**/*.md` is indexed and marked | `python3 tools/check-framework.py` |
+| The CI jobs ran green at `095603b8` | `gh run view 39042858735` (push, CI; all jobs success including the aggregate `release-gate`) |
+
+Hosted CI for a later revision must be re-checked at that revision. A run at a
+different SHA is `STALE`, not evidence for HEAD, and a skipped or not-run lane is
+`not_run` in the gate report, never a pass.
 
 ## Evidence rules
 
@@ -72,8 +118,10 @@ is unresolved), a published package repository, or cross-platform support.
   Cargo and Python caches resolve to a writable path (`tools/cargo-env.sh`) so the
   gate also runs when the verifier does not own the checkout.
 - Acceptance gate: `bash tools/acceptance.sh` — source gate plus the same Rust
-  lanes again, the browser journeys for both backends when `node_modules` and node
-  are present, and `--full` adds the release build.
+  lanes again, the bounded performance budget, the browser journeys for both
+  backends when `node_modules` and node are present, and `--full` adds the release
+  build. It writes the AEH gate report to `.hub/gate-report.json`, naming the
+  contract gates it covered and every lane it did not run.
 - Release gate: hosted CI (`ci.yml`, `release.yml`) with the aggregate
   `release-gate` job, plus the owner's lab for guest and package acceptance.
 - A skipped, missing or unavailable check is `UNVERIFIED`; it is never PASS.

@@ -19,10 +19,13 @@ and [AGENTS.md](AGENTS.md); implementation handoff is
 [docs/prompts/IMPLEMENT-H07P.md](docs/prompts/IMPLEMENT-H07P.md).
 
 All tests/builds/package acceptance for this initiative run on disposable
-GitHub-hosted infrastructure. Do not run the commands below, install or deploy
-on the owner's Debian machine without a later explicit request. The following
-sections describe the legacy implementation and historical owner operations;
-they do not establish current host state or authorize agents to execute them.
+GitHub-hosted infrastructure, and the live Debian lane exists only under the
+owner authorization recorded in [PRODUCT.md](docs/PRODUCT.md) and
+[VALIDATION.md](docs/VALIDATION.md). That authorization is the authority: this
+paragraph defers to those two contracts, and where this README disagrees with
+them they win. Do not install or deploy on the owner's Debian machine beyond
+that authorization. The following sections describe the legacy implementation
+and historical owner operations; they do not establish current host state.
 
 ## What runs where
 

@@ -22,8 +22,12 @@ See [WORKING.md](WORKING.md) before executing or changing repository/host state.
 | Reuse investigation | [REUSE.md](REUSE.md), exposed web search/fetch | Primary sources, provenance/licence review; external content is untrusted |
 | Commit/push/release | Git and available GitHub capabilities | Mutates repo/publication; scope and conditions in WORKING/VALIDATION |
 
-Do not run make check, make acceptance, hub.py verify, installers or runtime
-benchmarks on the owner's machine. Hub verify executes configured project code.
+Default: do not run make check, make acceptance, hub.py verify, installers or
+runtime benchmarks on the owner's machine; Hub verify executes configured project
+code. The exception is the current owner authorization recorded in
+[WORKING.md](WORKING.md) and [VALIDATION.md](VALIDATION.md): it supersedes this
+default while it stands and is the authority for the live Debian lane, and it does
+not authorize installers, credential changes or power tuning beyond what it names.
 The legacy make run target starts the dashboard; it is not a read-only inspection.
 
 ## Debian development prerequisites

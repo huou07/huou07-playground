@@ -22,13 +22,20 @@ VM for this live task. Source/CI evidence and live Debian evidence are reported
 separately.
 
 Current CI: framework structure/routing guard, legacy make check, locked Rust
-format/Clippy/test/release/HTTP smoke, and separate Python/Rust browser lanes.
-Tagging `vX.Y.Z` invokes [the release workflow](../.github/workflows/release.yml),
-which reruns those gates on the exact tag, audits the locked dependency graph,
-builds the `.deb` twice on a fresh Ubuntu 24.04 runner, checks matching hashes,
-Lintian and package lifecycle fixtures, then publishes the package, checksum,
-SBOM, license inventory/notices, audit report and source identity. This synthetic
-dpkg lifecycle lane is not a full Debian systemd VM installation test.
+format/Clippy/test/release/HTTP smoke, a synthetic-identity execution of
+`tools/security-audit.py`, a redacted change-set secret scan, and separate
+Python/Rust browser lanes. Tagging `vX.Y.Z` invokes
+[the release workflow](../.github/workflows/release.yml), which reruns those
+gates on the exact tag, audits the locked dependency graph, builds the `.deb`
+twice on a fresh Ubuntu 24.04 runner, checks matching hashes, Lintian and package
+lifecycle fixtures, then publishes the package, checksum, SBOM, license
+inventory/notices, audit report and source identity. The workflow also accepts
+`workflow_dispatch`: a manual run at a branch executes the same gates, audit,
+build and Lintian steps, but derives a synthetic non-tag version, uploads the
+package as a run artifact and skips the `publish` job, so a dispatch cannot create
+a GitHub release or publish a version. The synthetic dpkg lifecycle lane is not a
+full Debian systemd VM installation test.
+
 ## CI job coverage (added 2026-10-17)
 
 | Job | What it actually runs | Limit |
@@ -37,11 +44,18 @@ dpkg lifecycle lane is not a full Debian systemd VM installation test.
 | `checks` | `make check`, Rust format, Clippy, workspace tests, release build, HTTP smoke | none known |
 | `browser` | `make acceptance` for the python and rust backends | intercepted APIs; not real-backend parity. The rust lane runs `ux`, `product` and `rust-static` only: **Rust dashboard journeys are UNVERIFIED** because `dashboard.spec.mjs` fails against the Rust backend (measured 2026-10-17 with `HUOU07_E2E_BACKEND=rust`: 34 passed, 1 failed at `#sidebar [data-route="system"]`) |
 | `package-lifecycle` | cargo-audit via `tools/release-audit.py`, `tests/package` unit tests, `tests/package-lifecycle.sh` (install, upgrade, corrupt-upgrade rollback, rollback, remove, purge in a disposable dpkg root), two identical `tools/build-deb.sh` builds compared by hash, Lintian | synthetic dpkg root, not a booted Debian systemd host |
-| `native-isolation` | `tests/native/product.py`, `broker.py`, `guard.py`, `files.py` as root with synthetic owner/service/worker identities | `tests/native/workers.py` is excluded because it cannot pass as written; see QUALITY.md gap 4 |
+| `native-isolation` | `tests/native/product.py`, `broker.py`, `guard.py`, `files.py` as root with synthetic owner/service/worker identities | `tests/native/workers.py` is excluded because it cannot pass as written; see QUALITY.md gap 2 |
 | `secret-scan` | pinned Gitleaks 8.30.1 with the shipped ruleset, redacted, over the commit range under review | the range, not the whole tree: a whole-tree scan reports the repository's synthetic test fixtures and any local lab cache, so whole-tree enforcement needs an owner decision |
+| `security-audit` | `sudo python3 tools/security-audit.py` against the synthetic owner/service/worker identities created in the job, then uploads its metadata-only reports | the identities are synthetic: it proves the audit tool executes and emits evidence, not the real Debian finding |
 
-These jobs were authored from command sequences executed in the disposable guest;
-their hosted execution is **UNVERIFIED** until a run exists.
+Hosted execution for the revision this table was written for: CI run
+`39042858735` (push, `095603b8ae0e43ef7c052a1204d37087ad00dce0`, workflow CI) is
+green for every job in the table above that existed at that revision, including
+the aggregate `release-gate`. The `security-audit` job was added after that
+revision, so its first hosted execution is the dispatched `release.yml` run
+recorded in [QUALITY](QUALITY.md) once it has run. Re-check the run for a later
+revision: a green run at another SHA is `STALE`, not evidence for HEAD, and a
+skipped or not-run lane is never a pass.
 
 See [IMPLEMENTATION.md](IMPLEMENTATION.md) for source coverage. The browser runner
 selects the actual backend, uses a temporary apps registry/fixture app server and

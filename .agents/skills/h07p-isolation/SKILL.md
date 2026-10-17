@@ -33,4 +33,7 @@ Read [security](../../../docs/SECURITY.md) and
 The selected journey succeeds for owner and fails for unauthorized worker through
 all relevant paths. Report implementation, CI evidence, uncovered bypasses,
 unsupported backend rights and owner acceptance separately. If a required runtime
-capability is absent, name the discriminating next test; do not test the owner host.
+capability is absent, name the discriminating next test; do not test the owner
+host. The current owner authorization in [validation](../../../docs/VALIDATION.md)
+and [working guide](../../../docs/WORKING.md) is the documented exception for the
+live Debian lane.

@@ -34,4 +34,8 @@ Read [implementation](../../../docs/IMPLEMENTATION.md),
 Report changed product behavior, comparable measurements and variance, CI revision/
 run, license provenance and remaining acceptance gaps. No invented watts saved.
 Use shared verify-debug for failing-check repair rather than duplicating its loop.
-Never run installers, tests or power tuning on the owner host.
+Default: never run installers, tests or power tuning on the owner host. The
+current owner authorization in [working guide](../../../docs/WORKING.md) and
+[validation](../../../docs/VALIDATION.md) supersedes this default while it stands
+and is the authority for the live Debian lane; it does not authorize installers,
+credential changes or power tuning beyond what it names.
