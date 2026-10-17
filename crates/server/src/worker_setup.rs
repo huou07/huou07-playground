@@ -9,6 +9,82 @@ fn job() -> &'static Mutex<Value> {
     static JOB: OnceLock<Mutex<Value>> = OnceLock::new();
     JOB.get_or_init(|| Mutex::new(json!({"state":"idle"})))
 }
+/// Root of the protected pre-worker ACL snapshot registry.
+fn acl_baseline_root() -> std::path::PathBuf {
+    std::env::var("H07P_ACL_BACKUP_ROOT")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("/var/backups/h07p-harness-workers"))
+}
+
+/// The account adapter writes `YYYYMMDD-HHMMSS[-<extra>]` snapshot directories.
+/// Reject any other name so an unrelated directory cannot be selected.
+fn acl_baseline_snapshot_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    let Some(head) = bytes.get(..15) else {
+        return false;
+    };
+    let stamped = head
+        .get(..8)
+        .is_some_and(|part| part.iter().all(u8::is_ascii_digit))
+        && head.get(8) == Some(&b'-')
+        && head
+            .get(9..15)
+            .is_some_and(|part| part.iter().all(u8::is_ascii_digit));
+    stamped && matches!(bytes.get(15), None | Some(&b'-'))
+}
+
+/// A snapshot is usable only when the file and its directory are regular,
+/// owned by the expected account and not writable by group or other.
+fn valid_acl_baseline(path: &std::path::Path, expected_uid: u32) -> bool {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    if !meta.is_file() || meta.uid() != expected_uid || meta.mode() & 0o022 != 0 {
+        return false;
+    }
+    if !(1_000_000..=500 * 1024 * 1024).contains(&meta.len()) {
+        return false;
+    }
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let Ok(parent_meta) = fs::symlink_metadata(parent) else {
+        return false;
+    };
+    if !parent_meta.is_dir() || parent_meta.uid() != expected_uid || parent_meta.mode() & 0o022 != 0
+    {
+        return false;
+    }
+    parent
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(acl_baseline_snapshot_name)
+}
+
+/// Newest validated snapshot under `root`, or `None` when none qualifies.
+fn select_acl_baseline_in(root: &std::path::Path, expected_uid: u32) -> Option<std::path::PathBuf> {
+    let mut best: Option<(i64, std::path::PathBuf)> = None;
+    for entry in fs::read_dir(root).ok()?.flatten() {
+        let candidate = entry.path().join("acl.restore");
+        if !valid_acl_baseline(&candidate, expected_uid) {
+            continue;
+        }
+        let Ok(meta) = fs::symlink_metadata(&candidate) else {
+            continue;
+        };
+        if best.as_ref().is_none_or(|(when, _)| meta.mtime() > *when) {
+            best = Some((meta.mtime(), candidate));
+        }
+    }
+    best.map(|(_, path)| path)
+}
+
+fn select_acl_baseline() -> Option<std::path::PathBuf> {
+    select_acl_baseline_in(&acl_baseline_root(), 0)
+}
+
 pub fn catalog() -> Result<Value, String> {
     let policy = crate::helper::load()?;
     let passwd = fs::read_to_string("/etc/passwd").map_err(|_| "Account metadata unavailable")?;
@@ -20,18 +96,16 @@ pub fn catalog() -> Result<Value, String> {
         let setting=crate::helper::worker_setting(&policy,name);
         json!({"name":name,"harness":harness,"detected":fs::metadata(executable).map(|m|{use std::os::unix::fs::PermissionsExt;m.is_file()&&m.permissions().mode()&0o111!=0}).unwrap_or(false),"account_exists":account.is_some(),"uid":account.map(|a|a.0),"home":fields.as_ref().map(|f|f[5]),"preset":setting["preset"],"workspace":setting["workspace"],"enabled":setting["enabled"]})
     }).collect();
-    let baseline =
-        std::path::Path::new("/var/backups/h07p-harness-workers/20261015-220803/acl.restore");
-    let acl_reset_available = fs::symlink_metadata(baseline)
-        .map(|m| {
-            m.is_file()
-                && m.uid() == 0
-                && m.mode() & 0o022 == 0
-                && (1_000_000..=500 * 1024 * 1024).contains(&m.len())
-        })
-        .unwrap_or(false);
+    let baseline = select_acl_baseline();
+    let acl_reset_available = baseline.is_some();
+    let acl_baseline = baseline
+        .as_deref()
+        .and_then(std::path::Path::parent)
+        .and_then(std::path::Path::file_name)
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::to_owned);
     Ok(
-        json!({"workers":workers,"revision":policy["revision"],"job":job().lock().unwrap_or_else(|e|e.into_inner()).clone(),"acl_reset_available":acl_reset_available,"note":"Detects supported installed harness executables without running them. Shared apps/home are reused. Removal retains shared data and a locked retired UID to prevent permission reuse."}),
+        json!({"workers":workers,"revision":policy["revision"],"job":job().lock().unwrap_or_else(|e|e.into_inner()).clone(),"acl_reset_available":acl_reset_available,"acl_baseline":acl_baseline,"note":"Detects supported installed harness executables without running them. Shared apps/home are reused. Removal retains shared data and a locked retired UID to prevent permission reuse."}),
     )
 }
 pub fn control(op: &str, v: &Value, lock: Arc<Mutex<()>>) -> Result<Value, String> {
@@ -134,4 +208,72 @@ pub(crate) fn driver(action: &str, workers: &[Value], job_id: &str) -> Result<()
         arguments.push(worker.as_str().ok_or("Invalid worker")?);
     }
     crate::telemetry::command("/usr/bin/python3",&arguments,900).ok_or_else(||"Account/ACL setup failed or exceeded its bound. Affected workers remain stopped; use Repair and inspect the protected ACL backup.".into()).map(|_|())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let root =
+            std::env::temp_dir().join(format!("h07p-acl-{tag}-{}-{unique}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+        root
+    }
+
+    fn snapshot(root: &std::path::Path, name: &str, mode: u32, size: u64) -> std::path::PathBuf {
+        let directory = root.join(name);
+        fs::create_dir_all(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let file = directory.join("acl.restore");
+        fs::File::create(&file).unwrap().set_len(size).unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(mode)).unwrap();
+        file
+    }
+
+    #[test]
+    fn accepts_legacy_and_nanosecond_snapshot_names() {
+        assert!(acl_baseline_snapshot_name("20261015-220803"));
+        assert!(acl_baseline_snapshot_name("20261017-120000-123456789"));
+        assert!(!acl_baseline_snapshot_name("not-a-stamp"));
+        assert!(!acl_baseline_snapshot_name("2026-1015-220803"));
+        assert!(!acl_baseline_snapshot_name("20261015-220803x"));
+    }
+
+    #[test]
+    fn selects_newest_validated_snapshot() {
+        let root = scratch("select");
+        let uid = fs::metadata(&root).unwrap().uid();
+        let older = snapshot(&root, "20261001-000000-1", 0o600, 1_100_000);
+        std::thread::sleep(Duration::from_millis(20));
+        let newer = snapshot(&root, "20261015-220803", 0o600, 1_100_000);
+        let selected = select_acl_baseline_in(&root, uid);
+        assert_eq!(selected.as_deref(), Some(newer.as_path()));
+        assert_ne!(selected.as_deref(), Some(older.as_path()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_untrusted_or_unnamed_snapshots() {
+        let root = scratch("reject");
+        let uid = fs::metadata(&root).unwrap().uid();
+        let world_writable = snapshot(&root, "20261010-101010-1", 0o600, 1_100_000);
+        fs::set_permissions(
+            world_writable.parent().unwrap(),
+            fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        snapshot(&root, "unrelated", 0o600, 1_100_000);
+        snapshot(&root, "20261011-101010-1", 0o600, 10);
+        snapshot(&root, "20261012-101010-1", 0o666, 1_100_000);
+        assert!(select_acl_baseline_in(&root, uid).is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
 }

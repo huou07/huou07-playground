@@ -126,5 +126,71 @@ class BaselineFilterTests(unittest.TestCase):
                 workers.filter_baseline(source, destination, control, 'b' * 64, home.stat().st_dev)
 
 
+class AclBaselineRegistryTests(unittest.TestCase):
+    """The ACL reset must not depend on one fixed historical snapshot path."""
+
+    def _snapshot(self, root, name, size=1_100_000, mode=0o600, directory_mode=0o700):
+        import os
+        directory = root / name
+        directory.mkdir()
+        os.chmod(directory, directory_mode)
+        target = directory / 'acl.restore'
+        with target.open('wb') as output:
+            output.truncate(size)
+        os.chmod(target, mode)
+        return target
+
+    def test_selects_newest_validated_snapshot(self):
+        import os
+        import time
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            uid = os.getuid()
+            older = self._snapshot(root, '20261001-000000-1')
+            time.sleep(0.02)
+            newer = self._snapshot(root, '20261015-220803')
+            self.assertEqual(workers.select_acl_baseline(root, uid), newer)
+            self.assertNotEqual(workers.select_acl_baseline(root, uid), older)
+
+    def test_rejects_untrusted_or_unnamed_snapshots(self):
+        import os
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            uid = os.getuid()
+            self._snapshot(root, '20261010-101010-1', directory_mode=0o777)
+            self._snapshot(root, 'unrelated')
+            self._snapshot(root, '20261011-101010-1', size=10)
+            self._snapshot(root, '20261012-101010-1', mode=0o666)
+            self.assertIsNone(workers.select_acl_baseline(root, uid))
+
+    def test_snapshot_name_shape(self):
+        for name in ('20261015-220803', '20261017-120000-123456789'):
+            self.assertTrue(workers.acl_snapshot_name(name))
+        for name in ('not-a-stamp', '2026-1015-220803', '20261015-220803x'):
+            self.assertFalse(workers.acl_snapshot_name(name))
+
+    def test_registry_root_honours_environment(self):
+        import importlib.util
+        import os
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.dict(os.environ, {'H07P_ACL_BACKUP_ROOT': temp}):
+                spec = importlib.util.spec_from_file_location(
+                    'harness_workers_env', ROOT / 'deploy/package/workers.py')
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                self.assertEqual(str(module.ACL_BASELINE_ROOT), temp)
+                target = self._snapshot(module.ACL_BASELINE_ROOT, '20261015-220803')
+                self.assertEqual(module.select_acl_baseline(root=module.ACL_BASELINE_ROOT,
+                                                            expected_uid=os.getuid()), target)
+
+    def test_reset_writes_rollback_snapshots_to_the_configured_root(self):
+        # Regression guard: selection and creation previously used different roots,
+        # so a configured registry could never see the snapshots it had just written.
+        import inspect
+        source = inspect.getsource(workers.reset_acl)
+        self.assertIn('ACL_BASELINE_ROOT', source)
+        self.assertNotIn("'/var/backups/h07p-harness-workers'", source)
+
+
 if __name__ == '__main__':
     unittest.main()
