@@ -7,7 +7,8 @@
 # grant write on the directory while a new file is still denied). Probe for real
 # writability by creating and removing a file, then fall back:
 #
-#   target dir: an explicit writable CARGO_TARGET_DIR -> $repo/target ->
+#   target dir: an explicit writable CARGO_TARGET_DIR -> $repo/target (only when
+#               this account can replace what is already in it) ->
 #               $repo/.h07p-dev/target-uid<uid> -> ${TMPDIR:-/tmp}/h07p-target-uid<uid>
 #   cargo home: an explicit writable CARGO_HOME -> $HOME/.cargo ->
 #               $repo/.h07p-dev/cargo-home
@@ -30,9 +31,19 @@ probe_dir() {
 
 case "${1:-}" in
   target-dir)
+    # A pre-existing target/ owned by another account breaks cargo even though
+    # new files can be created there: replacing the owned artifacts fails with
+    # "failed to link or copy ... Permission denied", which is the failure that
+    # made this resolver necessary. Reuse the conventional path only when this
+    # account owns what is already there (or it is a fresh checkout).
+    target_owned=1
+    if [ -e "$repo/target" ] \
+      && [ -n "$(find "$repo/target" -maxdepth 0 ! -user "$(id -un)" -print 2>/dev/null)" ]; then
+      target_owned=0
+    fi
     if probe_dir "${CARGO_TARGET_DIR:-}"; then
       printf '%s\n' "$CARGO_TARGET_DIR"
-    elif probe_dir "$repo/target"; then
+    elif [ "$target_owned" = 1 ] && probe_dir "$repo/target"; then
       printf '%s\n' "$repo/target"
     elif probe_dir "$repo/.h07p-dev/target-uid$(id -u)"; then
       printf '%s\n' "$repo/.h07p-dev/target-uid$(id -u)"
