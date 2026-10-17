@@ -35,7 +35,7 @@ dpkg lifecycle lane is not a full Debian systemd VM installation test.
 | --- | --- | --- |
 | `framework` | `tools/check-framework.py`, including the documentation-index gate | none known |
 | `checks` | `make check`, Rust format, Clippy, workspace tests, release build, HTTP smoke | none known |
-| `browser` | `make acceptance` for the python and rust backends | intercepted APIs; not real-backend parity |
+| `browser` | `make acceptance` for the python and rust backends | intercepted APIs; not real-backend parity. The rust lane runs `ux`, `product` and `rust-static` only: **Rust dashboard journeys are UNVERIFIED** because `dashboard.spec.mjs` fails against the Rust backend (measured 2026-10-17 with `HUOU07_E2E_BACKEND=rust`: 34 passed, 1 failed at `#sidebar [data-route="system"]`) |
 | `package-lifecycle` | cargo-audit via `tools/release-audit.py`, `tests/package` unit tests, `tests/package-lifecycle.sh` (install, upgrade, corrupt-upgrade rollback, rollback, remove, purge in a disposable dpkg root), two identical `tools/build-deb.sh` builds compared by hash, Lintian | synthetic dpkg root, not a booted Debian systemd host |
 | `native-isolation` | `tests/native/product.py`, `broker.py`, `guard.py`, `files.py` as root with synthetic owner/service/worker identities | `tests/native/workers.py` is excluded because it cannot pass as written; see QUALITY.md gap 4 |
 | `secret-scan` | pinned Gitleaks 8.30.1 with the shipped ruleset, redacted, over the commit range under review | the range, not the whole tree: a whole-tree scan reports the repository's synthetic test fixtures and any local lab cache, so whole-tree enforcement needs an owner decision |
@@ -280,3 +280,5 @@ commit after gates; do not run release credentials against arbitrary PR code.
 Publish Linux .deb/checksums and source provenance to the existing H07P repository.
 This framework change does not create a fake binary release. Installation on the
 owner's host remains a separate owner request.
+
+`make check` now runs `tests/package/` as well: the directory is importable, so `unittest discover -s tests` reaches the package lifecycle fixtures (131 tests total).

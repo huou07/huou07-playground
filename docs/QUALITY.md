@@ -31,7 +31,7 @@ is unresolved), a published package repository, or cross-platform support.
 | Reliability | service health, restart, rollback of a package install | lifecycle scripts + systemd | lab/manual | partial |
 | Accessibility / UX | roles, focus paths and screenshots in the browser matrix | `tests/e2e/ux.spec.mjs` | CI browser lane | verified for covered journeys; no pixel assertions |
 | Compatibility | Debian package on the supported release | hosted workflow | `release.yml` | hosted authority |
-| Maintainability | docs index complete, links resolve, framework checks | `tools/check-framework.py` | CI + `make check` | partial: 11 documents are unindexed |
+| Maintainability | docs index complete, links resolve, framework checks | `tools/check-framework.py` | CI + `make check` | index is now complete and gated: every `docs/**/*.md` needs a `Current`/`Historical` entry |
 | Cost | package size and build time | builder output | manual | partially measured |
 
 ## Known gaps, in priority order
