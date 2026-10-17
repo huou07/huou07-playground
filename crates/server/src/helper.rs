@@ -297,6 +297,14 @@ fn walk_scope(
     }
     Ok(count)
 }
+/// Direct Allow rules may only target objects owned by the owner or a managed
+/// worker. The helper runs as root, so a root-owned target would let one owner
+/// draft hand a worker read or write access to the system's own files, and Auto
+/// Detect's allow mode proposes Allow rules in bulk. Shared runtime roots stay
+/// usable because they live under the owner home.
+fn allow_target_owner_forbidden(uid: u32) -> bool {
+    uid == 0
+}
 fn validate(draft: &Value) -> Result<()> {
     if !["none", "minimal", "balance", "strict"].contains(&draft["preset"].as_str().unwrap_or("")) {
         return Err("Unknown security preset".into());
@@ -401,6 +409,12 @@ fn validate(draft: &Value) -> Result<()> {
         if rule["action"] == "allow" {
             use std::os::unix::fs::MetadataExt;
             let metadata = fs::symlink_metadata(p).map_err(err)?;
+            if allow_target_owner_forbidden(metadata.uid()) {
+                return Err(
+                    "A direct Allow cannot target a root-owned file or directory. Shared runtime roots owned by the owner are allowed; grant access to owner data instead. No permissions were changed."
+                        .into(),
+                );
+            }
             if metadata.is_file() && metadata.nlink() > 1 {
                 return Err(
                     "Allow cannot target a hard-linked file; choose one unaliased file".into(),
@@ -1721,5 +1735,40 @@ mod policy_tests {
             "setfacl: /home/huou07/file: Operation not supported\n"
         ));
         assert!(!super::restore_failed_only_on_missing_paths(""));
+    }
+
+    /// The policy engine must refuse to hand a worker access to root-owned
+    /// objects: the helper applies ACLs as root, so such a rule would move
+    /// system state into a worker's reach. Native acceptance asserts this
+    /// against the real kernel; this pins the predicate and the draft path.
+    #[test]
+    fn allow_rules_cannot_target_root_owned_objects() {
+        assert!(super::allow_target_owner_forbidden(0));
+        assert!(!super::allow_target_owner_forbidden(1000));
+        assert!(!super::allow_target_owner_forbidden(u32::MAX));
+
+        // /etc/hostname is root-owned on every Linux CI image and is neither a
+        // protected name nor an immutable root, so it reaches the Allow checks.
+        let workspace = std::env::temp_dir().join(format!("h07p-allow-{}", std::process::id()));
+        std::fs::create_dir_all(&workspace).unwrap();
+        let draft = serde_json::json!({"preset":"none","workspace":workspace,
+            "rules":[{"worker":"*","target":"/etc/hostname","action":"allow","recursive":false,
+                      "operations":["read"]}]});
+        let error = super::validate(&draft).unwrap_err();
+        assert!(error.contains("root-owned"), "{error}");
+        let _ = std::fs::remove_dir_all(&workspace);
+    }
+
+    #[test]
+    fn allow_rules_still_accept_owner_owned_targets() {
+        let workspace = std::env::temp_dir().join(format!("h07p-allow-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&workspace).unwrap();
+        let target = workspace.join("ordinary.txt");
+        std::fs::write(&target, b"synthetic").unwrap();
+        let draft = serde_json::json!({"preset":"none","workspace":workspace,
+            "rules":[{"worker":"*","target":target,"action":"allow","recursive":false,
+                      "operations":["read"]}]});
+        super::validate(&draft).expect("an owner-owned target stays usable");
+        let _ = std::fs::remove_dir_all(&workspace);
     }
 }
