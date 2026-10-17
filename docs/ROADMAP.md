@@ -35,10 +35,11 @@ This file is the only current task tracker. Product behavior is in
 - Dedicated branch: `sync/production-v0.3.7`, based on the latest `main` history
   and recovered source revision `9512ccb`.
 - PR: https://github.com/huou07/huou07-playground/pull/1
-- Exact-commit hosted CI passed on branch commit
-  `ca81c830960b10d76f61c8343a8f04962c80b5b6` (framework, Rust/Python browser
-  acceptance, Rust formatting/lints/tests/build/HTTP smoke, and Python/shell
-  checks). The PR event checks for this commit are still finishing.
+- Exact-commit push and PR CI passed on `c9cab8b2153b2fa6dae1eb678affa70281ab67aa`
+  (framework, Rust/Python browser acceptance, Rust formatting/lints/tests/build/
+  HTTP smoke, and Python/shell checks). Runs:
+  https://github.com/huou07/huou07-playground/actions/runs/39002846996 and
+  https://github.com/huou07/huou07-playground/actions/runs/39002850006.
 - Merge SHA and tag status: pending PR checks and merge.
 
 ### Recovered first-party components
@@ -63,8 +64,8 @@ itself proof that every production journey was verified.
   historical host-specific operational records in the candidate history. These
   are excluded from the synchronized working tree; existing public history is
   preserved and not rewritten.
-- Candidate/history and license review completed; hosted CI passed on the branch
-  commit above. Merge review and an exact release/tag audit remain outstanding.
+- Candidate/history and license review completed; exact-commit hosted CI passed.
+  Merge and exact release/tag audit remain outstanding.
 - No build, installer, test, service restart, or policy change was run on
   production.
 
