@@ -1,4 +1,6 @@
 import json
+import base64
+import http.client
 import os
 import platform
 import sys
@@ -76,6 +78,36 @@ class DashboardApiTests(unittest.TestCase):
         self.assertIsNone(app.dsh_launch_url("/?token=short", "127.0.0.1:8765"))
         self.assertIsNone(app.dsh_launch_url(path + "&target=evil", "127.0.0.1:8765"))
         self.assertIsNone(app.dsh_launch_url(path, "example.test:8765"))
+
+    def test_dsh_launch_requires_owner_auth_before_reading_token(self):
+        with patch.object(app, "DSH_URL_FILE") as token_file:
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(f"{self.base}/api/apps/launch?name=DeepSeek+Harness")
+            self.assertEqual(caught.exception.code, 401)
+            self.assertIsNone(caught.exception.headers.get("Location"))
+            token_file.read_text.assert_not_called()
+
+    def test_dsh_launch_accepts_owner_and_rejects_worker_or_malformed_auth(self):
+        owner = "Basic " + base64.b64encode(b"owner:owner-fixture").decode()
+        worker = "Basic " + base64.b64encode(b"worker:worker-fixture").decode()
+        with patch.dict(os.environ, {"OPENCODE_PUBLIC_USERNAME": "owner", "OPENCODE_PUBLIC_PASSWORD": "owner-fixture"}):
+            self.assertTrue(app.owner_launch_authorized(owner))
+            for header in [worker, "Basic !!!", "Bearer fixture", "Basic", "Basic a b", None]:
+                self.assertFalse(app.owner_launch_authorized(header))
+            with patch.object(app, "DSH_URL_FILE") as token_file:
+                token_file.is_symlink.return_value = False
+                token_file.read_text.return_value = "/?token=" + "A" * 40
+                connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port)
+                try:
+                    connection.request("GET", "/api/apps/launch?name=DeepSeek+Harness", headers={"Authorization": owner})
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 302)
+                    self.assertIn("token=", response.getheader("Location"))
+                    response.read()
+                finally:
+                    connection.close()
+        with patch.dict(os.environ, {"OPENCODE_PUBLIC_USERNAME": "", "OPENCODE_PUBLIC_PASSWORD": ""}):
+            self.assertFalse(app.owner_launch_authorized(owner))
 
     def test_interface_bound_listener_binds_socket_to_exact_device(self):
         server = object.__new__(app.InterfaceBoundHTTPServer)

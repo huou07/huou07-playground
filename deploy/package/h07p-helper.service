@@ -1,0 +1,27 @@
+[Unit]
+Description=H07P privileged typed operation helper
+After=network.target
+
+[Service]
+LimitCORE=0
+Type=simple
+# Default root is required for typed actors to drop permanently to owner/service UIDs.
+Group=huou07-playground
+WorkingDirectory=/opt/huou07-playground/current
+EnvironmentFile=/etc/huou07-playground/dashboard.env
+EnvironmentFile=-/etc/huou07-playground/native-network.env
+EnvironmentFile=-/etc/huou07-playground/opencode-proxy.env
+ExecStart=/opt/huou07-playground/current/bin/h07p-server helper
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=h07p
+RuntimeDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

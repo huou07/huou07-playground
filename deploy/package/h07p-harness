@@ -1,0 +1,18 @@
+#!/bin/sh
+# Owner entry point: every CLI/descendant belongs to a revocable systemd cgroup.
+set -eu
+[ "$(id -u)" = 0 ] || { echo 'Run with sudo as the owner.' >&2; exit 1; }
+harness=${1:-}
+case "$harness" in dsh|codex|opencode) ;; *) echo 'Usage: sudo h07p-harness dsh|codex|opencode [arguments...]' >&2; exit 2;; esac
+shift
+case "$PWD" in /home/huou07|/home/huou07/*) directory=$PWD ;; *) directory=/home/huou07/Projects ;; esac
+terminal=${TERM:-xterm-256color}
+case "$terminal" in *[!A-Za-z0-9._+-]*|'') terminal=xterm-256color ;; esac
+if [ -t 0 ] && [ -t 1 ]; then transport=--pty; else transport=--pipe; fi
+unit="h07p-worker-$harness-$(date +%s%N)-$$"
+exec /usr/bin/systemd-run --quiet --wait --collect "$transport" --service-type=exec --expand-environment=no \
+    --unit="$unit" --working-directory="$directory" --setenv="TERM=$terminal" \
+    --property=KillMode=control-group --property=TimeoutStopSec=10s \
+    --property=SendSIGKILL=yes --property=NoNewPrivileges=yes --property=PrivateTmp=yes \
+    '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH' \
+    /opt/huou07-playground/current/bin/h07p-server worker "$harness" "$@"

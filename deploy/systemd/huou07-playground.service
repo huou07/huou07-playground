@@ -10,6 +10,7 @@ SupplementaryGroups=huou07-dsh-link
 WorkingDirectory=/opt/huou07-playground/current/web
 Environment=HOST=127.0.0.1
 Environment=APPS_FILE=/var/lib/huou07-playground/apps.json
+EnvironmentFile=-/etc/huou07-playground/opencode-proxy.env
 ExecStart=/usr/bin/python3 /opt/huou07-playground/current/web/app.py
 Restart=on-failure
 RestartSec=2s

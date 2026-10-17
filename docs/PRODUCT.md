@@ -1,84 +1,50 @@
-# Product contract
+# Product behavior
 
-## Outcome and scope
+Huou07 Playground is an owner-operated Linux dashboard for host monitoring,
+coding-worker control, and private file management. The v0.3.7 source implements
+the product areas below. Source implementation, production observation, CI
+verification, and owner acceptance are separate claims; see [STATUS](STATUS.md)
+and [VALIDATION](VALIDATION.md).
 
-H07P is an open source, compact Linux web control panel for one owner to manage
-their machine, isolate coding agents and privately manage files. Keep the current
-design language. Ship Linux .deb first; other platforms display "Coming soon".
-Rust is the target implementation for backend and OS integration. Extensibility
-means typed internal adapters and versioned APIs, not a plugin daemon or platform.
+## Implemented product areas
 
-This preparation stage establishes contracts and CI; the Rust product and new
-screens remain implementation work tracked in [ROADMAP.md](ROADMAP.md).
-No installation, deployment or testing on the owner's Debian machine is authorized.
+- **Monitoring:** host metrics, process/service status, Cockpit, VPN, and
+  application availability.
+- **Worker control:** supported worker discovery/lifecycle, per-worker rules,
+  security presets, ACL enforcement, restricted process launch, approvals,
+  policy history, and bounded sensitive-file suggestions.
+- **Files:** owner NAS and host Storage browsing, previews, bounded upload and
+  download, rename/copy/move, atomic replacement, recovery, and filename search.
+- **Integrations:** selected harnesses and existing web applications, with
+  reviewed VPN relays and supported login adapters that preserve existing app
+  authentication.
+- **Maintenance:** Linux amd64 Debian package install/update/repair/rollback and
+  data-retaining removal.
 
-## Permissions
+The source map lists the implementation files. Production inspection confirmed
+the installed dashboard was active and healthy, but did not rerun each journey.
+Do not describe every source feature as independently production-verified.
 
-An owner can browse a server-side path picker or type an absolute file/folder path,
-choose Block or Allow, and customize list/read/write/create/delete/execute
-permissions, recursive scope and any expiry. "Use" must expand into the concrete
-operations, not an unexplained checkbox. Blocked targets are labelled Private.
-Show effective rights, inherited rules, conflict reason and enforced status.
-Offer a dry-run impact view, apply, audit history and owner-controlled rollback.
+## Security behavior
 
-Auto Detect Block finds candidate passwords, credentials, API keys, permission
-configuration and other sensitive files within an owner-selected scope.
-Auto Detect Allow proposes ordinary files. Never expose matching contents.
-Unknown, skipped, unreadable and possibly sensitive items are not "safe".
-The owner selects what to block/allow and explicitly applies; scans never
-silently grant access or block new files.
+Owner controls are backed by Linux filesystem and process enforcement. Blocks
+take precedence over overlapping Allows; protected owner/NAS/control-plane paths
+remain outside editable worker policy. A private-file exception is scoped to a
+selected worker and explicit owner confirmation. Workers do not receive
+administrative capabilities through a preset. See [SECURITY](SECURITY.md) for
+operation semantics and limits.
 
-Security Levels are templates: minimal blocks owner-confirmed detected sensitive
-targets; balance requires approval for outside-workspace access; strict prevents
-outside-workspace data access; none adds no discretionary worker file restrictions.
-The first three disable sudo by default. Every template is editable; customization
-is marked Custom. None does not create sudo privileges, bypass Linux DAC or grant
-administration/NAS access. See [SECURITY.md](SECURITY.md) for runtime dependencies.
+## Known limitations
 
-## Files: private NAS
-
-Files becomes an owner-only NAS area with folder creation, upload/download,
-rename, cut/copy/paste and previews for text, images and video. No SMB/NFS daemon
-is required for the first web NAS; future protocols must preserve the same boundary.
-Display a Private badge and actual isolation status. Dogfood Permissions: the owner
-selects the NAS directory and applies Block to workers in a CI journey. The NAS
-cannot expose content to workers before that action; initial OS ownership protects it.
-
-Preview bounded text safely, render images and stream browser-supported video.
-Unsupported formats offer download and an explanation. Never execute documents
-or silently transcode large videos. Uploads show progress/cancel, use atomic
-finalization, quotas and explicit conflict choice. No overwrite by default.
-Copy/move has destination confirmation, progress and partial failure recovery;
-cross-filesystem moves remove the source only after verified durable destination.
-Cancel cannot claim to undo a completed move. Any permanent deletion is explicit.
-
-## Storage: host browser
-
-Storage shows actual mounted filesystem total/used/free/available capacity with
-GB/GiB labels, and browsing subject to owner OS rights. Include previews, rename,
-cut/copy/paste, path copy and accessible navigation. Do not imply full host access
-from a listing. Private NAS content uses the NAS service; Storage cannot become
-an alternate worker gateway. Host modifications require owner authentication and
-scope validation; no arbitrary root shell backend.
-
-## Acceptance journeys
-
-1. Owner blocks a fixture subtree using browse and typed path. Worker list/read/
-   write/delete/execute fail through direct OS operations and HTTP paths; owner
-   can still manage it. Allowing a separate fixture restores only selected rights.
-2. Auto Detect classifies synthetic secrets without leaking values; cancellation,
-   skipped files and false positives are visible. Nothing changes before owner Apply.
-3. Each preset is exercised under a real worker process, including approval expiry,
-   restart/revocation and worker attempts to modify policy or use an owner session.
-4. Owner uploads a file into NAS, previews/downloads it with matching hash, creates
-   and renames folders, copies and moves across fixtures. Worker cannot retrieve
-   bytes through filesystem, API, preview, cache or alternate path.
-5. Storage browses permitted host fixtures, reports filesystem capacity, copies a
-   path and handles permission errors and destination collisions without data loss.
-6. Existing navigation, app links, preferences and telemetry survive Rust migration;
-   desktop/mobile keyboard flows complete with no unhandled console errors.
-7. CI compares idle/open/transfer resource use and latency to a reproducible baseline.
-   New .deb installs/upgrades/removes in an isolated Debian VM without deleting data.
-
-Passing mocked checks is not OS or owner acceptance. Record each journey's observed
-CI evidence and explicitly state missing human/hardware acceptance.
+- Native app authentication stores owned by the same human account are not
+  isolated from that account by Playground.
+- Detection is bounded and opt-in; it cannot guarantee discovery of every
+  credential or sensitive file.
+- Worker isolation guarantees depend on supported kernel and systemd features;
+  unsupported guarantees must remain incomplete or fail closed.
+- External apps keep their own data, updates, authentication, and provider
+  credentials. Playground integration does not mean those apps are part of this
+  repository.
+- Current CI and the observed production health response do not establish
+  universal package installation, every browser journey, or every host's
+  kernel-enforced isolation.

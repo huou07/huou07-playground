@@ -1,0 +1,33 @@
+[Unit]
+Description=H07P owner dashboard
+After=network.target h07p-helper.service
+Requires=h07p-helper.service
+
+[Service]
+LimitCORE=0
+Type=simple
+User=huou07-playground
+Group=huou07-playground
+SupplementaryGroups=huou07-dsh-link
+WorkingDirectory=/opt/huou07-playground/current
+EnvironmentFile=/etc/huou07-playground/dashboard.env
+EnvironmentFile=-/etc/huou07-playground/opencode-proxy.env
+ExecStart=/opt/huou07-playground/current/bin/h07p-server
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+ReadWritePaths=/var/lib/huou07-playground /var/lib/h07p-private/nas
+
+[Install]
+WantedBy=multi-user.target

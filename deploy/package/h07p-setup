@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+if [ "$(id -u)" != 0 ]; then
+  case "${1:-}" in doctor|--help|-h) ;; *) exec sudo -- /usr/sbin/h07p-setup "$@" ;; esac
+fi
+exec /usr/bin/python3 /usr/lib/huou07-playground/setup.py "$@"

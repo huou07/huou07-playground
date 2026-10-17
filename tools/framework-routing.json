@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "authority": "Declared routing expectations; structural checks do not establish live model selection or discovery.",
+  "cases": [
+    {
+      "id": "locate",
+      "category": "positive",
+      "request": "Who calls linux_metrics?",
+      "expected": [
+        "code-investigate"
+      ],
+      "excluded": [
+        "h07p-files"
+      ]
+    },
+    {
+      "id": "organize",
+      "category": "positive",
+      "request": "Organize the existing H07P repository.",
+      "expected": [
+        "project-bootstrap"
+      ],
+      "excluded": [
+        "project-steward"
+      ]
+    },
+    {
+      "id": "status",
+      "category": "negative",
+      "request": "Report progress and the next incomplete H07P outcome.",
+      "expected": [
+        "project-steward"
+      ],
+      "excluded": [
+        "verify-debug",
+        "h07p-efficiency-ci"
+      ]
+    },
+    {
+      "id": "failure",
+      "category": "positive",
+      "request": "The hosted Rust build failed; diagnose and repair it.",
+      "expected": [
+        "verify-debug"
+      ],
+      "excluded": [
+        "project-steward"
+      ]
+    },
+    {
+      "id": "resume",
+      "category": "positive",
+      "request": "Resume a diagnosed repair across sessions while preserving its acceptance threshold.",
+      "expected": [
+        "sustained-repair"
+      ],
+      "excluded": [
+        "project-bootstrap"
+      ]
+    },
+    {
+      "id": "dependency",
+      "category": "positive",
+      "request": "Review a new authentication dependency and its build hooks.",
+      "expected": [
+        "security-review"
+      ],
+      "excluded": [
+        "h07p-files"
+      ]
+    },
+    {
+      "id": "instructions",
+      "category": "positive",
+      "request": "Repair a demonstrated skill-routing misfire.",
+      "expected": [
+        "skill-maintainer"
+      ],
+      "excluded": [
+        "h07p-efficiency-ci"
+      ]
+    },
+    {
+      "id": "permissions",
+      "category": "subtle",
+      "request": "Let a worker write a file but never delete or rename it.",
+      "expected": [
+        "h07p-isolation",
+        "security-review"
+      ],
+      "excluded": [
+        "h07p-files"
+      ]
+    },
+    {
+      "id": "detect",
+      "category": "subtle",
+      "request": "Propose Allow candidates without saying they are safe or applying rules.",
+      "expected": [
+        "h07p-isolation"
+      ],
+      "excluded": [
+        "h07p-efficiency-ci"
+      ]
+    },
+    {
+      "id": "nas",
+      "category": "positive",
+      "request": "Implement NAS upload cancellation and recover a partial cross-filesystem move.",
+      "expected": [
+        "h07p-files"
+      ],
+      "excluded": [
+        "project-bootstrap"
+      ]
+    },
+    {
+      "id": "rust",
+      "category": "positive",
+      "request": "Port metrics from Python to Rust and compare the same fixture workload.",
+      "expected": [
+        "h07p-efficiency-ci"
+      ],
+      "excluded": [
+        "h07p-files"
+      ]
+    },
+    {
+      "id": "ux",
+      "category": "positive",
+      "request": "Review keyboard focus and recovery in a new Permissions dialog.",
+      "expected": [
+        "ui-ux-review"
+      ],
+      "excluded": [
+        "verify-debug"
+      ]
+    },
+    {
+      "id": "api-files",
+      "category": "negative",
+      "request": "Explain what the existing GET /api/files returns.",
+      "expected": [
+        "code-investigate"
+      ],
+      "excluded": [
+        "h07p-files"
+      ]
+    },
+    {
+      "id": "accent",
+      "category": "no-skill",
+      "request": "Change a single accent color value.",
+      "expected": [],
+      "excluded": [
+        "ui-ux-review",
+        "h07p-files",
+        "h07p-isolation"
+      ]
+    },
+    {
+      "id": "prompt",
+      "category": "subtle",
+      "request": "Write an implementation handoff prompt.",
+      "expected": [],
+      "excluded": [
+        "project-steward"
+      ],
+      "optional_skill": "prompt-assist",
+      "fallback": "Report unavailable loader; consult Hub prompting reference."
+    }
+  ]
+}

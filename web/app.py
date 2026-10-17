@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import base64
+import hmac
 import csv
 from html.parser import HTMLParser
 import ipaddress
@@ -67,6 +68,22 @@ def read_text(path: str, default: str = "") -> str:
         return Path(path).read_text()
     except (OSError, UnicodeError):
         return default
+
+
+def owner_launch_authorized(header: str | None) -> bool:
+    """Reuse the dashboard's owner Web login; never accept the worker password."""
+    username = os.environ.get("OPENCODE_PUBLIC_USERNAME", "")
+    password = os.environ.get("OPENCODE_PUBLIC_PASSWORD", "")
+    if not username or not password or not header:
+        return False
+    parts = header.split()
+    if len(parts) != 2 or parts[0].lower() != "basic":
+        return False
+    try:
+        actual = base64.b64decode(parts[1], validate=True)
+    except ValueError:
+        return False
+    return hmac.compare_digest(actual, f"{username}:{password}".encode("utf-8"))
 
 
 def dsh_launch_url(token_path: str | None, request_host: str | None) -> str | None:
@@ -909,6 +926,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"ports": PRIVATE_SERVICE_PORTS})
             return
         if self.path.startswith("/api/apps/launch?"):
+            if len(self.headers.get_all("Authorization", [])) != 1 or not owner_launch_authorized(self.headers.get("Authorization")):
+                self.send_response(401)
+                self.send_header("WWW-Authenticate", 'Basic realm="Playground owner"')
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             try:
                 query = parse_qs(urlsplit(self.path).query, max_num_fields=2)
                 names = query.get("name", [])
@@ -963,7 +987,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(data)
 

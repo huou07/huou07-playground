@@ -1,0 +1,28 @@
+[Unit]
+Description=H07P OpenCode managed policy worker
+After=network-online.target h07p-helper.service
+Requires=h07p-helper.service
+
+[Service]
+LimitCORE=0
+Type=simple
+# Use systemd’s default root identity: the launcher drops permanently itself.
+# Explicit User=root loses CAP_SETUID with this host’s restricted capability set.
+Group=root
+WorkingDirectory=/home/huou07/Projects
+Environment=H07P_CONTROL_DIR=/var/lib/h07p-control
+EnvironmentFile=/home/huou07/.config/huou07-playground/opencode-web.env
+ExecStart=/opt/huou07-playground/current/bin/h07p-server worker opencode --web
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+UMask=0002
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

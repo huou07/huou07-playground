@@ -21,12 +21,31 @@ A rule editor supports Browse or absolute path input, file/folder identity,
 recursive scope, list/read/write/create/delete/execute toggles, expiry and impact.
 Unknown/unreadable paths have clear errors; do not create an unexpected target.
 
+Workspace and permission targets accept canonical absolute paths across the host;
+the Browse control can use typed paths when the owner session cannot enumerate a
+directory. The worker setup dialog can restore ACL/ownership metadata from the
+saved pre-worker snapshot without deleting files, and explains that workers stay
+stopped until Repair completes. Auto Detect accepts a single file or any directory,
+including hidden configuration paths. It never displays matched content.
+
+The impact review distinguishes blocking structural errors from warnings. For a
+warning, the first Apply click displays the acknowledgement step and the second
+confirms enforcement. An exact-file private-path exception is visibly labeled and
+requires this two-click flow. Explicit Blocks remain removable from the rule list;
+removing a default private denial uses the corresponding exact-file exception.
+
 Review grants and revocations before Apply, especially broad parent directories.
 A preset change must not silently discard custom rules. Preview merge/reset choices.
 Long operations show Applying; when restart is required explain which worker
 tasks will stop and allow cancellation before applying. Success is Enforced only
 after backend confirmation. Failure preserves inputs and offers a safe retry/rollback.
 A lockout recovery method is owner-only and outside the worker UI.
+
+The Credential Guard watch roots accept canonical absolute directories anywhere
+on the host. Traversal is bounded by the inotify folder/watch limits and skips
+protected stores and pseudo-filesystems. Cleanup roots may also be anywhere, but
+must be owner-owned and outside protected stores; each log still needs a preview
+and explicit confirmation before replacement.
 
 Auto Detect has Block / Allow modes, scope picker and Start/Cancel controls.
 Results show reasons/confidence/skipped items, selections and "Review selected".
@@ -53,7 +72,9 @@ never show a corrupt partial file as complete. Drag/drop has equivalent buttons.
 
 Preview drawer/dialog: close returns focus to selected row; bounded text, lazy
 images, video controls with no autoplay; unsupported formats offer Download.
-Show free/available filesystem space with units and sampling timestamp in Storage.
+Show total/used/free/available filesystem space with units and sampling timestamp
+in Storage. Distinguish free blocks from space available to the browsing identity;
+explain reserved space instead of displaying four ambiguously labelled numbers.
 Network errors, permission denied, vanished objects, quota/full disk and unsupported
 operations have specific recoverable states. Empty directories offer New folder.
 
