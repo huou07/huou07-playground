@@ -138,6 +138,8 @@ trees' write access and sensitive paths; those paths need a separate reviewed
 exception where supported. GUI worker reset restores the saved pre-worker ACL
 baseline without deleting files, retains a root-private rollback snapshot, and
 keeps services stopped until Repair reapplies peer-store protection.
+Only recursive rules add default ACL entries to directories; nonrecursive rules
+change access on the selected directory without adding or changing its defaults.
 
 Policy updates use expected revision to prevent lost edits. Validate compiled
 enforcement before activation; report Desired / Applying / Enforced / Failed.

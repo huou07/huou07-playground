@@ -729,7 +729,13 @@ fn impact_warnings(v: &Value) -> Vec<String> {
     warnings.dedup();
     warnings
 }
-fn acl_spec(workers: &[&str], rule: &Value, action: &str, directories: bool) -> Result<String> {
+fn acl_spec(
+    workers: &[&str],
+    rule: &Value,
+    action: &str,
+    directories: bool,
+    recursive: bool,
+) -> Result<String> {
     let operations = rule["operations"].as_array().ok_or("Missing operations")?;
     let mut entries = Vec::new();
     let access = if action == "block" {
@@ -759,14 +765,14 @@ fn acl_spec(workers: &[&str], rule: &Value, action: &str, directories: bool) -> 
     for worker in workers {
         let (uid, _) = crate::user_ids(worker)?;
         entries.push(format!("u:{uid}:{access}"));
-        if directories {
+        if directories && recursive {
             entries.push(format!("d:u:{uid}:{access}"));
         }
     }
     if action != "block" {
         let (owner_uid, _) = crate::user_ids("huou07")?;
         entries.push(format!("u:{owner_uid}:{access}"));
-        if directories {
+        if directories && recursive {
             entries.push(format!("d:u:{owner_uid}:{access}"));
         }
     }
@@ -778,12 +784,17 @@ fn set_acl_paths(
     rule: &Value,
     action: &str,
     directories: bool,
+    recursive: bool,
 ) -> Result<()> {
     if paths.is_empty() || workers.is_empty() {
         return Ok(());
     }
     let mut cmd = Command::new("setfacl");
-    cmd.args(["-m", &acl_spec(workers, rule, action, directories)?, "--"]);
+    cmd.args([
+        "-m",
+        &acl_spec(workers, rule, action, directories, recursive)?,
+        "--",
+    ]);
     cmd.args(paths);
     command(cmd)
 }
@@ -828,7 +839,7 @@ fn apply_scope(
     let mut directory_bytes = 0usize;
     let mut file_bytes = 0usize;
     let flush = |paths: &mut Vec<PathBuf>, is_directory: bool| -> Result<()> {
-        set_acl_paths(paths, workers, rule, action, is_directory)?;
+        set_acl_paths(paths, workers, rule, action, is_directory, recursive)?;
         paths.clear();
         Ok(())
     };
@@ -962,7 +973,7 @@ fn enforce(policy: &Value) -> Result<()> {
         let target = Path::new(rule["target"].as_str().ok_or("Missing target")?);
         for ancestor in private_exception_ancestors(target) {
             let search = json!({"operations":["execute"]});
-            set_acl_paths(&[ancestor], &present, &search, "allow", false)?;
+            set_acl_paths(&[ancestor], &present, &search, "allow", false, false)?;
         }
         apply_scope(
             target,
@@ -1053,12 +1064,31 @@ mod policy_tests {
         let rule =
             serde_json::json!({"operations":["list","read","write","create","delete","execute"]});
         let owner_uid = crate::user_ids("huou07").unwrap().0;
-        let allow = super::acl_spec(&["codex-worker"], &rule, "allow", true).unwrap();
+        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
+        let allow = super::acl_spec(&["codex-worker"], &rule, "allow", true, true).unwrap();
+        assert!(allow.contains(&format!("u:{worker_uid}:rwx")));
+        assert!(allow.contains(&format!("d:u:{worker_uid}:rwx")));
         assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
         assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
 
-        let block = super::acl_spec(&["codex-worker"], &rule, "block", true).unwrap();
+        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, true).unwrap();
+        assert!(block.contains(&format!("u:{worker_uid}:---")));
+        assert!(block.contains(&format!("d:u:{worker_uid}:---")));
         assert!(!block.contains(&format!("u:{owner_uid}:")));
+        assert!(!block.contains(&format!("d:u:{owner_uid}:")));
+    }
+
+    #[test]
+    fn nonrecursive_directory_acl_does_not_change_default_permissions() {
+        let rule = serde_json::json!({"operations":["write","create","delete","execute"]});
+        let worker_uid = crate::user_ids("codex-worker").unwrap().0;
+        let acl = super::acl_spec(&["codex-worker"], &rule, "allow", true, false).unwrap();
+        assert!(acl.contains(&format!("u:{worker_uid}:-wx")));
+        assert!(!acl.contains("d:u:"));
+
+        let block = super::acl_spec(&["codex-worker"], &rule, "block", true, false).unwrap();
+        assert!(block.contains(&format!("u:{worker_uid}:---")));
+        assert!(!block.contains("d:u:"));
     }
 
     #[test]
