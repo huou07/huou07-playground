@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "machine_class": "Debian 13 (trixie) x86_64, Dell OptiPlex Micro 7010, Intel Core i5-13500T (20 threads), 15 GiB RAM",
+  "calibrated": "2026-10-18",
+  "calibrated_source": "095603b8ae0e43ef7c052a1204d37087ad00dce0",
+  "measurement": {
+    "tool": "tools/measure-product.py",
+    "workload": "loopback fixture, synthetic owner session, one server process tree; the Python reference runs the same workload",
+    "idle_seconds": 5,
+    "requests": 30,
+    "repeats": 3,
+    "observed_rust": {
+      "peak_tree_rss_bytes": 15753216,
+      "health_p95_ms": 1.27,
+      "dashboard_p95_ms": 2.33,
+      "idle_cpu_seconds": 0
+    }
+  },
+  "budgets": {
+    "rust_peak_rss_bytes": 50331648,
+    "health_p95_ms": 10,
+    "dashboard_p95_ms": 15
+  },
+  "margin": "RSS budget is 3.2x the calibrated maximum; health and dashboard latency budgets are about 7.9x and 6.4x the calibrated maxima. The bound catches a gross regression (leak, blocked request, runaway polling), not runner noise.",
+  "scope": "The Rust server process tree only, measured by tools/measure-product.py; it excludes helper collectors, Redis and any owner-host service. Latency is loopback with no TLS or VPN relay."
+}
