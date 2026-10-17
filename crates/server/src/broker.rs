@@ -13,6 +13,11 @@ type Result<T> = std::result::Result<T, String>;
 const READ_LIMIT: u64 = 1024 * 1024;
 const WRITE_LIMIT: usize = 64 * 1024;
 const OUTPUT_LIMIT: u64 = 2 * 1024 * 1024;
+/// Live pending approvals one managed worker may hold. The broker socket is
+/// world-connectable so any worker identity can reach its own approval channel;
+/// without a bound a single worker could grow the store without limit and bury
+/// the owner review queue.
+const PENDING_APPROVAL_LIMIT: u64 = 32;
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
@@ -256,6 +261,30 @@ fn actor_result(bytes: &[u8]) -> Result<Value> {
     Ok(envelope["data"].clone())
 }
 
+/// Bound live pending approvals per worker, clearing rows the owner can no
+/// longer decide. Keeps the review queue and the store growth predictable when
+/// many requests arrive from a worker that already runs under a managed identity.
+fn enforce_pending_limit(c: &Connection, worker: &str) -> Result<()> {
+    c.execute(
+        "DELETE FROM approvals WHERE state='pending' AND expires<=?1",
+        [crate::now()],
+    )
+    .map_err(err)?;
+    let pending: u64 = c
+        .query_row(
+            "SELECT count(*) FROM approvals WHERE worker=?1 AND state='pending'",
+            [worker],
+            |row| row.get(0),
+        )
+        .map_err(err)?;
+    if pending >= PENDING_APPROVAL_LIMIT {
+        return Err(
+            "Too many pending broker requests; wait for the owner decision or expiry".into(),
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn request(uid: u32, value: &Value) -> Result<Value> {
     let worker = helper::workers()
         .into_iter()
@@ -290,6 +319,7 @@ pub(crate) fn request(uid: u32, value: &Value) -> Result<Value> {
             }
             let id = crate::random_token()?;
             let expires = crate::now() + 300;
+            enforce_pending_limit(&c, worker)?;
             let (dev, ino) = if operation == "create" {
                 (
                     &payload["expected_parent_dev"],
@@ -446,6 +476,45 @@ mod tests {
             .unwrap();
         assert_eq!(state, "invalidated");
         assert!(payload.is_none());
+    }
+
+    #[test]
+    fn pending_approvals_are_bounded_per_worker_and_expiry_frees_capacity() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(
+            "CREATE TABLE approvals(id TEXT PRIMARY KEY,worker TEXT,path TEXT,operation TEXT,
+             revision INTEGER,expires INTEGER,state TEXT,dev INTEGER,ino INTEGER,payload BLOB);",
+        )
+        .unwrap();
+        let live = crate::now() + 300;
+        for index in 0..PENDING_APPROVAL_LIMIT {
+            c.execute(
+                "INSERT INTO approvals VALUES(?1,'fixture','/fixture','read',1,?2,'pending',1,2,NULL)",
+                params![format!("live{index}"), live],
+            )
+            .unwrap();
+        }
+        // Capacity is exhausted for this worker only.
+        assert!(enforce_pending_limit(&c, "fixture").is_err());
+        assert!(enforce_pending_limit(&c, "other").is_ok());
+        // A used or expired row must not keep the worker locked out.
+        c.execute(
+            "INSERT INTO approvals VALUES('stale','fixture','/fixture','read',1,?1,'pending',1,2,NULL)",
+            [crate::now() - 1],
+        )
+        .unwrap();
+        assert!(enforce_pending_limit(&c, "fixture").is_err());
+        c.execute("DELETE FROM approvals WHERE id='live0'", [])
+            .unwrap();
+        assert!(enforce_pending_limit(&c, "fixture").is_ok());
+        let remaining: u64 = c
+            .query_row(
+                "SELECT count(*) FROM approvals WHERE state='pending'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, PENDING_APPROVAL_LIMIT - 1);
     }
 
     #[test]
