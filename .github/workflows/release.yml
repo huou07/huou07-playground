@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
+      - name: Install cargo-audit
+        run: cargo +stable install cargo-audit --locked
+      - name: Audit locked dependencies and generate release notices
+        run: |
+          mkdir -p "$RUNNER_TEMP/rustsec-advisory-db"
+          python3 tools/release-audit.py --advisory-db "$RUNNER_TEMP/rustsec-advisory-db" --output artifacts/release-audit
+      - name: Build release binary
+        run: cargo +1.90.0 build --workspace --release --locked
+      - name: Test package lifecycle on the fresh runner
+        run: |
+          python3 -m unittest discover -s tests/package
+          sh tests/package-lifecycle.sh
+      - name: Install Debian package linter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lintian
+      - name: Build the versioned Debian package twice
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          epoch=$(git show -s --format=%ct HEAD)
+          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$version" target/release/h07p-server dist/first
+          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$version" target/release/h07p-server dist/repeat
+          cmp "dist/first/huou07-playground_${version}_amd64.deb" "dist/repeat/huou07-playground_${version}_amd64.deb"
+          mkdir -p dist/release
+          cp dist/first/* dist/release/
+          cp artifacts/release-audit/{report.json,sbom.cdx.json,licenses.json,THIRD_PARTY_LICENSES.txt} dist/release/
+          printf 'source=%s\ntag=%s\n' "$(git rev-parse HEAD)" "$GITHUB_REF_NAME" > dist/release/SOURCE.txt
+          (cd dist/release && sha256sum -c "huou07-playground_${version}_amd64.deb.sha256")
+          lintian --fail-on error "dist/release/huou07-playground_${version}_amd64.deb"
+          dpkg-deb --info "dist/release/huou07-playground_${version}_amd64.deb"
+          cat > dist/release/RELEASE_NOTES.md <<EOF
+          H07P ${version} for Linux amd64.
+
+          Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA} (tag ${GITHUB_REF_NAME}).
+          Built twice on a fresh Ubuntu 24.04 GitHub-hosted runner; package hashes matched.
+          Required CI, dependency audit, package lifecycle fixtures and Lintian passed.
+
+          The lifecycle checks use isolated synthetic dpkg roots. They do not claim a full Debian systemd VM install or arbitrary-host isolation acceptance. See the repository validation contract for scope.
+          EOF
+      - name: Upload release package and provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: h07p-release-${{ github.ref_name }}
+          path: dist/release/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: h07p-release-${{ github.ref_name }}
+          path: dist/release
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/release/* \
+            --verify-tag \
+            --title "H07P ${GITHUB_REF_NAME#v}" \
+            --notes-file dist/release/RELEASE_NOTES.md

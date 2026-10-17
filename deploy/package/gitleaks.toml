@@ -1,3 +1,13 @@
 # Use the maintained scanner's bundled rules; never load workspace configuration.
 [extend]
 useDefault = true
+
+# Debian ships gitleaks 8.16.0 and the package depends on `gitleaks (>= 8.16)`.
+# That build has no allowlist for the canonical AWS documentation key, so any
+# documentation, fixture or README quoting `AKIAIOSFODNN7EXAMPLE` was reported as
+# a high-confidence secret. Upstream added the allowlist in a later release;
+# declaring it here keeps the shipped ruleset independent of the scanner build.
+# This suppresses exactly one literal string; every default rule is unchanged.
+[allowlist]
+description = "Canonical AWS documentation example key"
+regexes = ['''AKIAIOSFODNN7EXAMPLE''']

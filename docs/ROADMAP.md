@@ -25,23 +25,59 @@ roots, and a GUI ACL reset that uses the existing root-owned snapshot while
 preserving bytes. They also address shared runtime read-only ACLs, the DSH Git
 config scrubber issue and traversal for exact private-file exceptions.
 
-H07P 0.3.6 is built and installed on the real Debian host; the dashboard and
-`/api/health` are active. The final Linux workspace run previously passed 42
-tests; nine focused Python worker-policy/baseline tests pass; local Rust
-formatting, JavaScript syntax and whitespace checks pass. The release audit
-passed for 144 components with zero vulnerabilities/warnings; `lintian --fail-on
-error` reported no issue. The 0.3.6 package SHA-256 is
-`86df72718f0edbaeaa96260728e481fc3d00fc695a0c3a71f06a63e2c8a89b46`.
+At the start of this delivery, the active real-Debian release was
+`/opt/huou07-playground/releases/0.3.7-acl-inherit-fix/bin/h07p-server`, SHA-256
+`90626d3d4ee21d02f36bd2ed58fa61c10e4cce769931094e338894c96b901d3a`. Both
+Playground and helper services were active and `/api/health` returned
+`{"ok":true}`. That direct Rust hotfix build passed 46 host Rust tests, locked
+offline release build and `cargo fmt --all -- --check` with Rust 1.98.0. The ACL
+fix only adds default entries for recursive directory rules; nonrecursive rules
+leave existing defaults alone.
 
-The first GUI ACL-reset attempt failed on stale paths in the dated baseline;
-follow-up inspection found 14 paths that no longer exist. A 535 MB rollback
-snapshot remains protected, sampled ACLs match the pre-reset state, and all three
-workers remain stopped. The 0.3.6 reset now filters stale records and preflights
-the result with `setfacl --test`; on the actual Debian baseline it retained
-1,295,293 records, skipped 14 stale paths and passed the dry run. The second GUI
-reset is pending owner reauthentication after package deployment. Live policy, credential
-scan, worker checks, OR/VCE runs and authorized GitHub push remain pending. Do
-not call this task owner-accepted until those live results are recorded below.
+H07P **0.3.8** is now published from tag [`v0.3.8`](https://github.com/huou07/huou07-playground/releases/tag/v0.3.8),
+source `78ecb43b8126e67861fa56bf633551a318c5f1c6`. Exact-tag GitHub Actions
+[release run 38999148525](https://github.com/huou07/huou07-playground/actions/runs/38999148525)
+passed framework/legacy gates, pinned Rust format/Clippy/tests/release/HTTP smoke,
+both 34-test browser lanes, fresh dependency audit, package lifecycle tests,
+Lintian and two identical package builds on Ubuntu 24.04. The public amd64 `.deb`
+SHA-256 is `bfc2bb4068c09050e21c98752f7be4257639596ea397bfdf597364aab767fbd7`;
+the downloaded release checksum was verified. The workflow's lifecycle fixture
+uses an isolated synthetic dpkg root, not a full Debian systemd VM install. The
+0.3.8 package has not been deployed to the real Debian host.
+
+GUI ACL reset, harness detection, worker repair and the first policy reapply were
+done through Playground at **Desired revision 17 · Enforced revision 17**. The
+owner reviewed the warnings and confirmed Apply a second time. A later GUI
+workspace update set `opencode-worker` to `/home/huou07/Projects/VCE`; the current
+policy is **Desired revision 18 · Enforced revision 18**. The enforced rules retain
+broad home access with private paths and Blocks protected, exact GitHub-file read
+exceptions for `dsh-worker`, writable Flutter build paths and the nonrecursive
+`/home/huou07/.rustup/tmp` rule for `codex-worker`. A read-only ACL check shows
+direct `-wx` access on `.rustup/tmp` but default `r-x`; the worker can read Rust
+1.98.0, create/remove a temp file there and has no sudo group membership. Read-only
+worker checks confirm only `dsh-worker` can read the two explicitly allowed
+GitHub files; `codex-worker` and `opencode-worker` are denied both. The ACL helper
+now adds default ACL entries only for recursive rules. It still skips only missing
+paths when restoring old ACL snapshots and fails closed on other errors.
+
+The user-authorized GitHub credential scan found the exact GitHub auth files;
+the selected `dsh-worker` exception was set through the GUI, and its push check
+succeeded without exposing credential contents. H07P changes are committed and
+pushed to `codex/h07p-product` through `78ecb43`; Rustup/Flutter/Playwright/public package and browser
+runtime assets were recovered from retained owner sources. The real OR preflight
+then passed under `codex-worker`: Linux debug app built, the editor journey passed
+in 79.1s, and minimum available RAM was 6,014,963,712 bytes. Its runner temporarily
+scopes the bridge manifest to the Linux host target and restores the original
+bytes. `pub get --offline --enforce-lockfile` still warns that cached content
+hashes differ for many locked packages, but succeeded and left `pubspec.lock`
+unchanged. This does not prove package/OS-picker acceptance or other platforms.
+
+The VCE browser lane then passed on the real Debian host under `opencode-worker`
+with Playwright CLI 0.1.22 and pinned Chromium 155.0.8059.12 in 12.25s. Its saved
+evidence records source `0c3c9d882133c7afea6f5324748ba472882e0f55`, three viewport
+screenshots and no browser errors. This uses an existing managed worker; there is
+no dedicated `vce-web` profile. VCE native stays intentionally disabled and no
+native journey was run.
 
 Tool recovery finding: current AEH capability sources remain under
 `/home/huou07/AEH/ops/product-verification/` and their listed source checksums

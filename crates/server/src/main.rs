@@ -19,6 +19,8 @@ mod relays;
 mod sandbox;
 #[cfg(target_os = "linux")]
 mod scan;
+#[cfg(target_os = "linux")]
+mod sensitive;
 mod telemetry;
 #[cfg(target_os = "linux")]
 mod vpn_apps;

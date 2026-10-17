@@ -216,43 +216,7 @@ fn readonly_roots() -> &'static [PathBuf] {
         .as_slice()
 }
 fn sensitive_name(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    [
-        ".netrc",
-        ".npmrc",
-        ".pypirc",
-        ".git-credentials",
-        ".bash_history",
-        ".zsh_history",
-        ".lesshst",
-        "auth.json",
-        ".credentials.yaml",
-        "credentials.json",
-        "credentials.yaml",
-        "credentials.yml",
-        "credentials",
-        "credentials.toml",
-        "known_hosts",
-        "passwd",
-        "shadow",
-        "gshadow",
-        "sudoers",
-        ".s3cfg",
-        ".envrc",
-        ".gitcookies",
-        "id_rsa",
-        "id_ed25519",
-        "id_ecdsa",
-        "authorized_keys",
-    ]
-    .contains(&name.as_str())
-        || [".pem", ".key", ".p12", ".pfx"]
-            .iter()
-            .any(|suffix| name.ends_with(suffix))
-        || ((name == ".env" || name.starts_with(".env.") || name.ends_with(".env"))
-            && !["example", "sample", "template"]
-                .iter()
-                .any(|part| name.contains(part)))
+    crate::sensitive::is_protected_name(name)
 }
 pub(crate) fn is_private_path(path: &Path) -> bool {
     let github_hosts = path.file_name().is_some_and(|name| name == "hosts.yml")
@@ -332,6 +296,14 @@ fn walk_scope(
         }
     }
     Ok(count)
+}
+/// Direct Allow rules may only target objects owned by the owner or a managed
+/// worker. The helper runs as root, so a root-owned target would let one owner
+/// draft hand a worker read or write access to the system's own files, and Auto
+/// Detect's allow mode proposes Allow rules in bulk. Shared runtime roots stay
+/// usable because they live under the owner home.
+fn allow_target_owner_forbidden(uid: u32) -> bool {
+    uid == 0
 }
 fn validate(draft: &Value) -> Result<()> {
     if !["none", "minimal", "balance", "strict"].contains(&draft["preset"].as_str().unwrap_or("")) {
@@ -437,6 +409,12 @@ fn validate(draft: &Value) -> Result<()> {
         if rule["action"] == "allow" {
             use std::os::unix::fs::MetadataExt;
             let metadata = fs::symlink_metadata(p).map_err(err)?;
+            if allow_target_owner_forbidden(metadata.uid()) {
+                return Err(
+                    "A direct Allow cannot target a root-owned file or directory. Shared runtime roots owned by the owner are allowed; grant access to owner data instead. No permissions were changed."
+                        .into(),
+                );
+            }
             if metadata.is_file() && metadata.nlink() > 1 {
                 return Err(
                     "Allow cannot target a hard-linked file; choose one unaliased file".into(),
@@ -588,11 +566,9 @@ fn snapshot(target: &str, recursive: bool) -> Result<PathBuf> {
             let _ = fs::remove_file(&temporary);
             return Err("Could not snapshot original ACL".into());
         }
-        if !batch.is_empty() {
-            if snapshot_acl_batch(&file, &mut batch).is_err() {
-                let _ = fs::remove_file(&temporary);
-                return Err("Could not snapshot original ACL".into());
-            }
+        if !batch.is_empty() && snapshot_acl_batch(&file, &mut batch).is_err() {
+            let _ = fs::remove_file(&temporary);
+            return Err("Could not snapshot original ACL".into());
         }
         fs::File::open(&temporary)
             .and_then(|f| f.sync_all())
@@ -729,7 +705,36 @@ fn impact_warnings(v: &Value) -> Vec<String> {
     warnings.dedup();
     warnings
 }
-fn acl_spec(workers: &[&str], rule: &Value, action: &str, directories: bool) -> Result<String> {
+fn acl_spec(
+    workers: &[&str],
+    rule: &Value,
+    action: &str,
+    directories: bool,
+    recursive: bool,
+) -> Result<String> {
+    let worker_uids = workers
+        .iter()
+        .map(|worker| crate::user_ids(worker).map(|(uid, _)| uid))
+        .collect::<Result<Vec<_>>>()?;
+    let owner_uid = crate::user_ids("huou07")?.0;
+    acl_spec_for_uids(
+        &worker_uids,
+        owner_uid,
+        rule,
+        action,
+        directories,
+        recursive,
+    )
+}
+
+fn acl_spec_for_uids(
+    worker_uids: &[u32],
+    owner_uid: u32,
+    rule: &Value,
+    action: &str,
+    directories: bool,
+    recursive: bool,
+) -> Result<String> {
     let operations = rule["operations"].as_array().ok_or("Missing operations")?;
     let mut entries = Vec::new();
     let access = if action == "block" {
@@ -756,17 +761,15 @@ fn acl_spec(workers: &[&str], rule: &Value, action: &str, directories: bool) -> 
             }
         )
     };
-    for worker in workers {
-        let (uid, _) = crate::user_ids(worker)?;
+    for uid in worker_uids {
         entries.push(format!("u:{uid}:{access}"));
-        if directories {
+        if directories && recursive {
             entries.push(format!("d:u:{uid}:{access}"));
         }
     }
     if action != "block" {
-        let (owner_uid, _) = crate::user_ids("huou07")?;
         entries.push(format!("u:{owner_uid}:{access}"));
-        if directories {
+        if directories && recursive {
             entries.push(format!("d:u:{owner_uid}:{access}"));
         }
     }
@@ -778,12 +781,17 @@ fn set_acl_paths(
     rule: &Value,
     action: &str,
     directories: bool,
+    recursive: bool,
 ) -> Result<()> {
     if paths.is_empty() || workers.is_empty() {
         return Ok(());
     }
     let mut cmd = Command::new("setfacl");
-    cmd.args(["-m", &acl_spec(workers, rule, action, directories)?, "--"]);
+    cmd.args([
+        "-m",
+        &acl_spec(workers, rule, action, directories, recursive)?,
+        "--",
+    ]);
     cmd.args(paths);
     command(cmd)
 }
@@ -828,7 +836,7 @@ fn apply_scope(
     let mut directory_bytes = 0usize;
     let mut file_bytes = 0usize;
     let flush = |paths: &mut Vec<PathBuf>, is_directory: bool| -> Result<()> {
-        set_acl_paths(paths, workers, rule, action, is_directory)?;
+        set_acl_paths(paths, workers, rule, action, is_directory, recursive)?;
         paths.clear();
         Ok(())
     };
@@ -882,11 +890,7 @@ fn apply_scope(
 }
 fn enforce(policy: &Value) -> Result<()> {
     let rules = policy["rules"].as_array().ok_or("Invalid stored rules")?;
-    let active = |rule: &&Value| {
-        !rule["expires_at"]
-            .as_u64()
-            .is_some_and(|t| t <= crate::now())
-    };
+    let active = |rule: &&Value| rule["expires_at"].as_u64().is_none_or(|t| t > crate::now());
     // Grants skip known credential/private targets; default and explicit blocks
     // are then applied after every grant, so a parent Allow cannot reopen them.
     for rule in rules
@@ -940,12 +944,12 @@ fn enforce(policy: &Value) -> Result<()> {
         if !root.exists() {
             continue;
         }
-        let denied = private_workers(&root);
+        let denied = private_workers(root);
         if denied.is_empty() {
             continue;
         }
         let rule = deny_rule();
-        apply_scope(&root, true, &denied, &rule, "block", false)?;
+        apply_scope(root, true, &denied, &rule, "block", false)?;
     }
     // An explicit sensitive-path exception is applied after defaults, but never
     // after an owner Block rule. Ancestor search rights expose no directory listing.
@@ -962,7 +966,7 @@ fn enforce(policy: &Value) -> Result<()> {
         let target = Path::new(rule["target"].as_str().ok_or("Missing target")?);
         for ancestor in private_exception_ancestors(target) {
             let search = json!({"operations":["execute"]});
-            set_acl_paths(&[ancestor], &present, &search, "allow", false)?;
+            set_acl_paths(&[ancestor], &present, &search, "allow", false, false)?;
         }
         apply_scope(
             target,
@@ -1020,58 +1024,6 @@ fn enforce(policy: &Value) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod policy_tests {
-    use super::{
-        private_exception_ancestors, should_flush_acl_batch, ACL_PATH_BATCH_MAX_BYTES,
-        ACL_PATH_BATCH_MAX_COUNT,
-    };
-    use std::path::Path;
-
-    #[test]
-    fn exact_private_exception_gets_search_rights_on_every_parent() {
-        let ancestors = private_exception_ancestors(Path::new("/home/huou07/.config/gh/hosts.yml"));
-        assert_eq!(ancestors.first().unwrap(), Path::new("/"));
-        assert!(ancestors.contains(&Path::new("/home/huou07/.config").to_path_buf()));
-        assert!(ancestors.contains(&Path::new("/home/huou07/.config/gh").to_path_buf()));
-        assert_eq!(
-            ancestors.last().unwrap(),
-            Path::new("/home/huou07/.config/gh")
-        );
-    }
-
-    #[test]
-    fn acl_command_batches_are_bounded_by_count_and_argument_bytes() {
-        assert!(!should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT - 1, 1));
-        assert!(should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT, 1));
-        assert!(!should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES - 1));
-        assert!(should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES));
-    }
-
-    #[test]
-    fn allow_acls_share_with_primary_owner_and_blocks_do_not_change_owner_acl() {
-        let rule =
-            serde_json::json!({"operations":["list","read","write","create","delete","execute"]});
-        let owner_uid = crate::user_ids("huou07").unwrap().0;
-        let allow = super::acl_spec(&["codex-worker"], &rule, "allow", true).unwrap();
-        assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
-        assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
-
-        let block = super::acl_spec(&["codex-worker"], &rule, "block", true).unwrap();
-        assert!(!block.contains(&format!("u:{owner_uid}:")));
-    }
-
-    #[test]
-    fn acl_restore_only_ignores_missing_paths() {
-        assert!(super::restore_failed_only_on_missing_paths(
-            "setfacl: /home/huou07/removed-file: No such file or directory\n"
-        ));
-        assert!(!super::restore_failed_only_on_missing_paths(
-            "setfacl: /home/huou07/file: Operation not supported\n"
-        ));
-        assert!(!super::restore_failed_only_on_missing_paths(""));
-    }
-}
 fn status() -> Result<Value> {
     let mut p = load()?;
     let c = db()?;
@@ -1707,4 +1659,116 @@ pub(crate) fn maintain_workers(v: &Value) -> Result<Value> {
     )?;
     start(&active)?;
     Ok(json!({"revision":revision,"enforced_revision":revision,"data_retained":true}))
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::{
+        private_exception_ancestors, should_flush_acl_batch, ACL_PATH_BATCH_MAX_BYTES,
+        ACL_PATH_BATCH_MAX_COUNT,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn exact_private_exception_gets_search_rights_on_every_parent() {
+        let ancestors = private_exception_ancestors(Path::new("/home/huou07/.config/gh/hosts.yml"));
+        assert_eq!(ancestors.first().unwrap(), Path::new("/"));
+        assert!(ancestors.contains(&Path::new("/home/huou07/.config").to_path_buf()));
+        assert!(ancestors.contains(&Path::new("/home/huou07/.config/gh").to_path_buf()));
+        assert_eq!(
+            ancestors.last().unwrap(),
+            Path::new("/home/huou07/.config/gh")
+        );
+    }
+
+    #[test]
+    fn acl_command_batches_are_bounded_by_count_and_argument_bytes() {
+        assert!(!should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT - 1, 1));
+        assert!(should_flush_acl_batch(ACL_PATH_BATCH_MAX_COUNT, 1));
+        assert!(!should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES - 1));
+        assert!(should_flush_acl_batch(1, ACL_PATH_BATCH_MAX_BYTES));
+    }
+
+    #[test]
+    fn allow_acls_share_with_primary_owner_and_blocks_do_not_change_owner_acl() {
+        let rule =
+            serde_json::json!({"operations":["list","read","write","create","delete","execute"]});
+        let owner_uid = 1000;
+        let worker_uid = 1001;
+        let allow =
+            super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "allow", true, true).unwrap();
+        assert!(allow.contains(&format!("u:{worker_uid}:rwx")));
+        assert!(allow.contains(&format!("d:u:{worker_uid}:rwx")));
+        assert!(allow.contains(&format!("u:{owner_uid}:rwx")));
+        assert!(allow.contains(&format!("d:u:{owner_uid}:rwx")));
+
+        let block =
+            super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "block", true, true).unwrap();
+        assert!(block.contains(&format!("u:{worker_uid}:---")));
+        assert!(block.contains(&format!("d:u:{worker_uid}:---")));
+        assert!(!block.contains(&format!("u:{owner_uid}:")));
+        assert!(!block.contains(&format!("d:u:{owner_uid}:")));
+    }
+
+    #[test]
+    fn nonrecursive_directory_acl_does_not_change_default_permissions() {
+        let rule = serde_json::json!({"operations":["write","create","delete","execute"]});
+        let owner_uid = 1000;
+        let worker_uid = 1001;
+        let acl = super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "allow", true, false)
+            .unwrap();
+        assert!(acl.contains(&format!("u:{worker_uid}:-wx")));
+        assert!(!acl.contains("d:u:"));
+
+        let block = super::acl_spec_for_uids(&[worker_uid], owner_uid, &rule, "block", true, false)
+            .unwrap();
+        assert!(block.contains(&format!("u:{worker_uid}:---")));
+        assert!(!block.contains("d:u:"));
+    }
+
+    #[test]
+    fn acl_restore_only_ignores_missing_paths() {
+        assert!(super::restore_failed_only_on_missing_paths(
+            "setfacl: /home/huou07/removed-file: No such file or directory\n"
+        ));
+        assert!(!super::restore_failed_only_on_missing_paths(
+            "setfacl: /home/huou07/file: Operation not supported\n"
+        ));
+        assert!(!super::restore_failed_only_on_missing_paths(""));
+    }
+
+    /// The policy engine must refuse to hand a worker access to root-owned
+    /// objects: the helper applies ACLs as root, so such a rule would move
+    /// system state into a worker's reach. Native acceptance asserts this
+    /// against the real kernel; this pins the predicate and the draft path.
+    #[test]
+    fn allow_rules_cannot_target_root_owned_objects() {
+        assert!(super::allow_target_owner_forbidden(0));
+        assert!(!super::allow_target_owner_forbidden(1000));
+        assert!(!super::allow_target_owner_forbidden(u32::MAX));
+
+        // /etc/hostname is root-owned on every Linux CI image and is neither a
+        // protected name nor an immutable root, so it reaches the Allow checks.
+        let workspace = std::env::temp_dir().join(format!("h07p-allow-{}", std::process::id()));
+        std::fs::create_dir_all(&workspace).unwrap();
+        let draft = serde_json::json!({"preset":"none","workspace":workspace,
+            "rules":[{"worker":"*","target":"/etc/hostname","action":"allow","recursive":false,
+                      "operations":["read"]}]});
+        let error = super::validate(&draft).unwrap_err();
+        assert!(error.contains("root-owned"), "{error}");
+        let _ = std::fs::remove_dir_all(&workspace);
+    }
+
+    #[test]
+    fn allow_rules_still_accept_owner_owned_targets() {
+        let workspace = std::env::temp_dir().join(format!("h07p-allow-ok-{}", std::process::id()));
+        std::fs::create_dir_all(&workspace).unwrap();
+        let target = workspace.join("ordinary.txt");
+        std::fs::write(&target, b"synthetic").unwrap();
+        let draft = serde_json::json!({"preset":"none","workspace":workspace,
+            "rules":[{"worker":"*","target":target,"action":"allow","recursive":false,
+                      "operations":["read"]}]});
+        super::validate(&draft).expect("an owner-owned target stays usable");
+        let _ = std::fs::remove_dir_all(&workspace);
+    }
 }

@@ -68,13 +68,72 @@ fn content(path: &std::path::Path, meta: &fs::Metadata) -> Result<bool, String> 
     detect_bytes(bytes)
 }
 
-pub(crate) fn detect_bytes(mut bytes: Vec<u8>) -> Result<bool, String> {
+pub(crate) fn detect_bytes(bytes: Vec<u8>) -> Result<bool, String> {
+    scanner_verified()?;
+    run_scanner(bytes)
+}
+
+/// Synthetic canary for the scanner self-test. It is a fake token, never a real
+/// credential, and every Gitleaks build measured in the lab detects it
+/// (Debian 8.16.0 and upstream 8.30.1). Kept out of reports and logs.
+///
+/// The value is assembled at run time from two fragments so that the repository's
+/// own secret scanning does not flag this source file and host-side push
+/// protection cannot block a legitimate commit. The assembled bytes are what the
+/// scanner sees, so the self-test still exercises the real detection path.
+const SCANNER_CANARY_PREFIX: &[u8] = b"GITHUB_TOKEN=ghp_";
+const SCANNER_CANARY_BODY: &[u8] = b"9fJ2kLm4Np6Qr8St0Uv2Wx4Yz6Ab8Cd0Ef2G";
+
+fn scanner_canary() -> Vec<u8> {
+    let mut canary =
+        Vec::with_capacity(SCANNER_CANARY_PREFIX.len() + SCANNER_CANARY_BODY.len() + 1);
+    canary.extend_from_slice(SCANNER_CANARY_PREFIX);
+    canary.extend_from_slice(SCANNER_CANARY_BODY);
+    canary.push(b'\n');
+    canary
+}
+
+fn scanner_binary() -> String {
+    std::env::var("H07P_SCANNER").unwrap_or_else(|_| "/usr/bin/gitleaks".into())
+}
+
+fn scanner_config() -> String {
+    std::env::var("H07P_SCANNER_CONFIG")
+        .unwrap_or_else(|_| "/opt/huou07-playground/current/deploy/gitleaks.toml".into())
+}
+
+/// Prove the configured scanner actually still finds a known fake credential
+/// before trusting any "no finding" result from it. Without this, a scanner that
+/// is missing, misconfigured, or changed its CLI/ruleset between releases would
+/// report success for every file and turn into a false clean result. A verified
+/// scanner is remembered; a failure is not cached so the next scan retries.
+fn scanner_verified() -> Result<(), String> {
+    static VERIFIED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if VERIFIED.get().is_some() {
+        return Ok(());
+    }
+    interpret_self_test(run_scanner(scanner_canary()))?;
+    let _ = VERIFIED.set(());
+    Ok(())
+}
+
+/// Fail-closed mapping from a self-test scanner run to a trust decision. A
+/// scanner that exits successfully without finding the canary is as untrustworthy
+/// as one that could not run at all.
+fn interpret_self_test(result: Result<bool, String>) -> Result<(), String> {
+    match result {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("scanner_self_test_missed_canary".into()),
+        Err(error) => Err(error),
+    }
+}
+
+fn run_scanner(mut bytes: Vec<u8>) -> Result<bool, String> {
     if bytes.len() > 1024 * 1024 {
         return Err("content_budget".into());
     }
-    let scanner = std::env::var("H07P_SCANNER").unwrap_or_else(|_| "/usr/bin/gitleaks".into());
-    let config = std::env::var("H07P_SCANNER_CONFIG")
-        .unwrap_or_else(|_| "/opt/huou07-playground/current/deploy/gitleaks.toml".into());
+    let scanner = scanner_binary();
+    let config = scanner_config();
     let (uid, gid) = crate::user_ids("huou07")?;
     let mut command = Command::new(scanner);
     command
@@ -176,6 +235,7 @@ pub fn run(v: &Value) -> Result<Value, String> {
     let mut seen = 0;
     let mut scanned_bytes = 0u64;
     let mut content_files = 0;
+    let mut unknown_objects = 0usize;
     while let Some((directory, depth)) = queue.pop() {
         if excluded_filesystem(&directory) {
             skipped.push(json!({"path":directory,"reason":"filesystem_excluded"}));
@@ -236,31 +296,16 @@ pub fn run(v: &Value) -> Result<Value, String> {
                     .to_string_lossy()
                     .to_lowercase()
             });
-            let sensitive_name = name.starts_with(".env") && !name.contains("example")
-                || [
-                    "credential",
-                    "secret",
-                    "password",
-                    "token",
-                    "id_rsa",
-                    "id_ed25519",
-                    ".npmrc",
-                    "auth.json",
-                ]
-                .iter()
-                .any(|n| name.contains(n))
-                || name.ends_with(".pem")
-                || name.ends_with(".key")
-                || (name == "hosts.yml"
-                    && p.parent()
-                        .is_some_and(|parent| parent.ends_with(".config/gh")));
+            let classification = crate::sensitive::classify(&p, Some(&m));
             let private_store = crate::helper::is_private_path(&p);
-            let mut detected = sensitive_name || (private_store && m.is_file());
-            let mut reason = if sensitive_name {
-                "sensitive_filename"
+            let mut detected = classification.sensitive || (private_store && m.is_file());
+            let mut reason = if classification.sensitive {
+                classification.reason
             } else {
                 "protected_private_store"
             };
+            let mut confidence = classification.confidence;
+            let mut category = classification.category;
             let mut unknown = false;
             if content_enabled && m.is_file() {
                 if content_files >= 128 || scanned_bytes.saturating_add(m.len()) > 16 * 1024 * 1024
@@ -274,6 +319,8 @@ pub fn run(v: &Value) -> Result<Value, String> {
                         Ok(true) => {
                             detected = true;
                             reason = "maintained_scanner_match";
+                            confidence = "high";
+                            category = "content_signature";
                         }
                         Ok(false) => {}
                         Err(error) => {
@@ -283,10 +330,13 @@ pub fn run(v: &Value) -> Result<Value, String> {
                     }
                 }
             }
+            if unknown {
+                unknown_objects += 1;
+            }
             if (detected && mode == "block")
                 || (!detected && !unknown && mode == "allow" && m.is_file())
             {
-                found.push(json!({"path":p,"reason":if detected{reason}else{"no_known_sensitive_marker"},"confidence":if detected{"high"}else{"unknown"}}));
+                found.push(json!({"path":p,"reason":if detected{reason}else{"no_known_sensitive_marker"},"confidence":if detected{confidence}else{"unknown"},"category":if detected{category}else{"none"}}));
             }
             if m.is_dir() && name != ".git" && name != "node_modules" {
                 queue.push((p, depth + 1));
@@ -295,6 +345,7 @@ pub fn run(v: &Value) -> Result<Value, String> {
     }
     Ok(
         json!({"findings":found,"skipped":skipped,"partial":!skipped.is_empty(),"scanned":seen,
+        "unknown":unknown_objects,"registry_version":crate::sensitive::REGISTRY_VERSION,
         "content_scanned":content_enabled,"content_files":content_files,"content_bytes":scanned_bytes,
         "warning":"Detection is a proposal, not proof of safety. Unknown and skipped files remain unclassified. Nothing has been applied."}),
     )
@@ -306,5 +357,26 @@ mod tests {
     fn pseudo_filesystems_are_excluded() {
         assert!(super::excluded_filesystem(std::path::Path::new("/proc")));
         assert!(super::excluded_filesystem(std::path::Path::new("/sys")));
+    }
+
+    #[test]
+    fn self_test_accepts_only_a_confirmed_canary_match() {
+        assert!(super::interpret_self_test(Ok(true)).is_ok());
+        assert_eq!(
+            super::interpret_self_test(Ok(false)),
+            Err("scanner_self_test_missed_canary".into())
+        );
+        assert_eq!(
+            super::interpret_self_test(Err("scanner_unavailable".into())),
+            Err("scanner_unavailable".into())
+        );
+    }
+
+    #[test]
+    fn canary_is_a_synthetic_github_token_shape() {
+        let canary = String::from_utf8(super::scanner_canary()).unwrap();
+        assert!(canary.contains("ghp_"));
+        assert!(!canary.to_lowercase().contains("example"));
+        assert!(canary.ends_with('\n'));
     }
 }

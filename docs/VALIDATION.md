@@ -23,6 +23,12 @@ separately.
 
 Current CI: framework structure/routing guard, legacy make check, locked Rust
 format/Clippy/test/release/HTTP smoke, and separate Python/Rust browser lanes.
+Tagging `vX.Y.Z` invokes [the release workflow](../.github/workflows/release.yml),
+which reruns those gates on the exact tag, audits the locked dependency graph,
+builds the `.deb` twice on a fresh Ubuntu 24.04 runner, checks matching hashes,
+Lintian and package lifecycle fixtures, then publishes the package, checksum,
+SBOM, license inventory/notices, audit report and source identity. This synthetic
+dpkg lifecycle lane is not a full Debian systemd VM installation test.
 See [IMPLEMENTATION.md](IMPLEMENTATION.md) for source coverage. The browser runner
 selects the actual backend, uses a temporary apps registry/fixture app server and
 intercepts several APIs; its pass does not prove Rust read parity or permissions/NAS.

@@ -1,10 +1,14 @@
 # Current implementation map
 
-The inspected baseline is `d0d48c3` on `codex/h07p-product`; the current
-system-wide permissions/runtime-recovery source change is uncommitted in the
-editing checkout. Package 0.3.6, including stale-path filtering for the saved
-pre-worker ACL baseline, is installed and healthy on Debian. GUI acceptance is
-in progress; the target checkout has not yet been synchronized or pushed.
+The local editing checkout contains the implementation through `e6c01038` on
+`codex/h07p-product`, plus a focused ACL-inheritance correction in its working
+tree. Nonrecursive directory rules now change access ACLs without adding default
+ACLs; recursive rules still add defaults for descendants. On the real Debian
+host, release `0.3.7-acl-inherit-fix` is active for both server and helper. The
+GUI policy is enforced at revision 18. The OR Linux editor preflight passed
+under `codex-worker`; the VCE Chromium browser lane passed under `opencode-worker`.
+See [ROADMAP](ROADMAP.md) for exact build, runtime and validation evidence and
+its limits.
 Earlier package evidence is dated separately below.
 [ROADMAP](ROADMAP.md) owns task state and deployment evidence owns executed claims.
 

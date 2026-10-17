@@ -32,6 +32,42 @@ def trusted(path):
             raise RuntimeError('Worker setup requires a root-owned protected installation')
 
 
+ACL_BASELINE_ROOT=Path(os.environ.get('H07P_ACL_BACKUP_ROOT') or '/var/backups/h07p-harness-workers')
+
+
+def acl_snapshot_name(name):
+    # The adapter writes YYYYMMDD-HHMMSS or YYYYMMDD-HHMMSS-<extra> snapshots.
+    if len(name)<15 or not name[:8].isdigit() or name[8]!='-' or not name[9:15].isdigit():
+        return False
+    return len(name)==15 or name[15]=='-'
+
+
+def select_acl_baseline(root=None,expected_uid=0):
+    """Newest validated pre-worker ACL snapshot, replacing a fixed historical path.
+
+    Nanosecond mtime first, then the timestamped directory name, so two snapshots
+    written inside one second still select deterministically instead of depending
+    on directory iteration order.
+    """
+    root=ACL_BASELINE_ROOT if root is None else Path(root)
+    best=None
+    try: candidates=list(root.iterdir())
+    except OSError: return None
+    for directory in candidates:
+        if not acl_snapshot_name(directory.name): continue
+        candidate=directory/'acl.restore'
+        try:
+            info=candidate.lstat();parent=directory.lstat()
+        except OSError: continue
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode): continue
+        if info.st_uid!=expected_uid or info.st_mode&0o022: continue
+        if not 1_000_000<=info.st_size<=500*1024*1024: continue
+        if not stat.S_ISDIR(parent.st_mode) or parent.st_uid!=expected_uid or parent.st_mode&0o022: continue
+        key=(info.st_mtime_ns,directory.name)
+        if best is None or key>(best[0],best[1]): best=(key[0],key[1],candidate)
+    return None if best is None else best[2]
+
+
 def account(name):
     try: user=pwd.getpwnam(name)
     except KeyError:return None
@@ -162,12 +198,17 @@ def filter_baseline(source,destination,control,job,home_device):
 
 
 def reset_acl(job,control):
-    baseline=Path('/var/backups/h07p-harness-workers/20261015-220803/acl.restore')
+    baseline=select_acl_baseline()
+    if baseline is None:
+        raise RuntimeError('No validated pre-worker ACL baseline snapshot is available')
     trusted(baseline)
     info=baseline.stat()
     if not 1_000_000<=info.st_size<=500*1024*1024:
         raise RuntimeError('The saved pre-worker ACL baseline has an unexpected size')
-    backup_dir=Path('/var/backups/h07p-harness-workers')/(time.strftime('%Y%m%d-%H%M%S')+'-acl-reset-'+str(time.time_ns()))
+    # New rollback snapshots share the configured registry root so selection and
+    # creation can never drift apart when the root is configured away from the default.
+    ACL_BASELINE_ROOT.mkdir(mode=0o700,parents=True,exist_ok=True)
+    backup_dir=ACL_BASELINE_ROOT/(time.strftime('%Y%m%d-%H%M%S')+'-acl-reset-'+str(time.time_ns()))
     backup_dir.mkdir(mode=0o700);backup_dir.parent.chmod(0o700)
     backup=backup_dir/'acl.restore';count=0;paths=[]
     with backup.open('xb') as output:

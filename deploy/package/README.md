@@ -1,5 +1,12 @@
 # Linux amd64 package
 
+Maintainers publish versioned packages by pushing a `vX.Y.Z` tag. The GitHub
+release workflow reruns the required source/browser CI for that exact tag,
+audits locked dependencies, builds the package twice on a fresh hosted runner,
+checks reproducibility and Lintian, then publishes the `.deb`, checksum, SBOM,
+license notices and source identity. Its isolated dpkg lifecycle test is not a
+substitute for a full systemd Debian VM install test.
+
 Build on Linux amd64 Debian/Ubuntu with systemd >= 254, Python3, acl and
 Gitleaks >= 8.16, from an already validated locked release binary:
 

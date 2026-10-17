@@ -4,8 +4,9 @@ Deliver the compact, customizable open source Linux product in
 [PRODUCT](../PRODUCT.md), beginning with the first unverified boundary in the
 single [ROADMAP](../ROADMAP.md) tracker.
 
-Verified handoff snapshot (2026-10-15): Hub resolves `huou07-playground` to
-`/home/huou07/Projects/huou07-playground`; branch
+Verified handoff snapshot (2026-10-15): the Hub now resolves `h07p` to
+`/home/huou07/Projects/H07P`; the handle `huou07-playground` and the duplicate
+checkout at the old path were retired on 2026-10-17. Branch
 `codex/h07p-framework-refresh`, inspected HEAD
 `7785c3bd479817c2de1af7fc6fb435033972dca4`.
 [Hosted CI](https://github.com/huou07/huou07-playground/actions/runs/38680918199)

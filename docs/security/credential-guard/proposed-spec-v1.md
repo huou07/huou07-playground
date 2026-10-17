@@ -40,7 +40,7 @@ Chưa viết cơ chế chặn hoặc sửa systemd trước khi hoàn thành aud
 
 ### 2.1. Kiểm tra repository
 
-Repository tham chiếu: `/home/huou07/Projects/huou07-playground`.
+Repository tham chiếu: `/home/huou07/Projects/H07P`.
 
 Theo thông tin dự án gần đây:
 
