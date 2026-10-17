@@ -102,3 +102,147 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  package-lifecycle:
+    name: Package lifecycle, audit and Lintian
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned Rust toolchain and cargo-audit
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal
+          cargo +stable install cargo-audit --locked
+      - name: Audit locked dependencies and generate release notices
+        run: |
+          mkdir -p "$RUNNER_TEMP/rustsec-advisory-db"
+          python3 tools/release-audit.py --advisory-db "$RUNNER_TEMP/rustsec-advisory-db" --output artifacts/release-audit
+      - name: Build release binary
+        run: cargo +1.90.0 build --workspace --release --locked
+      - name: Package lifecycle fixtures on a disposable root
+        run: |
+          python3 -m unittest discover -s tests/package -v
+          # Installs 0.0.1, upgrades to 0.0.2, fails a corrupt 0.0.3 upgrade,
+          # rolls back, then removes and purges, all inside a disposable dpkg root.
+          sh tests/package-lifecycle.sh
+      - name: Install Debian package linter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lintian
+      - name: Build the package twice and compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=0.0.0-ci
+          epoch=$(git show -s --format=%ct HEAD)
+          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$version" target/release/h07p-server dist/first
+          SOURCE_DATE_EPOCH="$epoch" tools/build-deb.sh "$version" target/release/h07p-server dist/repeat
+          cmp "dist/first/huou07-playground_${version}_amd64.deb" "dist/repeat/huou07-playground_${version}_amd64.deb"
+          (cd dist/first && sha256sum -c "huou07-playground_${version}_amd64.deb.sha256")
+          lintian --fail-on error "dist/first/huou07-playground_${version}_amd64.deb"
+      - name: Preserve package evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-evidence
+          path: |
+            artifacts/release-audit/
+            dist/first/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  native-isolation:
+    name: Native Linux isolation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned Rust toolchain and system packages
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends acl
+      - name: Create synthetic owner, service and worker identities
+        run: |
+          set -euo pipefail
+          sudo groupadd --force h07p-ci-fixture
+          sudo groupadd --force huou07-playground
+          sudo useradd --create-home --shell /bin/bash huou07
+          sudo usermod --append --groups h07p-ci-fixture huou07
+          sudo mkdir -p /home/huou07/Projects
+          sudo chown huou07:huou07 /home/huou07 /home/huou07/Projects
+          sudo useradd --no-create-home --shell /usr/sbin/nologin --gid huou07-playground huou07-playground
+          for worker in dsh-worker codex-worker opencode-worker; do
+            sudo useradd --create-home --shell /bin/bash "$worker"
+          done
+      - name: Build the server binary
+        run: cargo +1.90.0 build --locked -p h07p-server
+      - name: Make the fixture readable by the demoted service account
+        run: |
+          sudo chmod o+rx "$RUNNER_WORKSPACE" "$GITHUB_WORKSPACE" 2>/dev/null || true
+          sudo chmod -R a+rX web/static
+          sudo chmod a+rx target target/debug target/debug/h07p-server
+      - name: Run the native isolation fixtures
+        env:
+          H07P_SCANNER: /usr/bin/gitleaks
+        run: |
+          set -euo pipefail
+          binary="$PWD/target/debug/h07p-server"
+          sudo -E python3 tests/native/product.py "$binary" --host-fixture
+          sudo -E python3 tests/native/broker.py "$binary" --disposable-fixture
+          sudo -E python3 tests/native/guard.py "$binary" --disposable-fixture
+          sudo unshare --mount --fork --propagation private python3 tests/native/files.py "$binary"
+      - name: Preserve native evidence and failure traces
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-evidence
+          path: /var/tmp/h07p-native-*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  secret-scan:
+    name: Secret scan (redacted)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install pinned Gitleaks with a verified checksum
+        run: |
+          set -euo pipefail
+          version=8.30.1
+          curl -fsSL -o /tmp/gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Determine the change set under review
+        id: range
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "range=${{ github.event.pull_request.base.sha }}..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            echo "range=${{ github.event.before }}..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "range=${{ github.sha }}^..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Scan the change set with the shipped ruleset
+        run: |
+          set -euo pipefail
+          gitleaks detect --no-banner --redact --log-level error --exit-code 10 \
+            --config deploy/package/gitleaks.toml --source . \
+            --log-opts="${{ steps.range.outputs.range }}"

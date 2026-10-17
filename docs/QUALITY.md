@@ -48,9 +48,15 @@ is unresolved), a published package repository, or cross-platform support.
    `docs/README.md`; the tracker mixes several eras and other projects' work.
 3. The `.delivery/*.json` ledgers (tracked) embed a private macOS path, and the
    crate version (0.1.0) has no link to the package version (0.3.x).
-4. `tests/native/*`, `tests/package-*.sh`, `tools/release-audit.py`,
-   `tools/build-deb.sh` and `tools/security-audit.py` are invoked by no CI job and
-   no Makefile target; they are the only real privilege/kernel evidence.
+4. `tests/native/*`, `tests/package-*.sh`, `tools/release-audit.py` and
+   `tools/build-deb.sh` are now wired to CI jobs (`native-isolation`,
+   `package-lifecycle`) plus a change-set secret scan. Two limits remain explicit:
+   `tests/native/workers.py` is deliberately **not** in CI because it cannot pass
+   as written (it applies a Block naming `dsh-worker` before creating that account,
+   and provisioning first instead trips `REVISION_CONFLICT`), and
+   `tools/security-audit.py` is still invoked by no job. The new jobs have not been
+   executed on a hosted runner yet, so hosted coverage is UNVERIFIED until a run
+   exists.
 5. The project skills forbid running on the owner host while `WORKING.md` and
    `VALIDATION.md` authorise exactly that lane; the routing and the authority
    contradict each other.

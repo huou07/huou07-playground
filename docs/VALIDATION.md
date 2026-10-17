@@ -29,6 +29,20 @@ builds the `.deb` twice on a fresh Ubuntu 24.04 runner, checks matching hashes,
 Lintian and package lifecycle fixtures, then publishes the package, checksum,
 SBOM, license inventory/notices, audit report and source identity. This synthetic
 dpkg lifecycle lane is not a full Debian systemd VM installation test.
+## CI job coverage (added 2026-10-17)
+
+| Job | What it actually runs | Limit |
+| --- | --- | --- |
+| `framework` | `tools/check-framework.py`, including the documentation-index gate | none known |
+| `checks` | `make check`, Rust format, Clippy, workspace tests, release build, HTTP smoke | none known |
+| `browser` | `make acceptance` for the python and rust backends | intercepted APIs; not real-backend parity |
+| `package-lifecycle` | cargo-audit via `tools/release-audit.py`, `tests/package` unit tests, `tests/package-lifecycle.sh` (install, upgrade, corrupt-upgrade rollback, rollback, remove, purge in a disposable dpkg root), two identical `tools/build-deb.sh` builds compared by hash, Lintian | synthetic dpkg root, not a booted Debian systemd host |
+| `native-isolation` | `tests/native/product.py`, `broker.py`, `guard.py`, `files.py` as root with synthetic owner/service/worker identities | `tests/native/workers.py` is excluded because it cannot pass as written; see QUALITY.md gap 4 |
+| `secret-scan` | pinned Gitleaks 8.30.1 with the shipped ruleset, redacted, over the commit range under review | the range, not the whole tree: a whole-tree scan reports the repository's synthetic test fixtures and any local lab cache, so whole-tree enforcement needs an owner decision |
+
+These jobs were authored from command sequences executed in the disposable guest;
+their hosted execution is **UNVERIFIED** until a run exists.
+
 See [IMPLEMENTATION.md](IMPLEMENTATION.md) for source coverage. The browser runner
 selects the actual backend, uses a temporary apps registry/fixture app server and
 intercepts several APIs; its pass does not prove Rust read parity or permissions/NAS.
