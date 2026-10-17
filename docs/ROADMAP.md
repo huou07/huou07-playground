@@ -76,6 +76,22 @@ itself proof that every production journey was verified.
 - No build, installer, test, service restart, or policy change was run on
   production.
 
+## OpenCode native proxy auth challenge — in progress
+
+- Chrome Playwright CLI reproduced the blank OpenCode page through the native
+  relay while the backend UI itself responded normally. The unauthenticated
+  backend challenge includes a same-origin CORS header; the H07P-generated
+  challenge did not, so Chrome could not complete the module-script auth retry.
+- `native_proxy.rs` now adds that header only for an exact same-origin request
+  on a loopback/private/local host authority. A focused regression covers
+  allowed origins, untrusted hosts, duplicate headers and the 401 response.
+- Full hosted CI passed for source commit `3ac4c449378ef5f711fdc3702f0fea7a0e1c2293`
+  (run [39010751330](https://github.com/huou07/huou07-playground/actions/runs/39010751330)):
+  Rust lint/tests/release build/HTTP smoke and Python/Rust browser lanes.
+- The installed executable remains v0.3.7 until the updated package rollout;
+  DSH and OpenCode workers are active, but the proxy fix is not yet production
+  acceptance evidence.
+
 ## Known limits
 
 The running health route does not identify its version. A byte-for-byte rebuild

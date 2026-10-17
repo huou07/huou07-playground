@@ -345,8 +345,99 @@ fn chunks(input: impl Read, output: &mut impl Write) -> io::Result<()> {
         output.write_all(&end)?;
     }
 }
-fn respond(client: &mut TcpStream, code: &str, extra: &str) {
-    let _=write!(client,"HTTP/1.1 {code}\r\n{extra}Cache-Control: no-store\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+fn local_authority(authority: &str) -> bool {
+    if authority.is_empty()
+        || !authority
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-:[]".contains(&b))
+    {
+        return false;
+    }
+    let (host, port) = if let Some(ipv6) = authority.strip_prefix('[') {
+        let Some((address, suffix)) = ipv6.split_once(']') else {
+            return false;
+        };
+        let port = if suffix.is_empty() {
+            None
+        } else {
+            let Some(port) = suffix.strip_prefix(':').and_then(|p| p.parse::<u16>().ok()) else {
+                return false;
+            };
+            Some(port)
+        };
+        let Ok(address) = address.parse::<std::net::Ipv6Addr>() else {
+            return false;
+        };
+        return port.is_none_or(|port| port != 0)
+            && (address.is_loopback() || address.is_unique_local());
+    } else if let Some((host, port)) = authority.rsplit_once(':') {
+        if host.contains(':') {
+            return false;
+        }
+        let Ok(port) = port.parse::<u16>() else {
+            return false;
+        };
+        (host, Some(port))
+    } else {
+        (authority, None)
+    };
+    let local_host = host.eq_ignore_ascii_case("localhost")
+        || host.to_ascii_lowercase().ends_with(".localhost")
+        || host
+            .parse::<std::net::Ipv4Addr>()
+            .ok()
+            .is_some_and(|ip| ip.is_loopback() || ip.is_private() || ip.is_link_local());
+    local_host && port.is_none_or(|port| port != 0)
+}
+
+fn same_origin(head: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(head).ok()?;
+    let mut host = None;
+    let mut origin = None;
+    for line in text.split("\r\n").skip(1) {
+        if line.is_empty() {
+            break;
+        }
+        if line.starts_with([' ', '\t']) || line.bytes().any(|b| b < 32 && b != b'\t') {
+            return None;
+        }
+        let (name, value) = line.split_once(':')?;
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+            return None;
+        }
+        let value = value.trim();
+        match name.to_ascii_lowercase().as_str() {
+            "host" => {
+                if host.replace(value.to_owned()).is_some() {
+                    return None;
+                }
+            }
+            "origin" => {
+                if origin.replace(value.to_owned()).is_some() {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+    }
+    let host = host?;
+    let origin = origin?;
+    let (scheme, authority) = origin.split_once("://")?;
+    if !matches!(scheme, "http" | "https") || authority != host || !local_authority(authority) {
+        return None;
+    }
+    Some(origin)
+}
+
+fn error_response(code: &str, extra: &str, cors_origin: Option<&str>) -> String {
+    let cors = cors_origin
+        .map(|origin| format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\n"))
+        .unwrap_or_default();
+    format!("HTTP/1.1 {code}\r\n{extra}{cors}Cache-Control: no-store\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+}
+
+fn respond(client: &mut TcpStream, code: &str, extra: &str, cors_origin: Option<&str>) {
+    let _ = client.write_all(error_response(code, extra, cors_origin).as_bytes());
 }
 #[cfg(test)]
 pub fn serve(
@@ -373,13 +464,13 @@ fn serve_inner(
     let split = loop {
         if let Some(n) = bytes.windows(4).position(|b| b == b"\r\n\r\n") {
             if n > 16384 {
-                respond(&mut client, "431 Request Header Fields Too Large", "");
+                respond(&mut client, "431 Request Header Fields Too Large", "", None);
                 return;
             }
             break n;
         }
         if bytes.len() > 16384 {
-            respond(&mut client, "431 Request Header Fields Too Large", "");
+            respond(&mut client, "431 Request Header Fields Too Large", "", None);
             return;
         }
         match client.read(&mut block) {
@@ -388,10 +479,14 @@ fn serve_inner(
         }
     };
     let Ok(request) = rewrite(&bytes[..split], expected, replacement) else {
+        // Module scripts use CORS mode; expose only same-origin auth challenges
+        // so the browser can complete the Basic-auth retry through this bridge.
+        let cors_origin = same_origin(&bytes[..split]);
         respond(
             &mut client,
             "401 Unauthorized",
             "WWW-Authenticate: Basic realm=\"Playground native web\"\r\n",
+            cors_origin.as_deref(),
         );
         bytes.fill(0);
         return;
@@ -399,7 +494,7 @@ fn serve_inner(
     let initial = bytes.split_off(split + 4);
     bytes.fill(0);
     if !request.upgrade && !request.chunked && initial.len() as u64 > request.length {
-        respond(&mut client, "400 Bad Request", "");
+        respond(&mut client, "400 Bad Request", "", None);
         return;
     }
     if handoff && request.landing {
@@ -410,16 +505,21 @@ fn serve_inner(
                 && s.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
         }) {
-            respond(&mut client, "302 Found", &format!("Location: {token}\r\n"));
+            respond(
+                &mut client,
+                "302 Found",
+                &format!("Location: {token}\r\n"),
+                None,
+            );
         } else {
-            respond(&mut client, "503 Service Unavailable", "");
+            respond(&mut client, "503 Service Unavailable", "", None);
         }
         return;
     }
     let Ok(mut upstream) =
         TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_secs(5))
     else {
-        respond(&mut client, "503 Service Unavailable", "");
+        respond(&mut client, "503 Service Unavailable", "", None);
         return;
     };
     if let Some((id, generation)) = managed {
@@ -482,6 +582,41 @@ fn serve_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn auth_challenge_cors_is_limited_to_the_exact_origin() {
+        assert!(local_authority("127.0.0.1:14096"));
+        assert!(local_authority("10.8.0.1:4096"));
+        assert!(local_authority("[::1]:14096"));
+        assert!(local_authority("app.localhost:8080"));
+        assert!(!local_authority("attacker.example:14096"));
+        assert!(!local_authority("127.0.0.1:0"));
+
+        let request = b"GET /assets/app.js HTTP/1.1\r\nHost: 127.0.0.1:14096\r\nOrigin: http://127.0.0.1:14096";
+        let origin = same_origin(request).unwrap();
+        let response = error_response(
+            "401 Unauthorized",
+            "WWW-Authenticate: Basic realm=\"Playground native web\"\r\n",
+            Some(&origin),
+        );
+        assert!(response.contains("Access-Control-Allow-Origin: http://127.0.0.1:14096\r\n"));
+        assert!(response.contains("Vary: Origin\r\n"));
+        assert!(response.contains("WWW-Authenticate: Basic realm=\"Playground native web\"\r\n"));
+
+        for request in [
+            &b"GET / HTTP/1.1\r\nHost: 127.0.0.1:14096\r\nOrigin: http://attacker.example"[..],
+            &b"GET / HTTP/1.1\r\nHost: attacker.example\r\nOrigin: http://attacker.example"[..],
+            &b"GET / HTTP/1.1\r\nHost: 127.0.0.1:14096\r\nOrigin: null"[..],
+            &b"GET / HTTP/1.1\r\nHost: 127.0.0.1:14096\r\nOrigin: http://127.0.0.1:14096/extra"[..],
+            &b"GET / HTTP/1.1\r\nHost: 127.0.0.1:14096\r\nHost: attacker.example\r\nOrigin: http://127.0.0.1:14096"[..],
+            &b"GET / HTTP/1.1\r\nHost: 127.0.0.1:14096\r\nOrigin: http://127.0.0.1:14096\r\nOrigin: http://attacker.example"[..],
+        ] {
+            assert!(same_origin(request).is_none());
+        }
+        assert!(
+            !error_response("401 Unauthorized", "", None).contains("Access-Control-Allow-Origin:")
+        );
+    }
+
     #[test]
     fn owner_authentication_is_replaced_not_forwarded() {
         let public = basic("owner", "synthetic-public").unwrap();
