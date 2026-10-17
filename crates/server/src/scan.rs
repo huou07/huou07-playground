@@ -235,6 +235,7 @@ pub fn run(v: &Value) -> Result<Value, String> {
     let mut seen = 0;
     let mut scanned_bytes = 0u64;
     let mut content_files = 0;
+    let mut unknown_objects = 0usize;
     while let Some((directory, depth)) = queue.pop() {
         if excluded_filesystem(&directory) {
             skipped.push(json!({"path":directory,"reason":"filesystem_excluded"}));
@@ -295,31 +296,16 @@ pub fn run(v: &Value) -> Result<Value, String> {
                     .to_string_lossy()
                     .to_lowercase()
             });
-            let sensitive_name = name.starts_with(".env") && !name.contains("example")
-                || [
-                    "credential",
-                    "secret",
-                    "password",
-                    "token",
-                    "id_rsa",
-                    "id_ed25519",
-                    ".npmrc",
-                    "auth.json",
-                ]
-                .iter()
-                .any(|n| name.contains(n))
-                || name.ends_with(".pem")
-                || name.ends_with(".key")
-                || (name == "hosts.yml"
-                    && p.parent()
-                        .is_some_and(|parent| parent.ends_with(".config/gh")));
+            let classification = crate::sensitive::classify(&p, Some(&m));
             let private_store = crate::helper::is_private_path(&p);
-            let mut detected = sensitive_name || (private_store && m.is_file());
-            let mut reason = if sensitive_name {
-                "sensitive_filename"
+            let mut detected = classification.sensitive || (private_store && m.is_file());
+            let mut reason = if classification.sensitive {
+                classification.reason
             } else {
                 "protected_private_store"
             };
+            let mut confidence = classification.confidence;
+            let mut category = classification.category;
             let mut unknown = false;
             if content_enabled && m.is_file() {
                 if content_files >= 128 || scanned_bytes.saturating_add(m.len()) > 16 * 1024 * 1024
@@ -333,6 +319,8 @@ pub fn run(v: &Value) -> Result<Value, String> {
                         Ok(true) => {
                             detected = true;
                             reason = "maintained_scanner_match";
+                            confidence = "high";
+                            category = "content_signature";
                         }
                         Ok(false) => {}
                         Err(error) => {
@@ -342,10 +330,13 @@ pub fn run(v: &Value) -> Result<Value, String> {
                     }
                 }
             }
+            if unknown {
+                unknown_objects += 1;
+            }
             if (detected && mode == "block")
                 || (!detected && !unknown && mode == "allow" && m.is_file())
             {
-                found.push(json!({"path":p,"reason":if detected{reason}else{"no_known_sensitive_marker"},"confidence":if detected{"high"}else{"unknown"}}));
+                found.push(json!({"path":p,"reason":if detected{reason}else{"no_known_sensitive_marker"},"confidence":if detected{confidence}else{"unknown"},"category":if detected{category}else{"none"}}));
             }
             if m.is_dir() && name != ".git" && name != "node_modules" {
                 queue.push((p, depth + 1));
@@ -354,6 +345,7 @@ pub fn run(v: &Value) -> Result<Value, String> {
     }
     Ok(
         json!({"findings":found,"skipped":skipped,"partial":!skipped.is_empty(),"scanned":seen,
+        "unknown":unknown_objects,"registry_version":crate::sensitive::REGISTRY_VERSION,
         "content_scanned":content_enabled,"content_files":content_files,"content_bytes":scanned_bytes,
         "warning":"Detection is a proposal, not proof of safety. Unknown and skipped files remain unclassified. Nothing has been applied."}),
     )
