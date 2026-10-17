@@ -40,7 +40,14 @@ This file is the only current task tracker. Product behavior is in
   HTTP smoke, and Python/shell checks). Runs:
   https://github.com/huou07/huou07-playground/actions/runs/39002846996 and
   https://github.com/huou07/huou07-playground/actions/runs/39002850006.
-- Merge SHA and tag status: pending PR checks and merge.
+- PR merged as `2e088607ece55d904a1e39b9de5e9b18bb861c75`.
+- Tag `v0.3.7` points to that merge commit. Release:
+  https://github.com/huou07/huou07-playground/releases/tag/v0.3.7
+- Release run `39003280946` passed source CI, dependency/license audit, package
+  lifecycle checks, reproducible double build, checksum, and Lintian. Its final
+  publish step failed because the publish job had no Git checkout for
+  `--verify-tag`; the uploaded CI artifact was checksum-verified and published
+  to the release above. A follow-up PR adds checkout to the publish job.
 
 ### Recovered first-party components
 
@@ -56,16 +63,16 @@ itself proof that every production journey was verified.
 - Redacted Gitleaks scan of the full 264-commit ancestry through `9512ccb`,
   including 55 commits beyond `origin/main`: no leaks found (Gitleaks 8.30.1).
 - License identity: repository license is GPL-3.0 and the bundled Noto asset has
-  its Apache-2.0 notice. The recovered `Cargo.lock` SHA-256 matches the
-  2026-10-16 dependency/license audit, which enumerated 169 locked dependencies
-  and 143 third-party license notices. That report covered an older package
-  candidate; the exact v0.3.7 tag still requires the current release audit.
+  its Apache-2.0 notice. The v0.3.7 tag's release audit generated locked
+  dependency, license, and SBOM reports; the reproducible Debian package and
+  lifecycle checks passed in the release workflow.
 - File/path audit found deployment-only external OmniRoute configuration and
   historical host-specific operational records in the candidate history. These
   are excluded from the synchronized working tree; existing public history is
   preserved and not rewritten.
-- Candidate/history and license review completed; exact-commit hosted CI passed.
-  Merge and exact release/tag audit remain outstanding.
+- Candidate/history review and exact-commit hosted CI passed. The release is
+  published; the automated final publish step's missing-checkout defect is
+  corrected in a follow-up change.
 - No build, installer, test, service restart, or policy change was run on
   production.
 
