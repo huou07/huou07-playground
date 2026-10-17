@@ -1,16 +1,16 @@
 # Current implementation map
 
-The local editing checkout contains the implementation through `e6c01038` on
-`codex/h07p-product`, plus a focused ACL-inheritance correction in its working
-tree. Nonrecursive directory rules now change access ACLs without adding default
-ACLs; recursive rules still add defaults for descendants. On the real Debian
-host, release `0.3.7-acl-inherit-fix` is active for both server and helper. The
-GUI policy is enforced at revision 18. The OR Linux editor preflight passed
-under `codex-worker`; the VCE Chromium browser lane passed under `opencode-worker`.
-See [ROADMAP](ROADMAP.md) for exact build, runtime and validation evidence and
-its limits.
-Earlier package evidence is dated separately below.
-[ROADMAP](ROADMAP.md) owns task state and deployment evidence owns executed claims.
+Source identity: `codex/h07p-product` at the merge of `origin/codex/h07p-product`
+(`9b89914a`). The tables below describe what the source on this branch implements;
+[ROADMAP.md](ROADMAP.md) owns task state and executed evidence, and dated runtime
+claims live in [docs/evidence/](evidence/).
+
+The 2026-10-15 inspection baseline that described Permissions, Auto Detect, private
+NAS and Storage as absent was written against branch `codex/p1-rust-health-static`
+at `67dbcda7` and contradicted the implemented product. It is removed rather than
+kept as a second, contradictory "current" map; its dated observations remain in
+[AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) and
+[evidence/product-native-20261015.md](evidence/product-native-20261015.md).
 
 | Boundary | Current source | Implemented behavior |
 | --- | --- | --- |
@@ -19,61 +19,24 @@ Earlier package evidence is dated separately below.
 | Native dashboard | [telemetry](../crates/server/src/telemetry.rs) | Metrics, processes, services, Cockpit, VPN, apps/icons, launch and registry mutation; bounded work and caches |
 | Policy control | [helper](../crates/server/src/helper.rs) | Typed peer-checked sockets, SQLite history/audit, unrestricted absolute targets/workspaces, block-last ACL activation, exact-file private exceptions, two-click impact challenge, pending/enforced revisions and expiry |
 | Managed workers | [sandbox](../crates/server/src/sandbox.rs), [broker](../crates/server/src/broker.rs) | Permanent IDs, empty groups, NNP/FD closure, optional Landlock and single-use list/read/write/create/delete approvals |
-| Detection | [scan](../crates/server/src/scan.rs) | Bounded metadata/content suggestions for any canonical absolute file/directory, including hidden paths; redacted results |
+| Detection | [scan](../crates/server/src/scan.rs), [registry](../crates/server/src/sensitive.rs) | Versioned sensitive-location registry, bounded metadata/content suggestions for any canonical absolute file/directory including hidden paths, fail-closed scanner self-test, explicit confidence/reason, redacted results |
 | Integrated files | [files](../crates/server/src/files.rs) | Private NAS and owner Storage, descriptor-relative operations, previews/ranges, streamed uploads, explicit recovery and atomic replacement; bounded filename-only search |
-| GUI worker setup | [worker setup](../crates/server/src/worker_setup.rs), [root adapter](../deploy/package/workers.py) | Supported harness detection, GUI pre-worker ACL/ownership restore with rollback snapshot, stale-path filtering and restore dry-run, repair, retirement and web start; bounded streamed ACL planning and job progress |
+| GUI worker setup | [worker setup](../crates/server/src/worker_setup.rs), [root adapter](../deploy/package/workers.py) | Supported harness detection, validated pre-worker ACL snapshot registry, GUI restore with rollback snapshot, stale-path filtering and restore dry-run, repair, retirement and web start; bounded streamed ACL planning and job progress |
 | App setup | [VPN apps](../crates/server/src/vpn_apps.rs), [logins](../crates/server/src/app_logins.rs) | Host-listener discovery, reviewed wg0-only relays, selected existing-login export/merge and supported public web password changes |
 | Credential Guard | [Guard](../crates/server/src/guard.rs), [redaction](../crates/server/src/redact.rs) | Opt-in bounded inotify over owner-selected canonical host paths, metadata incidents, reviewed owner-owned closed-export cleanup, root-private originals and private NAS recovery; partial protection reported honestly |
 | Private web access | [relays](../crates/server/src/relays.rs), [native bridge](../crates/server/src/native_proxy.rs) | VPN-only relays, existing native web auth substitution and LAN handoff, HTTP/chunked/SSE/WebSocket transport |
 | Owner UI | [product UI](../web/static/product.js), [Guard UI](../web/static/guard.js) | Permissions, approvals, detection, private NAS, Storage and Guard; works on VPN HTTP without secure-context randomUUID |
 | Maintenance | [lifecycle](../deploy/package/lifecycle.py), [setup](../deploy/package/setup.py) | Versioned .deb, snapshots, rollback, dependency planning, install/update/repair/data-retaining uninstall and public listener migration |
 
+Python `web/app.py` remains the preserved reference for the legacy dashboard and is
+not the security model: its same-origin mutation check is not independent owner
+authentication, and new private/control APIs must not inherit it.
+
 Native journeys are in `tests/native/`; kernel/cgroup/package lifecycle fixtures
 are `tests/package-*.sh`; browser contracts are `tests/e2e/`. Runtime evidence and
 limits remain separate: native model/provider login is intentionally untested,
 own-store same-UID isolation is unresolved by design, arbitrary hardware parity
 and complete energy/performance targets are not established.
-
-## Historical inspection baseline (superseded)
-
-Baseline: branch `codex/p1-rust-health-static`,
-commit `67dbcda735b5e1eb7d4b889cfd9bc749d5290571`.
-Recheck source before using this map; it is not live host state or a task tracker.
-
-## Entry points and boundaries
-
-| Surface | Existing source | What is implemented |
-| --- | --- | --- |
-| Rust backend | [workspace](../Cargo.toml), [server manifest](../crates/server/Cargo.toml), [server](../crates/server/src/main.rs) | Axum/Tokio health and static serving; loopback binding only; no owner authentication, policy or filesystem API |
-| Python reference | [web/app.py](../web/app.py) | Dashboard metrics, process/service/Cockpit/VPN/app reads, app mutation, launch link and fixed private relays |
-| UI and design | [index](../web/static/index.html), [style](../web/static/style.css), [navigation CSS](../web/static/navigation.css), [navigation JS](../web/static/navigation.js), [app JS](../web/static/app.js) | Existing nine views, themes/preferences and dashboard; Permissions is not present |
-| Linux collectors | [power](../deploy/power.py), [GPU](../deploy/gpu.py), [VPN](../deploy/wg_status.py) | Legacy OS integration; not ported to Rust |
-| File integration | [Cockpit move helper](../deploy/cockpit/huou07-move-files/move) | External Cockpit workflow, not the new private NAS or integrated Storage browser |
-| Verification | [workflow](../.github/workflows/ci.yml), [Makefile](../Makefile), [Rust smoke](../tests/rust-smoke.sh), [browser runner](../tests/e2e/run.mjs) | Hosted legacy checks, Rust gates and HTTP smoke; browser matrix selects Python or the actual Rust binary; coverage is scoped by backend |
-
-The Python implementation is a parity reference, not the intended security model.
-Its same-origin mutation check is not independent owner authentication. Never
-publish new private/control APIs by inheriting that check.
-
-## Migration coverage
-
-| Route / behavior | Python reference | Rust coverage at inspection | Evidence needed next |
-| --- | --- | --- | --- |
-| Static assets and GET /api/health | Handler.do_GET / send_json | Implemented; payload/header and traversal tests plus HTTP smoke | Keep regressions; this does not prove full dashboard parity |
-| GET /api/metrics | linux_metrics, storage_devices, swap_and_zram_metrics, GPU/power helpers | Absent | Same-input parity, bounded Linux collection and resource comparison |
-| GET /api/processes, /api/services | process_metrics, service_metrics | Absent | Controlled process/command fixtures, timeout and unavailable states |
-| GET /api/cockpit, /api/files, /api/vpn | cockpit_status, cockpit_files_status, vpn_status | Absent | Fixture parity; /api/files currently means Cockpit availability, not NAS listing |
-| GET /api/private-service-ports, /api/apps, /api/apps/icon | configured_port, app_registry, app_icon | Absent | Synthetic registries, bounded health/icon fetches, SSRF review |
-| GET /api/apps/launch and POST /api/apps | dsh_launch_url, mutate_app_registry | Absent | Synthetic tokens only; owner authorization before sensitive mutation |
-| Worker Permissions, detection, NAS and Storage browser | No implementation | Absent | Owner API and actual OS enforcement prerequisites in [security](SECURITY.md) |
-
-Existing [Python tests](../tests/test_app.py) contain useful fixtures and some
-mocked system/service checks. Their pass cannot establish worker isolation.
-The [browser spec](../tests/e2e/dashboard.spec.mjs) intercepts several APIs and
-proves selected Python UI journeys. The [UX spec](../tests/e2e/ux.spec.mjs) uses
-synthetic APIs on both servers; [Rust slice checks](../tests/e2e/rust-static.spec.mjs)
-exercise real health/static endpoints. Configured coverage is not a passed run,
-and none of these lanes proves unported Rust read APIs or real OS boundaries.
 
 ## Inspect only the surface needed
 
@@ -90,12 +53,11 @@ browser responses alone cannot prove that path.
 [ARCHITECTURE.md](ARCHITECTURE.md) owns proposed boundaries;
 [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) retains the earlier source audit.
 
+## Current product integration
 
-## Current product integration (2026-10-15)
-
-The Linux Rust entry point now dispatches unprivileged HTTP, the typed root helper,
+The Linux Rust entry point dispatches unprivileged HTTP, the typed root helper,
 permanent worker drop/sandbox, descriptor-relative file actors and the worker
-broker. Source: `crates/server/src/{api,helper,files,broker,sandbox,scan,relays,telemetry}.rs`.
+broker. Source: `crates/server/src/{api,helper,files,broker,sandbox,scan,sensitive,guard,relays,native_proxy,telemetry,worker_setup}.rs`.
 `web/static/product.js` supplies owner sessions, permissions and NAS/Storage.
 The legacy dashboard uses the same memory-only proof bridge. Package lifecycle
 and protected worker entry points live in `deploy/package`; `tools/build-deb.sh`
@@ -103,5 +65,4 @@ builds the versioned Linux amd64 artifact. Native regressions live in
 `tests/native` and `tests/package-*.sh`.
 
 See [dated evidence](evidence/product-native-20261015.md) for executed tests and
-release gaps. Historical unimplemented/404 descriptions above refer to the old
-baseline, not this branch.
+release gaps.

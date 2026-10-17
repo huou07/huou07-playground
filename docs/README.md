@@ -26,7 +26,6 @@ procedures or treat its reported state as current.
 | [VALIDATION.md](VALIDATION.md) | Gates, evidence classes, browser lanes and package acceptance | Current |
 | [ROADMAP.md](ROADMAP.md) | Single current-task tracker | Current |
 | [REUSE.md](REUSE.md) | Upstream candidates, licensing and decisions | Current |
-| [ORDINARY-USER-REINSTALL.md](ORDINARY-USER-REINSTALL.md) | Supported non-`huou07` install path and its isolation model | Current |
 | [UPGRADE-INTEGRATION-2026-10-17.md](UPGRADE-INTEGRATION-2026-10-17.md) | Source reconciliation record and decisions | Current |
 | [Credential Guard](security/credential-guard/README.md) | Opt-in monitoring, reviewed log cleanup and private recovery | Current |
 | [Credential Guard integration](security/credential-guard/INTEGRATION.md) | Guard wiring, limits and owner review flow | Current |
@@ -44,6 +43,7 @@ procedures or treat its reported state as current.
 | [STATUS.md](STATUS.md) | Dated deployment snapshot; superseded by ROADMAP.md | Historical |
 | [PERFORMANCE.md](PERFORMANCE.md) | Dated samples; no enforced budget | Historical |
 | [CLEAN-REINSTALL.md](CLEAN-REINSTALL.md) | Dated reinstall walkthrough | Historical |
+| [ORDINARY-USER-REINSTALL.md](ORDINARY-USER-REINSTALL.md) | Dated completed owner-run cutover; its model has no per-harness UID boundary | Historical |
 | [SKILLS.md](SKILLS.md) | Pointer-only stub; `skills.md` is authoritative | Historical |
 | [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) | Dated source inspection and its limits | Historical |
 | [prompts/UPGRADE-H07P.md](prompts/UPGRADE-H07P.md) | Paused comprehensive upgrade plan; superseded as the active task by prompts/NEXT-H07P.md | Historical |

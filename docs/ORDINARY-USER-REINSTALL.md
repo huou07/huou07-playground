@@ -1,5 +1,15 @@
 # Owner-requested clean reinstall — 2026-10-15
 
+> **Historical record. Completed one-time cutover — do not rerun.**
+>
+> This document records the 2026-10-15 ordinary-user reinstall. It is retained as
+> dated evidence, not as current state or procedure. Its arrangement runs every
+> harness as the owner account and deliberately has **no per-harness UID boundary**,
+> so the managed-worker isolation model in [SECURITY.md](SECURITY.md) does not apply
+> to it and it cannot satisfy worker-isolation acceptance tests. The two
+> arrangements are mutually exclusive per host; see the table at the top of
+> SECURITY.md. Runtime state and current task state live in [ROADMAP.md](ROADMAP.md).
+
 **Completed with owner approval.** The five applications now use the normal `huou07` account (standard rootless containers for the two gateways). `agents-worker`, four obsolete application accounts, their units/wrappers/ACLs and the worker-only AEH capability broker have been retired. Provider inference was intentionally excluded by the owner.
 
 Current usage and retained instruction documents are also recorded in `/home/huou07/AEH/docs/normal-user-runtime.md`. Routine maintenance uses the normal user services; do not rerun this one-time cutover.

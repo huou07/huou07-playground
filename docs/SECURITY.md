@@ -1,5 +1,23 @@
 # Security and permission contract
 
+## The two arrangements this product can run in
+
+H07P has one security contract but two host arrangements, and they are mutually
+exclusive per host. Reading them as one model is what made this document and
+[ORDINARY-USER-REINSTALL.md](ORDINARY-USER-REINSTALL.md) disagree.
+
+| Arrangement | How harnesses run | What enforces anything | Documented by |
+| --- | --- | --- | --- |
+| Ordinary-user | Every harness runs as the owner account (`huou07`) | Ordinary file permissions only; there is **no** per-harness UID boundary | [ORDINARY-USER-REINSTALL.md](ORDINARY-USER-REINSTALL.md) — Historical, once completed, do not rerun |
+| Managed worker | Each harness runs under its own worker UID | ACL policy, permanent UID drop with empty groups, typed peer-checked IPC and the broker | this document, sections below |
+
+The rest of this document describes the **managed-worker** arrangement, which is
+what H07P's Permissions, broker and sandbox code implements. The ordinary-user
+arrangement was the owner's 2026-10-15 choice; it deliberately removed the
+credential/tool UID boundary, so none of the worker-isolation claims below apply
+to it, and it cannot satisfy worker-isolation acceptance tests. A host that runs
+harnesses as the owner must not be described as worker-isolated.
+
 ## Current owner-selected Debian account model
 
 The 2026-10-16 owner task authorizes the H07P GUI to reset worker ACLs to the
