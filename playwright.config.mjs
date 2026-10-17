@@ -7,7 +7,11 @@ export default defineConfig({
     : ['dashboard.spec.mjs', 'ux.spec.mjs', 'product.spec.mjs'],
   timeout: 45000,
   expect: { timeout: 8000 },
-  outputDir: 'test-results',
+  // Playwright clears outputDir before a run. A checkout can carry a
+  // test-results/ owned by another account, so tools/acceptance.sh points the
+  // local gate at a writable per-uid directory when that happens; CI keeps the
+  // default path its browser-evidence artifact uploads.
+  outputDir: process.env.HUOU07_E2E_OUTPUT_DIR || 'test-results',
   workers: 1,
   reporter: process.env.CI ? [['list'], ['github']] : 'list',
   use: {

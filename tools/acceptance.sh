@@ -76,6 +76,15 @@ fi
 # tests/e2e/run.mjs launches $ROOT/target/debug/h07p-server. Anything unavailable
 # stays UNVERIFIED, never a silent PASS.
 if [ -f "$ROOT/node_modules/@playwright/test/package.json" ] && command -v node >/dev/null 2>&1; then
+  # Playwright removes outputDir before a run. A test-results/ owned by another
+  # account cannot be removed from a sticky-bit checkout, so point the local gate
+  # at a writable per-uid directory in that case; CI keeps the default path its
+  # browser-evidence artifact uploads.
+  if [ -e "$ROOT/test-results" ] \
+    && [ -n "$(find "$ROOT/test-results" -maxdepth 0 ! -user "$(id -un)" -print 2>/dev/null)" ]; then
+    export HUOU07_E2E_OUTPUT_DIR="$ROOT/.h07p-dev/e2e-results-uid$(id -u)"
+    printf 'e2e output dir: %s\n' "$HUOU07_E2E_OUTPUT_DIR"
+  fi
   run 'Browser journeys (Python backend)' env HUOU07_E2E_BACKEND=python npm run test:e2e
   if [ -w "$ROOT/target" ] || mkdir -p "$ROOT/target" 2>/dev/null; then
     run 'Rust debug server for browser acceptance' \
