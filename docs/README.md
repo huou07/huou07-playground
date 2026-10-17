@@ -40,12 +40,12 @@ procedures or treat its reported state as current.
 
 | Document | Purpose | Status |
 | --- | --- | --- |
-| [STATUS.md](STATUS.md) | Dated deployment snapshot; superseded by ROADMAP.md | Historical |
-| [PERFORMANCE.md](PERFORMANCE.md) | Dated samples; no enforced budget | Historical |
 | [CLEAN-REINSTALL.md](CLEAN-REINSTALL.md) | Dated reinstall walkthrough | Historical |
 | [ORDINARY-USER-REINSTALL.md](ORDINARY-USER-REINSTALL.md) | Dated completed owner-run cutover; its model has no per-harness UID boundary | Historical |
-| [SKILLS.md](SKILLS.md) | Pointer-only stub; `skills.md` is authoritative | Historical |
 | [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md) | Dated source inspection and its limits | Historical |
+| [history/SKILLS.md](history/SKILLS.md) | Pointer-only stub; `skills.md` is authoritative | Historical |
+| [history/STATUS.md](history/STATUS.md) | Dated deployment snapshot; superseded by ROADMAP.md | Historical |
+| [history/PERFORMANCE.md](history/PERFORMANCE.md) | Dated samples; no enforced budget | Historical |
 | [prompts/UPGRADE-H07P.md](prompts/UPGRADE-H07P.md) | Paused comprehensive upgrade plan; superseded as the active task by prompts/NEXT-H07P.md | Historical |
 | [evidence/product-deployed-20261016.md](evidence/product-deployed-20261016.md) | Artifact identity and physical Debian checks | Historical |
 | [evidence/product-native-20261015.md](evidence/product-native-20261015.md) | Dated native/guest acceptance results | Historical |

@@ -1,5 +1,8 @@
 # Runtime performance sample
 
+> **Historical.** Dated samples with no enforced budget. Gate and evidence classes live in [VALIDATION](../VALIDATION.md).
+
+
 This is a first low-load sample from the live Debian target on 2026-10-09. It is a baseline for later comparisons, not a claim that every performance acceptance test is complete.
 
 ## Environment and method

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = (
     "AGENTS.md", "docs/README.md", "docs/PRODUCT.md", "docs/ARCHITECTURE.md",
     "docs/IMPLEMENTATION.md", "docs/SECURITY.md", "docs/UX.md", "docs/VALIDATION.md",
-    "docs/ROADMAP.md", "docs/REUSE.md", "docs/SKILLS.md", "docs/AUDIT-2026-10-15.md",
+    "docs/ROADMAP.md", "docs/REUSE.md", "docs/AUDIT-2026-10-15.md",
     "docs/prompts/IMPLEMENT-H07P.md", "skills.md", "docs/WORKING.md", "docs/TOOLS.md",
 )
 # Snapshot of canonical catalog reviewed 2026-10-15; no host paths required in CI.
