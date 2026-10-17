@@ -182,6 +182,10 @@ jobs:
           sudo usermod --append --groups h07p-ci-fixture huou07
           sudo mkdir -p /home/huou07/Projects
           sudo chown huou07:huou07 /home/huou07 /home/huou07/Projects
+          # The fixture accounts must be able to traverse the synthetic owner home.
+          # The guest rehearsal sets exactly these modes (guest-owner-setup.sh);
+          # without them a fixture denial can pass because nothing is reachable.
+          sudo chmod 0755 /home/huou07 /home/huou07/Projects
           sudo useradd --no-create-home --shell /usr/sbin/nologin --gid huou07-playground huou07-playground
           for worker in dsh-worker codex-worker opencode-worker; do
             sudo useradd --create-home --shell /bin/bash "$worker"
